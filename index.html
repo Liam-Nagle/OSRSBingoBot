@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSRS Bingo Board</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .controls {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .controls button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .controls button:hover {
+            background: #45a049;
+        }
+
+        .controls button.secondary {
+            background: #2196F3;
+        }
+
+        .controls button.secondary:hover {
+            background: #0b7dda;
+        }
+
+        .controls button.danger {
+            background: #f44336;
+        }
+
+        .controls button.danger:hover {
+            background: #da190b;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+
+        .board-container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bingo-board {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .bingo-tile {
+            background: rgba(255,255,255,0.95);
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 180px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .bingo-tile:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+
+        .bingo-tile.completed {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+        }
+
+        .bingo-tile.completed::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .tile-content {
+            color: #333;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 15px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .bingo-tile.completed .tile-content {
+            color: white;
+        }
+
+        .tile-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: auto;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1;
+        }
+
+        .item-icon {
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        .tile-value {
+            color: #666;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .bingo-tile.completed .tile-value {
+            color: rgba(255,255,255,0.9);
+        }
+
+        .tile-players {
+            color: #2196F3;
+            font-size: 11px;
+            margin-top: 5px;
+            text-align: center;
+        }
+
+        .bingo-tile.completed .tile-players {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .leaderboard {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+
+        .leaderboard h2 {
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 24px;
+        }
+
+        .player-card {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border-left: 4px solid #4CAF50;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .player-card:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateX(5px);
+        }
+
+        .player-card.rank-1 {
+            border-left-color: #FFD700;
+            background: linear-gradient(135deg, rgba(255,215,0,0.2) 0%, rgba(255,215,0,0.05) 100%);
+        }
+
+        .player-card.rank-2 {
+            border-left-color: #C0C0C0;
+            background: linear-gradient(135deg, rgba(192,192,192,0.2) 0%, rgba(192,192,192,0.05) 100%);
+        }
+
+        .player-card.rank-3 {
+            border-left-color: #CD7F32;
+            background: linear-gradient(135deg, rgba(205,127,50,0.2) 0%, rgba(205,127,50,0.05) 100%);
+        }
+
+        .player-rank {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+        }
+
+        .player-name {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 8px;
+            padding-right: 40px;
+        }
+
+        .player-score {
+            color: #4CAF50;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .player-stats {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            margin-top: 5px;
+        }
+
+        .bonus-badge {
+            display: inline-block;
+            background: #FF9800;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+
+        .no-players {
+            text-align: center;
+            color: rgba(255,255,255,0.5);
+            padding: 40px 20px;
+            font-style: italic;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 600px;
+            width: 90%;
+            color: #333;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .modal-content input,
+        .modal-content textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .modal-content textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-buttons button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-save {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-cancel {
+            background: #ccc;
+            color: #333;
+        }
+
+        .item-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 15px 0;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        .item-preview-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .item-preview-item img {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+
+        .item-preview-item span {
+            font-size: 11px;
+            color: #666;
+            max-width: 80px;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .bonus-config-section {
+            margin-top: 20px;
+        }
+
+        .bonus-config-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        .bonus-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .bonus-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .bonus-item label {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .bonus-item input {
+            padding: 8px;
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .leaderboard {
+                position: relative;
+                top: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 OSRS Bingo Board 🎮</h1>
+
+        <div class="controls">
+            <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
+            <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
+            <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
+            <button onclick="viewDebugInfo()" class="secondary">🐛 Debug Info</button>
+            <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
+            <button onclick="exportBoard()" class="secondary">💾 Export</button>
+            <button onclick="importBoard()" class="secondary">📥 Import</button>
+            <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
+        </div>
+
+        <div class="main-content">
+            <div class="board-container">
+                <div class="bingo-board" id="bingoBoard"></div>
+            </div>
+
+            <div class="leaderboard">
+                <h2>🏆 Leaderboard</h2>
+                <div id="playerStats">
+                    <div class="no-players">No drops recorded yet!</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Tile Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <h2>Edit Tile</h2>
+            <label>Item Name(s) - One per line:</label>
+            <p style="font-size: 12px; color: #999; margin-bottom: 10px;">
+                <strong>First item</strong> = Display name & image<br>
+                <strong>All items</strong> = Can trigger tile completion<br>
+                <em>Example: List "Bandos chestplate" first, then add "Bandos tassets" and "Bandos boots" to make ANY Bandos armor complete this tile.</em>
+            </p>
+            <textarea id="tileItems" placeholder="Bandos chestplate
+Bandos tassets
+Bandos boots
+
+OR for single items:
+Dragon warhammer"></textarea>
+            <div id="itemPreview" class="item-preview"></div>
+            <label>Points:</label>
+            <input type="number" id="tileValue" placeholder="10" min="0">
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+                <button class="btn-save" onclick="saveTile()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bonus Configuration Modal -->
+    <div class="modal" id="bonusModal">
+        <div class="modal-content">
+            <h2>Configure Line Bonuses</h2>
+            <p style="color: #666; margin-bottom: 20px;">Set bonus points for completing each row, column, or diagonal.</p>
+
+            <div class="bonus-config-section">
+                <h3>Rows</h3>
+                <div class="bonus-grid">
+                    <div class="bonus-item">
+                        <label>Row 1:</label>
+                        <input type="number" id="row0" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Row 2:</label>
+                        <input type="number" id="row1" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Row 3:</label>
+                        <input type="number" id="row2" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Row 4:</label>
+                        <input type="number" id="row3" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Row 5:</label>
+                        <input type="number" id="row4" min="0" value="50">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bonus-config-section">
+                <h3>Columns</h3>
+                <div class="bonus-grid">
+                    <div class="bonus-item">
+                        <label>Column 1:</label>
+                        <input type="number" id="col0" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Column 2:</label>
+                        <input type="number" id="col1" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Column 3:</label>
+                        <input type="number" id="col2" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Column 4:</label>
+                        <input type="number" id="col3" min="0" value="50">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Column 5:</label>
+                        <input type="number" id="col4" min="0" value="50">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bonus-config-section">
+                <h3>Diagonals</h3>
+                <div class="bonus-grid">
+                    <div class="bonus-item">
+                        <label>Diagonal ↘:</label>
+                        <input type="number" id="diag0" min="0" value="100">
+                    </div>
+                    <div class="bonus-item">
+                        <label>Diagonal ↙:</label>
+                        <input type="number" id="diag1" min="0" value="100">
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-buttons" style="margin-top: 30px;">
+                <button class="btn-cancel" onclick="closeBonusModal()">Cancel</button>
+                <button class="btn-save" onclick="saveBonusConfig()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Info Modal -->
+    <div class="modal" id="apiModal">
+        <div class="modal-content">
+            <h2>API Integration</h2>
+            <p>To connect your Discord bot, add this endpoint URL to your bot:</p>
+            <input type="text" id="apiUrl" readonly value="http://localhost:8000/drop">
+            <p style="margin-top: 15px; font-size: 12px; color: #666;">
+                The bot will send POST requests to this URL when drops are detected.
+                See setup instructions below.
+            </p>
+            <div class="modal-buttons">
+                <button class="btn-save" onclick="closeApiModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let editMode = false;
+        let currentTileIndex = null;
+        let bingoData = {
+            tiles: [],
+            completions: {},
+            lineBonuses: {
+                rows: [50, 50, 50, 50, 50],
+                cols: [50, 50, 50, 50, 50],
+                diags: [100, 100]
+            }
+        };
+
+        const API_URL = 'http://localhost:5000';
+
+        // OSRS Wiki image URL generator
+        function formatItemName(itemName) {
+            // If already has underscores, keep original capitalization
+            if (itemName.includes('_')) {
+                return itemName.trim();
+            }
+
+            // Convert spaces to underscores, keep original capitalization
+            return itemName.trim().replace(/\s+/g, '_');
+        }
+
+        // Fallback image loader with multiple attempts
+        function loadItemImage(img, itemName) {
+            const baseUrl = 'https://oldschool.runescape.wiki/images/';
+
+            // Try different format variations
+            const formats = [
+                formatItemName(itemName),  // Proper title case with underscores
+                itemName.trim().replace(/\s+/g, '_'),  // Keep original capitalization
+                itemName.trim().toLowerCase().replace(/\s+/g, '_'),  // All lowercase
+                itemName.trim().toUpperCase().replace(/\s+/g, '_')   // All uppercase
+            ];
+
+            let attemptIndex = 0;
+
+            function tryNext() {
+                if (attemptIndex >= formats.length) {
+                    img.style.display = 'none';
+                    return;
+                }
+
+                const format = formats[attemptIndex];
+                attemptIndex++;
+
+                img.onload = () => {
+                    img.style.display = 'block';
+                };
+
+                img.onerror = () => {
+                    tryNext();
+                };
+
+                img.src = `${baseUrl}${encodeURIComponent(format)}_detail.png`;
+            }
+
+            tryNext();
+        }
+
+        async function initBoard() {
+            console.log('🚀 Initializing bingo board...');
+            console.log(`API URL: ${API_URL}/bingo`);
+
+            try {
+                const response = await fetch(`${API_URL}/bingo`);
+                console.log(`API Response Status: ${response.status}`);
+
+                if (response.ok) {
+                    bingoData = await response.json();
+                    console.log('✅ Loaded bingo data from API:', bingoData);
+
+                    // Ensure lineBonuses exists
+                    if (!bingoData.lineBonuses) {
+                        bingoData.lineBonuses = {
+                            rows: [50, 50, 50, 50, 50],
+                            cols: [50, 50, 50, 50, 50],
+                            diags: [100, 100]
+                        };
+                    }
+                } else {
+                    console.log('❌ API returned error status');
+                    throw new Error('API error');
+                }
+            } catch (err) {
+                console.log('ℹ️  API not available, using localStorage');
+                const saved = localStorage.getItem('bingoData');
+                if (saved) {
+                    bingoData = JSON.parse(saved);
+                    console.log('✅ Loaded from localStorage');
+                    if (!bingoData.lineBonuses) {
+                        bingoData.lineBonuses = {
+                            rows: [50, 50, 50, 50, 50],
+                            cols: [50, 50, 50, 50, 50],
+                            diags: [100, 100]
+                        };
+                    }
+                } else {
+                    console.log('📝 Creating new empty board');
+                    for (let i = 0; i < 25; i++) {
+                        bingoData.tiles.push({
+                            items: [],
+                            value: 10,
+                            completedBy: []
+                        });
+                    }
+                }
+            }
+
+            renderBoard();
+            updatePlayerStats();
+            setInterval(refreshFromAPI, 5000);
+            console.log('✅ Board initialized, auto-refresh every 5 seconds');
+        }
+
+        async function refreshFromAPI() {
+            try {
+                const response = await fetch(`${API_URL}/bingo`);
+                if (response.ok) {
+                    const newData = await response.json();
+
+                    // Check if data actually changed
+                    const oldDataStr = JSON.stringify(bingoData);
+                    const newDataStr = JSON.stringify(newData);
+
+                    if (oldDataStr !== newDataStr) {
+                        console.log('📊 Data updated from API');
+                        bingoData = newData;
+
+                        if (!bingoData.lineBonuses) {
+                            bingoData.lineBonuses = {
+                                rows: [50, 50, 50, 50, 50],
+                                cols: [50, 50, 50, 50, 50],
+                                diags: [100, 100]
+                            };
+                        }
+
+                        renderBoard();
+                        updatePlayerStats();
+
+                        // Also update localStorage
+                        localStorage.setItem('bingoData', JSON.stringify(bingoData));
+                    }
+                }
+            } catch (err) {
+                console.log('⚠️  Could not fetch from API:', err.message);
+            }
+        }
+
+        async function manualRefresh() {
+            console.log('🔄 Manual refresh triggered...');
+            await refreshFromAPI();
+            alert('Board refreshed!');
+        }
+
+        function renderBoard() {
+            const board = document.getElementById('bingoBoard');
+            board.innerHTML = '';
+
+            bingoData.tiles.forEach((tile, index) => {
+                const tileEl = document.createElement('div');
+                tileEl.className = 'bingo-tile';
+                if (tile.completedBy.length > 0) {
+                    tileEl.classList.add('completed');
+                }
+
+                // Display only the first item as the tile name
+                const displayName = tile.items.length > 0 ? tile.items[0] : 'Empty Tile';
+                const players = tile.completedBy.length > 0 ? `✓ ${tile.completedBy.join(', ')}` : '';
+
+                // Create image only for the first item (display item)
+                let imagesHtml = '';
+                if (tile.items.length > 0) {
+                    const displayItem = tile.items[0];
+                    const imgId = `img-${index}`;
+                    imagesHtml = `
+                        <div class="tile-images">
+                            <img id="${imgId}" class="item-icon" alt="${displayItem}">
+                        </div>
+                    `;
+                }
+
+                // Show count if multiple items can trigger this tile
+                const itemCountHtml = tile.items.length > 1
+                    ? `<div style="font-size: 11px; color: ${tile.completedBy.length > 0 ? 'rgba(255,255,255,0.7)' : '#999'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
+                    : '';
+
+                tileEl.innerHTML = `
+                    <div class="tile-content">${displayName}</div>
+                    ${imagesHtml}
+                    <div class="tile-value">${tile.value} points</div>
+                    ${itemCountHtml}
+                    ${players ? `<div class="tile-players">${players}</div>` : ''}
+                `;
+
+                tileEl.onclick = () => handleTileClick(index);
+                board.appendChild(tileEl);
+
+                // Load image after adding to DOM
+                if (tile.items.length > 0) {
+                    const imgId = `img-${index}`;
+                    const img = document.getElementById(imgId);
+                    if (img) {
+                        loadItemImage(img, tile.items[0]);
+                    }
+                }
+            });
+
+            saveData();
+        }
+
+        function handleTileClick(index) {
+            if (editMode) {
+                openEditModal(index);
+            } else {
+                const tile = bingoData.tiles[index];
+                const displayName = tile.items.length > 0 ? tile.items[0] : 'None';
+                const allItems = tile.items.length > 1
+                    ? `\n\nAny of these items complete this tile:\n• ${tile.items.join('\n• ')}`
+                    : '';
+
+                alert(`Tile ${index + 1}\n\nDisplay: ${displayName}${allItems}\n\nValue: ${tile.value} points\nCompleted by: ${tile.completedBy.join(', ') || 'Nobody yet'}`);
+            }
+        }
+
+        function toggleEditMode() {
+            editMode = !editMode;
+            const btn = document.getElementById('editBtn');
+            btn.textContent = editMode ? '✓ Edit Mode ON' : '📝 Edit Mode';
+            btn.style.background = editMode ? '#ff9800' : '#4CAF50';
+        }
+
+        function openEditModal(index) {
+            currentTileIndex = index;
+            const tile = bingoData.tiles[index];
+            const textarea = document.getElementById('tileItems');
+            textarea.value = tile.items.join('\n');
+            document.getElementById('tileValue').value = tile.value;
+
+            updateItemPreview();
+            textarea.oninput = updateItemPreview;
+
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function updateItemPreview() {
+            const items = document.getElementById('tileItems').value
+                .split('\n')
+                .map(i => i.trim())
+                .filter(i => i.length > 0);
+
+            const previewDiv = document.getElementById('itemPreview');
+
+            if (items.length === 0) {
+                previewDiv.style.display = 'none';
+                return;
+            }
+
+            previewDiv.style.display = 'flex';
+
+            if (items.length === 1) {
+                // Single item - show it
+                previewDiv.innerHTML = `
+                    <div class="item-preview-item">
+                        <img id="preview-img-0" alt="${items[0]}">
+                        <span>${items[0]}</span>
+                    </div>
+                `;
+            } else {
+                // Multiple items - show first as main display, list others
+                previewDiv.innerHTML = `
+                    <div class="item-preview-item">
+                        <img id="preview-img-0" alt="${items[0]}">
+                        <span><strong>${items[0]}</strong> (Display)</span>
+                    </div>
+                    <div style="flex-basis: 100%; height: 0;"></div>
+                    <div style="font-size: 11px; color: #666; padding: 5px; width: 100%;">
+                        <strong>Also triggers on:</strong> ${items.slice(1).join(', ')}
+                    </div>
+                `;
+            }
+
+            // Load preview image for first item
+            const img = document.getElementById('preview-img-0');
+            if (img) {
+                loadItemImage(img, items[0]);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+
+        function saveTile() {
+            const items = document.getElementById('tileItems').value
+                .split('\n')
+                .map(i => i.trim())
+                .filter(i => i.length > 0);
+            const value = parseInt(document.getElementById('tileValue').value) || 10;
+
+            bingoData.tiles[currentTileIndex].items = items;
+            bingoData.tiles[currentTileIndex].value = value;
+
+            closeModal();
+            renderBoard();
+        }
+
+        function openBonusConfig() {
+            // Load current values
+            for (let i = 0; i < 5; i++) {
+                document.getElementById(`row${i}`).value = bingoData.lineBonuses.rows[i];
+                document.getElementById(`col${i}`).value = bingoData.lineBonuses.cols[i];
+            }
+            document.getElementById('diag0').value = bingoData.lineBonuses.diags[0];
+            document.getElementById('diag1').value = bingoData.lineBonuses.diags[1];
+
+            document.getElementById('bonusModal').classList.add('active');
+        }
+
+        function closeBonusModal() {
+            document.getElementById('bonusModal').classList.remove('active');
+        }
+
+        function saveBonusConfig() {
+            bingoData.lineBonuses = {
+                rows: [],
+                cols: [],
+                diags: []
+            };
+
+            for (let i = 0; i < 5; i++) {
+                bingoData.lineBonuses.rows.push(parseInt(document.getElementById(`row${i}`).value) || 0);
+                bingoData.lineBonuses.cols.push(parseInt(document.getElementById(`col${i}`).value) || 0);
+            }
+            bingoData.lineBonuses.diags.push(parseInt(document.getElementById('diag0').value) || 0);
+            bingoData.lineBonuses.diags.push(parseInt(document.getElementById('diag1').value) || 0);
+
+            closeBonusModal();
+            saveData();
+            updatePlayerStats();
+        }
+
+        function clearBoard() {
+            if (confirm('Clear all tiles and player progress?')) {
+                bingoData = {
+                    tiles: [],
+                    completions: {},
+                    lineBonuses: {
+                        rows: [50, 50, 50, 50, 50],
+                        cols: [50, 50, 50, 50, 50],
+                        diags: [100, 100]
+                    }
+                };
+                for (let i = 0; i < 25; i++) {
+                    bingoData.tiles.push({
+                        items: [],
+                        value: 10,
+                        completedBy: []
+                    });
+                }
+                renderBoard();
+                updatePlayerStats();
+            }
+        }
+
+        function exportBoard() {
+            const dataStr = JSON.stringify(bingoData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'bingo-board.json';
+            link.click();
+        }
+
+        function importBoard() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        bingoData = JSON.parse(event.target.result);
+                        if (!bingoData.lineBonuses) {
+                            bingoData.lineBonuses = {
+                                rows: [50, 50, 50, 50, 50],
+                                cols: [50, 50, 50, 50, 50],
+                                diags: [100, 100]
+                            };
+                        }
+                        renderBoard();
+                        updatePlayerStats();
+                        alert('Board imported successfully!');
+                    } catch (err) {
+                        alert('Error importing board: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+
+        async function saveData() {
+            console.log('💾 Saving data...');
+            localStorage.setItem('bingoData', JSON.stringify(bingoData));
+
+            try {
+                const response = await fetch(`${API_URL}/update`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(bingoData)
+                });
+
+                if (response.ok) {
+                    console.log('✅ Synced to API successfully');
+                } else {
+                    console.log('⚠️  API sync failed with status:', response.status);
+                }
+            } catch (err) {
+                console.log('⚠️  Could not sync to API:', err.message);
+            }
+        }
+
+        function checkLineCompletion(player) {
+            const completions = {
+                rows: [],
+                cols: [],
+                diagonals: []
+            };
+
+            // Check rows
+            for (let row = 0; row < 5; row++) {
+                let complete = true;
+                for (let col = 0; col < 5; col++) {
+                    const index = row * 5 + col;
+                    if (!bingoData.tiles[index].completedBy.includes(player)) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (complete) completions.rows.push(row);
+            }
+
+            // Check columns
+            for (let col = 0; col < 5; col++) {
+                let complete = true;
+                for (let row = 0; row < 5; row++) {
+                    const index = row * 5 + col;
+                    if (!bingoData.tiles[index].completedBy.includes(player)) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (complete) completions.cols.push(col);
+            }
+
+            // Check diagonals
+            let diag1 = true, diag2 = true;
+            for (let i = 0; i < 5; i++) {
+                if (!bingoData.tiles[i * 5 + i].completedBy.includes(player)) diag1 = false;
+                if (!bingoData.tiles[i * 5 + (4 - i)].completedBy.includes(player)) diag2 = false;
+            }
+            if (diag1) completions.diagonals.push(0);
+            if (diag2) completions.diagonals.push(1);
+
+            return completions;
+        }
+
+        function updatePlayerStats() {
+            const statsDiv = document.getElementById('playerStats');
+            const playerScores = {};
+
+            // Calculate base scores from tiles
+            bingoData.tiles.forEach(tile => {
+                tile.completedBy.forEach(player => {
+                    if (!playerScores[player]) {
+                        playerScores[player] = {
+                            tiles: 0,
+                            points: 0,
+                            lineBonus: 0,
+                            lines: {rows: [], cols: [], diagonals: []}
+                        };
+                    }
+                    playerScores[player].tiles++;
+                    playerScores[player].points += tile.value;
+                });
+            });
+
+            // Calculate line bonuses
+            Object.keys(playerScores).forEach(player => {
+                const lines = checkLineCompletion(player);
+                playerScores[player].lines = lines;
+
+                let totalBonus = 0;
+                lines.rows.forEach(rowIdx => {
+                    totalBonus += bingoData.lineBonuses.rows[rowIdx];
+                });
+                lines.cols.forEach(colIdx => {
+                    totalBonus += bingoData.lineBonuses.cols[colIdx];
+                });
+                lines.diagonals.forEach(diagIdx => {
+                    totalBonus += bingoData.lineBonuses.diags[diagIdx];
+                });
+
+                playerScores[player].lineBonus = totalBonus;
+                playerScores[player].points += totalBonus;
+            });
+
+            if (Object.keys(playerScores).length === 0) {
+                statsDiv.innerHTML = '<div class="no-players">No drops recorded yet!</div>';
+                return;
+            }
+
+            // Sort by points
+            const sorted = Object.entries(playerScores).sort((a, b) => b[1].points - a[1].points);
+
+            const rankEmojis = ['🥇', '🥈', '🥉'];
+
+            statsDiv.innerHTML = sorted.map(([player, stats], index) => {
+                const rankClass = index < 3 ? `rank-${index + 1}` : '';
+                const rankEmoji = index < 3 ? rankEmojis[index] : '';
+
+                const lineText = [];
+                if (stats.lines.rows.length > 0) lineText.push(`${stats.lines.rows.length} row${stats.lines.rows.length > 1 ? 's' : ''}`);
+                if (stats.lines.cols.length > 0) lineText.push(`${stats.lines.cols.length} col${stats.lines.cols.length > 1 ? 's' : ''}`);
+                if (stats.lines.diagonals.length > 0) lineText.push(`${stats.lines.diagonals.length} diagonal${stats.lines.diagonals.length > 1 ? 's' : ''}`);
+
+                return `
+                    <div class="player-card ${rankClass}">
+                        ${rankEmoji ? `<div class="player-rank">${rankEmoji}</div>` : ''}
+                        <div class="player-name">${player}</div>
+                        <div class="player-score">${stats.points.toLocaleString()} points</div>
+                        <div class="player-stats">
+                            ${stats.tiles} tiles completed
+                            ${stats.lineBonus > 0 ? `<span class="bonus-badge">+${stats.lineBonus} bonus</span>` : ''}
+                        </div>
+                        ${lineText.length > 0 ? `<div class="player-stats" style="margin-top: 5px;">✓ ${lineText.join(', ')}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showApiInfo() {
+            document.getElementById('apiUrl').value = `${API_URL}/drop`;
+            document.getElementById('apiModal').classList.add('active');
+        }
+
+        function closeApiModal() {
+            document.getElementById('apiModal').classList.remove('active');
+        }
+
+        async function viewDebugInfo() {
+            console.log('=== CURRENT BINGO DATA ===');
+            console.log(JSON.stringify(bingoData, null, 2));
+
+            let debugText = '=== TILES WITH ITEMS ===\n\n';
+            bingoData.tiles.forEach((tile, idx) => {
+                if (tile.items.length > 0) {
+                    debugText += `Tile ${idx + 1}:\n`;
+                    debugText += `  Display: ${tile.items[0]}\n`;
+                    if (tile.items.length > 1) {
+                        debugText += `  Also matches: ${tile.items.slice(1).join(', ')}\n`;
+                    }
+                    debugText += `  Completed By: ${tile.completedBy.join(', ') || 'Nobody'}\n`;
+                    debugText += `  Value: ${tile.value} points\n\n`;
+                }
+            });
+
+            alert(debugText + '\nFull data logged to browser console (F12)');
+        }
+
+        // Initialize
+        (async () => {
+            await initBoard();
+        })();
+    </script>
+</body>
+</html>
