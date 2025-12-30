@@ -429,12 +429,12 @@
                 <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
                 <button onclick="exportBoard()" class="secondary">💾 Export</button>
                 <button onclick="importBoard()" class="secondary">📥 Import</button>
+                <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
                 <button onclick="logout()" class="danger">🚪 Logout</button>
             </div>
 
             <!-- Public Controls -->
             <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
-            <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
 
             <!-- Login Button (Shows when not admin) -->
             <button onclick="openLoginModal()" id="loginBtn" class="secondary" style="margin-left: auto;">🔐 Admin Login</button>
@@ -496,11 +496,18 @@
     <div class="modal" id="editModal">
         <div class="modal-content">
             <h2>Edit Tile</h2>
+
+            <label>Display Title (shown on tile):</label>
+            <input type="text" id="tileDisplayTitle" placeholder="e.g., Any Bandos Piece, Rare Drop, etc." style="margin-bottom: 15px;">
+            <p style="font-size: 12px; color: #999; margin-bottom: 15px;">
+                Leave blank to show the first item name as the title
+            </p>
+
             <label>Item Name(s) - One per line:</label>
             <p style="font-size: 12px; color: #999; margin-bottom: 10px;">
-                <strong>First item</strong> = Display name & image<br>
+                <strong>First item</strong> = Used for the tile image<br>
                 <strong>All items</strong> = Can trigger tile completion<br>
-                <em>Example: List "Bandos chestplate" first, then add "Bandos tassets" and "Bandos boots" to make ANY Bandos armor complete this tile.</em>
+                <em>Example: List "Bandos chestplate" first (for image), then add "Bandos tassets" and "Bandos boots" to make ANY Bandos armor complete this tile.</em>
             </p>
             <textarea id="tileItems" placeholder="Bandos chestplate
 Bandos tassets
@@ -703,6 +710,13 @@ Dragon warhammer"></textarea>
                     if (!bingoData.lineBonuses) {
                         bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                     }
+
+                    // Ensure all tiles have displayTitle field (backwards compatibility)
+                    bingoData.tiles.forEach(tile => {
+                        if (!tile.hasOwnProperty('displayTitle')) {
+                            tile.displayTitle = '';
+                        }
+                    });
                 } else {
                     console.log('❌ API returned error status');
                     throw new Error('API error');
@@ -723,6 +737,12 @@ Dragon warhammer"></textarea>
                     if (bingoData.adminPassword) {
                         delete bingoData.adminPassword;
                     }
+                    // Ensure all tiles have displayTitle field (backwards compatibility)
+                    bingoData.tiles.forEach(tile => {
+                        if (!tile.hasOwnProperty('displayTitle')) {
+                            tile.displayTitle = '';
+                        }
+                    });
                 } else {
                     console.log('📝 Creating new empty board');
                     bingoData.boardSize = 5;
@@ -731,7 +751,8 @@ Dragon warhammer"></textarea>
                         bingoData.tiles.push({
                             items: [],
                             value: 10,
-                            completedBy: []
+                            completedBy: [],
+                            displayTitle: ''
                         });
                     }
                     bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
@@ -780,6 +801,13 @@ Dragon warhammer"></textarea>
                             bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                         }
 
+                        // Ensure all tiles have displayTitle field (backwards compatibility)
+                        bingoData.tiles.forEach(tile => {
+                            if (!tile.hasOwnProperty('displayTitle')) {
+                                tile.displayTitle = '';
+                            }
+                        });
+
                         // Update CSS variable
                         document.documentElement.style.setProperty('--board-size', bingoData.boardSize);
 
@@ -812,8 +840,8 @@ Dragon warhammer"></textarea>
                     tileEl.classList.add('completed');
                 }
 
-                // Display only the first item as the tile name
-                const displayName = tile.items.length > 0 ? tile.items[0] : 'Empty Tile';
+                // Use custom display title if set, otherwise use first item name
+                const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
                 const players = tile.completedBy.length > 0 ? `✓ ${tile.completedBy.join(', ')}` : '';
 
                 // Create image only for the first item (display item)
@@ -862,12 +890,12 @@ Dragon warhammer"></textarea>
                 openEditModal(index);
             } else {
                 const tile = bingoData.tiles[index];
-                const displayName = tile.items.length > 0 ? tile.items[0] : 'None';
-                const allItems = tile.items.length > 1
-                    ? `\n\nAny of these items complete this tile:\n• ${tile.items.join('\n• ')}`
-                    : '';
+                const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'None');
+                const allItems = tile.items.length > 0
+                    ? `\n\nItems that trigger this tile:\n• ${tile.items.join('\n• ')}`
+                    : '\n\nNo items set';
 
-                alert(`Tile ${index + 1}\n\nDisplay: ${displayName}${allItems}\n\nValue: ${tile.value} points\nCompleted by: ${tile.completedBy.join(', ') || 'Nobody yet'}`);
+                alert(`Tile ${index + 1}\n\nTitle: ${displayName}${allItems}\n\nValue: ${tile.value} points\nCompleted by: ${tile.completedBy.join(', ') || 'Nobody yet'}`);
             }
         }
 
@@ -949,9 +977,11 @@ Dragon warhammer"></textarea>
                 .map(i => i.trim())
                 .filter(i => i.length > 0);
             const value = parseInt(document.getElementById('tileValue').value) || 10;
+            const displayTitle = document.getElementById('tileDisplayTitle').value.trim();
 
             bingoData.tiles[currentTileIndex].items = items;
             bingoData.tiles[currentTileIndex].value = value;
+            bingoData.tiles[currentTileIndex].displayTitle = displayTitle;
 
             closeModal();
             renderBoard();
@@ -986,7 +1016,8 @@ Dragon warhammer"></textarea>
                     bingoData.tiles.push({
                         items: [],
                         value: 10,
-                        completedBy: []
+                        completedBy: [],
+                        displayTitle: ''
                     });
                 }
 
@@ -1110,7 +1141,8 @@ Dragon warhammer"></textarea>
                     bingoData.tiles.push({
                         items: [],
                         value: 10,
-                        completedBy: []
+                        completedBy: [],
+                        displayTitle: ''
                     });
                 }
                 renderBoard();
@@ -1322,7 +1354,10 @@ Dragon warhammer"></textarea>
             bingoData.tiles.forEach((tile, idx) => {
                 if (tile.items.length > 0) {
                     debugText += `Tile ${idx + 1}:\n`;
-                    debugText += `  Display: ${tile.items[0]}\n`;
+                    if (tile.displayTitle) {
+                        debugText += `  Title: ${tile.displayTitle}\n`;
+                    }
+                    debugText += `  Display Image: ${tile.items[0]}\n`;
                     if (tile.items.length > 1) {
                         debugText += `  Also matches: ${tile.items.slice(1).join(', ')}\n`;
                     }
