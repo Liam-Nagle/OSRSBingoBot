@@ -302,7 +302,10 @@ def parse_drop_embed(embed, message):
             drop_info['rarity'] = field_value
 
     if not drop_info['items'] and embed.description:
-        item_match = re.search(r'has added \[(.+?)\] to their collection', embed.description)
+        # Collection Log format can be either:
+        # - "PlayerName has added [Item Name] to their collection"
+        # - "PlayerName has added [Item Name](wiki_url) to their collection"
+        item_match = re.search(r'has added \[(.+?)\](?:\(.+?\))? to their collection', embed.description)
         if item_match:
             item_name = item_match.group(1).strip()
             drop_info['items'].append({
@@ -311,6 +314,7 @@ def parse_drop_embed(embed, message):
                 'value': 'Collection Log',
                 'value_numeric': 0
             })
+            print(f"   ✅ Extracted Collection Log item: {item_name}")
         else:
             lines = embed.description.split('\n')
             for line in lines:
@@ -449,15 +453,6 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                     if drop_data:
                         drop_data['timestamp'] = message.created_at.isoformat()
 
-                        # Debug logging
-                        drop_type_label = "Collection Log" if drop_data[
-                                                                  'drop_type'] == 'collection_log' else "Loot Drop"
-                        print(f"📦 Found {drop_type_label}: {drop_data['player']} - Items: {len(drop_data['items'])}")
-
-                        if not drop_data['items']:
-                            print(
-                                f"   ⚠️ No items extracted! Description: {embed.description[:100] if embed.description else 'None'}")
-
                         if drop_data['player'] and drop_data['items']:
                             for item in drop_data['items']:
                                 success, is_dup = send_to_history_only(
@@ -474,8 +469,6 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                                     duplicates += 1
 
                             await asyncio.sleep(0.1)
-                        else:
-                            print(f"   ❌ Skipped - Missing player or items")
 
         summary = f"✅ **History Import Complete!**\n"
         summary += f"📥 Imported: {imported_count} drops\n"
