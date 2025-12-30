@@ -37,6 +37,11 @@
             localStorage.setItem('lastViewedPlayer', currentPlayer || '');
             renderBoard();
             updateFavoriteButton();
+
+            // Refresh bonus overlay if it's visible
+            if (bonusOverlayVisible) {
+                showBonusOverlay();
+            }
         }
 
         function toggleFavorite() {
@@ -1412,6 +1417,114 @@
                 if (chart) chart.destroy();
             });
             analyticsCharts = {};
+        }
+
+        // Bonus Overlay Toggle
+        let bonusOverlayVisible = false;
+
+        function toggleBonusOverlay() {
+            bonusOverlayVisible = !bonusOverlayVisible;
+            const btn = document.getElementById('bonusToggleBtn');
+
+            if (bonusOverlayVisible) {
+                btn.textContent = '🎁 Hide Bonuses';
+                btn.style.background = 'linear-gradient(135deg, #FF8C00 0%, #FF7000 100%)';
+                showBonusOverlay();
+            } else {
+                btn.textContent = '🎁 Show Bonuses';
+                btn.style.background = 'linear-gradient(135deg, #2196F3 0%, #0b7dda 100%)';
+                hideBonusOverlay();
+            }
+        }
+
+        function showBonusOverlay() {
+            const board = document.getElementById('bingoBoard');
+            const boardContainer = document.querySelector('.board-container');
+
+            if (!board || !bingoData.lineBonuses) return;
+
+            // Remove any existing overlay
+            hideBonusOverlay();
+
+            const size = bingoData.boardSize || 5;
+            const bonuses = bingoData.lineBonuses;
+
+            // Create main overlay container
+            const overlayContainer = document.createElement('div');
+            overlayContainer.id = 'bonusOverlay';
+            overlayContainer.className = 'bonus-overlay-container';
+            overlayContainer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+            `;
+
+            // Row bonuses (right side)
+            const rowContainer = document.createElement('div');
+            rowContainer.className = 'bonus-overlay-row';
+
+            for (let i = 0; i < size; i++) {
+                const isComplete = currentPlayer ? checkRowComplete(currentPlayer, i) : false;
+                const bonusDiv = document.createElement('div');
+                bonusDiv.className = 'bonus-overlay-item' + (isComplete ? ' completed' : '');
+                bonusDiv.innerHTML = `+${bonuses.rows[i]}`;
+                bonusDiv.title = `Row ${i + 1} bonus` + (isComplete ? ' (Completed!)' : '');
+                rowContainer.appendChild(bonusDiv);
+            }
+            overlayContainer.appendChild(rowContainer);
+
+            // Column bonuses (bottom)
+            const colContainer = document.createElement('div');
+            colContainer.className = 'bonus-overlay-col';
+
+            for (let i = 0; i < size; i++) {
+                const isComplete = currentPlayer ? checkColComplete(currentPlayer, i) : false;
+                const bonusDiv = document.createElement('div');
+                bonusDiv.className = 'bonus-overlay-item' + (isComplete ? ' completed' : '');
+                bonusDiv.innerHTML = `+${bonuses.cols[i]}`;
+                bonusDiv.title = `Column ${i + 1} bonus` + (isComplete ? ' (Completed!)' : '');
+                colContainer.appendChild(bonusDiv);
+            }
+            overlayContainer.appendChild(colContainer);
+
+            // Diagonal bonuses (corners)
+            const diag1Complete = currentPlayer ? checkDiagonalComplete(currentPlayer, 0) : false;
+            const diag1Div = document.createElement('div');
+            diag1Div.className = 'bonus-overlay-diag top-left' + (diag1Complete ? ' completed' : '');
+            diag1Div.innerHTML = `↘ +${bonuses.diags[0]}`;
+            diag1Div.title = 'Diagonal bonus (top-left to bottom-right)' + (diag1Complete ? ' (Completed!)' : '');
+            overlayContainer.appendChild(diag1Div);
+
+            const diag2Complete = currentPlayer ? checkDiagonalComplete(currentPlayer, 1) : false;
+            const diag2Div = document.createElement('div');
+            diag2Div.className = 'bonus-overlay-diag top-right' + (diag2Complete ? ' completed' : '');
+            diag2Div.innerHTML = `↙ +${bonuses.diags[1]}`;
+            diag2Div.title = 'Diagonal bonus (top-right to bottom-left)' + (diag2Complete ? ' (Completed!)' : '');
+            overlayContainer.appendChild(diag2Div);
+
+            board.appendChild(overlayContainer);
+
+            // Add extra padding to board container so bonuses don't get cut off
+            boardContainer.style.paddingRight = '90px';
+            boardContainer.style.paddingBottom = '70px';
+        }
+
+        function hideBonusOverlay() {
+            const overlay = document.getElementById('bonusOverlay');
+            const boardContainer = document.querySelector('.board-container');
+
+            if (overlay) {
+                overlay.remove();
+            }
+
+            // Remove extra padding
+            if (boardContainer) {
+                boardContainer.style.paddingRight = '';
+                boardContainer.style.paddingBottom = '';
+            }
         }
 
         async function loadAnalytics() {

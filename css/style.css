@@ -716,6 +716,112 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
 
+        /* Bonus Overlay Styles */
+        .bonus-overlay-container {
+            position: absolute;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .bonus-overlay-row {
+            position: absolute;
+            right: -75px;
+            top: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            gap: 10px;
+            padding: 5px 0;
+        }
+
+        .bonus-overlay-col {
+            position: absolute;
+            bottom: -60px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            gap: 10px;
+            padding: 0 5px;
+        }
+
+        .bonus-overlay-diag {
+            position: absolute;
+            padding: 8px 12px;
+            background: rgba(205, 139, 45, 0.95);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 13px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            animation: pulse-soft 2s ease-in-out infinite;
+        }
+
+        .bonus-overlay-diag.top-left {
+            top: -10px;
+            left: -10px;
+        }
+
+        .bonus-overlay-diag.top-right {
+            top: -10px;
+            right: -10px;
+        }
+
+        .bonus-overlay-diag.completed {
+            background: rgba(76, 175, 80, 0.95);
+            color: white;
+            border-color: #2d7a2f;
+        }
+
+        .bonus-overlay-item {
+            background: rgba(205, 139, 45, 0.95);
+            color: #2c1810;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            border: 2px solid #8B6914;
+            text-align: center;
+            min-width: 50px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            animation: pulse-soft 2s ease-in-out infinite;
+        }
+
+        .bonus-overlay-item.completed {
+            background: rgba(76, 175, 80, 0.95);
+            color: white;
+            border-color: #2d7a2f;
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-soft {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.95;
+            }
+            50% {
+                transform: scale(1.02);
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 6px 12px rgba(76, 175, 80, 0.5);
+            }
+        }
+
+        #bingoBoard {
+            position: relative;
+        }
+
         /* Line Bonus Display */
         .bonus-display {
             background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
