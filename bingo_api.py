@@ -174,19 +174,50 @@ def get_bingo():
 
 @app.route('/history', methods=['GET'])
 def get_history():
-    """Get drop history"""
+    """Get drop history with date filtering"""
     if history_collection is None:
         return jsonify({'error': 'Database not available'}), 503
 
     try:
         # Get query parameters
-        limit = int(request.args.get('limit', 100))
+        limit = int(request.args.get('limit', 1000))
         player = request.args.get('player', None)
+        start_date = request.args.get('start_date', None)
+        end_date = request.args.get('end_date', None)
 
         # Build query
         query = {}
+
+        # Player filter
         if player:
             query['player'] = player
+
+        # Date range filter
+        if start_date or end_date:
+            query['timestamp'] = {}
+
+            if start_date:
+                try:
+                    # Parse ISO format date string
+                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                    query['timestamp']['$gte'] = start_dt
+                    print(f"🔍 Filtering from: {start_dt}")
+                except ValueError as e:
+                    print(f"⚠️  Invalid start_date format: {e}")
+
+            if end_date:
+                try:
+                    # Parse ISO format date string and add 1 day to include the entire end date
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                    # Add 23:59:59 to include the entire day
+                    from datetime import timedelta
+                    end_dt = end_dt + timedelta(days=1, seconds=-1)
+                    query['timestamp']['$lte'] = end_dt
+                    print(f"🔍 Filtering until: {end_dt}")
+                except ValueError as e:
+                    print(f"⚠️  Invalid end_date format: {e}")
+
+        print(f"🔍 Query: {query}")
 
         # Fetch history sorted by most recent first
         history = list(history_collection.find(

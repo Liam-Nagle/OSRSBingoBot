@@ -848,18 +848,76 @@ Dragon warhammer"></textarea>
 
     <!-- Drop History Modal -->
     <div class="modal" id="historyModal">
-        <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-content" style="max-width: 1000px;">
             <h2>📜 Drop History</h2>
             <p style="color: #666; margin-bottom: 20px;">Recent drops recorded from Discord</p>
 
-            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
-                <label style="font-weight: bold;">Filter by Player:</label>
-                <select id="historyPlayerFilter" onchange="loadHistory()" style="padding: 8px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold;">
-                    <option value="">All Players</option>
-                </select>
-                <button onclick="loadHistory()" class="btn-save" style="padding: 8px 16px; margin-left: auto;">🔄 Refresh</button>
+            <!-- Filter Controls -->
+            <div style="background: rgba(255,255,255,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #8B6914;">
+                <!-- Player Filter -->
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap;">
+                    <label style="font-weight: bold; color: #2c1810;">Player:</label>
+                    <select id="historyPlayerFilter" onchange="loadHistory()" style="padding: 8px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold; min-width: 150px;">
+                        <option value="">All Players</option>
+                    </select>
+                </div>
+
+                <!-- Date Quick Filters -->
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight: bold; color: #2c1810; display: block; margin-bottom: 8px;">Quick Filters:</label>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button onclick="setDateFilter('today')" class="date-filter-btn" data-filter="today">📅 Today</button>
+                        <button onclick="setDateFilter('week')" class="date-filter-btn" data-filter="week">📆 Past Week</button>
+                        <button onclick="setDateFilter('month')" class="date-filter-btn" data-filter="month">🗓️ Past Month</button>
+                        <button onclick="setDateFilter('all')" class="date-filter-btn active" data-filter="all">🌍 All Time</button>
+                    </div>
+                </div>
+
+                <!-- Custom Date Range -->
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <label style="font-weight: bold; color: #2c1810;">Custom Range:</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <label style="font-size: 12px; color: #2c1810;">From:</label>
+                        <input type="date" id="startDate" onchange="setDateFilter('custom')" style="padding: 6px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold;">
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <label style="font-size: 12px; color: #2c1810;">To:</label>
+                        <input type="date" id="endDate" onchange="setDateFilter('custom')" style="padding: 6px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold;">
+                    </div>
+                    <button onclick="clearDateFilter()" style="padding: 6px 12px; background: linear-gradient(135deg, #8b8b8b 0%, #666666 100%); color: white; border: 2px solid #555; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: bold;">Clear</button>
+                </div>
+
+                <!-- Specific Month Selector -->
+                <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+                    <label style="font-weight: bold; color: #2c1810;">Specific Month:</label>
+                    <select id="monthSelect" onchange="setSpecificMonth()" style="padding: 6px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold;">
+                        <option value="">Select Month...</option>
+                        <option value="01">January</option>
+                        <option value="02">February</option>
+                        <option value="03">March</option>
+                        <option value="04">April</option>
+                        <option value="05">May</option>
+                        <option value="06">June</option>
+                        <option value="07">July</option>
+                        <option value="08">August</option>
+                        <option value="09">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                    <select id="yearSelect" onchange="setSpecificMonth()" style="padding: 6px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold;">
+                        <option value="">Select Year...</option>
+                    </select>
+                </div>
+
+                <!-- Refresh Button -->
+                <div style="margin-top: 15px;">
+                    <button onclick="loadHistory()" style="padding: 10px 20px; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; border: 2px solid #2d7a2f; border-radius: 5px; cursor: pointer; font-weight: bold;">🔄 Refresh</button>
+                    <span id="historyCount" style="margin-left: 15px; color: #2c1810; font-weight: bold;"></span>
+                </div>
             </div>
 
+            <!-- History Content -->
             <div id="historyContent" style="max-height: 500px; overflow-y: auto; background: rgba(255,255,255,0.5); border-radius: 5px; padding: 15px; border: 2px solid #8B6914;">
                 <div style="text-align: center; color: #666; padding: 40px;">Loading history...</div>
             </div>
@@ -869,6 +927,32 @@ Dragon warhammer"></textarea>
             </div>
         </div>
     </div>
+
+    <style>
+        .date-filter-btn {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #6b4423 0%, #4a2c1a 100%);
+            color: #f4e4c1;
+            border: 2px solid #8B6914;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .date-filter-btn:hover {
+            background: linear-gradient(135deg, #7d5229 0%, #5c3d2e 100%);
+            transform: translateY(-2px);
+        }
+
+        .date-filter-btn.active {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border-color: #FFD700;
+            box-shadow: 0 0 10px rgba(205,139,45,0.5);
+        }
+    </style>
 
     <script>
         let editMode = false;
@@ -1818,12 +1902,108 @@ Dragon warhammer"></textarea>
 
         function openHistoryModal() {
             document.getElementById('historyModal').classList.add('active');
-            loadHistory();
+            populateYearSelector();
+            setDateFilter('all'); // Default to all time
             updateHistoryPlayerFilter();
         }
 
         function closeHistoryModal() {
             document.getElementById('historyModal').classList.remove('active');
+        }
+
+        function populateYearSelector() {
+            const yearSelect = document.getElementById('yearSelect');
+            const currentYear = new Date().getFullYear();
+
+            yearSelect.innerHTML = '<option value="">Select Year...</option>';
+
+            // Add years from 2020 to current year
+            for (let year = currentYear; year >= 2020; year--) {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                yearSelect.appendChild(option);
+            }
+        }
+
+        function setDateFilter(filter) {
+            const today = new Date();
+            const startDateInput = document.getElementById('startDate');
+            const endDateInput = document.getElementById('endDate');
+            const monthSelect = document.getElementById('monthSelect');
+            const yearSelect = document.getElementById('yearSelect');
+
+            // Update active button
+            document.querySelectorAll('.date-filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            if (filter !== 'custom') {
+                const activeBtn = document.querySelector(`[data-filter="${filter}"]`);
+                if (activeBtn) activeBtn.classList.add('active');
+            }
+
+            // Reset month selector
+            monthSelect.value = '';
+            yearSelect.value = '';
+
+            switch(filter) {
+                case 'today':
+                    const todayStr = today.toISOString().split('T')[0];
+                    startDateInput.value = todayStr;
+                    endDateInput.value = todayStr;
+                    break;
+
+                case 'week':
+                    const weekAgo = new Date(today);
+                    weekAgo.setDate(today.getDate() - 7);
+                    startDateInput.value = weekAgo.toISOString().split('T')[0];
+                    endDateInput.value = today.toISOString().split('T')[0];
+                    break;
+
+                case 'month':
+                    const monthAgo = new Date(today);
+                    monthAgo.setMonth(today.getMonth() - 1);
+                    startDateInput.value = monthAgo.toISOString().split('T')[0];
+                    endDateInput.value = today.toISOString().split('T')[0];
+                    break;
+
+                case 'all':
+                    startDateInput.value = '';
+                    endDateInput.value = '';
+                    break;
+
+                case 'custom':
+                    // Just mark as custom, don't change dates
+                    break;
+            }
+
+            loadHistory();
+        }
+
+        function setSpecificMonth() {
+            const month = document.getElementById('monthSelect').value;
+            const year = document.getElementById('yearSelect').value;
+
+            if (month && year) {
+                // Set date range to cover the entire month
+                const startDate = new Date(year, parseInt(month) - 1, 1);
+                const endDate = new Date(year, parseInt(month), 0); // Last day of month
+
+                document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+                document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+
+                // Mark custom as active
+                setDateFilter('custom');
+            }
+        }
+
+        function clearDateFilter() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('monthSelect').value = '';
+            document.getElementById('yearSelect').value = '';
+            setDateFilter('all');
         }
 
         function updateHistoryPlayerFilter() {
@@ -1855,15 +2035,30 @@ Dragon warhammer"></textarea>
 
         async function loadHistory() {
             const contentDiv = document.getElementById('historyContent');
+            const countSpan = document.getElementById('historyCount');
             const playerFilter = document.getElementById('historyPlayerFilter').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
 
             contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">Loading history...</div>';
+            countSpan.textContent = '';
 
             try {
-                let url = `${API_URL}/history?limit=100`;
+                let url = `${API_URL}/history?limit=1000`;
+
                 if (playerFilter) {
                     url += `&player=${encodeURIComponent(playerFilter)}`;
                 }
+
+                if (startDate) {
+                    url += `&start_date=${startDate}T00:00:00Z`;
+                }
+
+                if (endDate) {
+                    url += `&end_date=${endDate}T23:59:59Z`;
+                }
+
+                console.log('Fetching history:', url);
 
                 const response = await fetch(url);
                 if (!response.ok) {
@@ -1873,9 +2068,13 @@ Dragon warhammer"></textarea>
                 const data = await response.json();
 
                 if (!data.success || data.history.length === 0) {
-                    contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No drops recorded yet!</div>';
+                    contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No drops found for this time period!</div>';
+                    countSpan.textContent = '(0 drops)';
                     return;
                 }
+
+                // Update count
+                countSpan.textContent = `(${data.count} drop${data.count !== 1 ? 's' : ''})`;
 
                 // Render history
                 let html = '';
@@ -1914,6 +2113,7 @@ Dragon warhammer"></textarea>
             } catch (error) {
                 console.error('Error loading history:', error);
                 contentDiv.innerHTML = '<div style="text-align: center; color: #8b1a1a; padding: 40px;">❌ Failed to load history. Make sure the API is running.</div>';
+                countSpan.textContent = '';
             }
         }
 
