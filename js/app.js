@@ -610,6 +610,11 @@
             });
 
             saveData();
+
+            // Restore bonus overlay if it was visible
+            if (bonusOverlayVisible) {
+                showBonusOverlay();
+            }
         }
 
         // Simplified check functions that don't break if data is incomplete
