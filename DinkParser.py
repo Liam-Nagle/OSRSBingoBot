@@ -1,3 +1,5 @@
+import os
+
 import discord
 from discord.ext import commands
 import re
@@ -13,7 +15,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Store drops in memory (you can later save to a file or database)
 drops_data = []
 
-# Bingo API Configuration
+# Bingo API Configuration - Updated for Render deployment
 BINGO_API_URL = os.environ.get('BINGO_API_URL', 'http://localhost:5000/drop')
 
 
@@ -294,13 +296,16 @@ async def stats(ctx, player_name: str = None):
 
 # Run the bot
 if __name__ == "__main__":
-    TOKEN = os.environ.get('DISCORD_BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+    TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
+    if not TOKEN:
+        print("❌ ERROR: DISCORD_BOT_TOKEN environment variable not set!")
+        print("Please set it in your Render dashboard environment variables.")
+        exit(1)
 
     print("=" * 50)
     print("🤖 OSRS Bingo Drop Tracker Bot")
     print("=" * 50)
     print(f"Bingo API: {BINGO_API_URL}")
-    print("Make sure the Flask API is running!")
     print("=" * 50)
 
     bot.run(TOKEN)
