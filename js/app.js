@@ -334,6 +334,7 @@
             document.getElementById('adminControls').style.display = 'flex';
             document.getElementById('adminControls').style.gap = '10px';
             document.getElementById('adminControls').style.flexWrap = 'wrap';
+            document.getElementById('adminControls').style.justifyContent = 'center';
             document.getElementById('loginBtn').style.display = 'none';
         }
 

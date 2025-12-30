@@ -40,6 +40,17 @@
                 </div>
             </div>
 
+            <!-- Public Controls - Centered Below -->
+            <div style="flex-basis: 100%; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
+                <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
+                <button onclick="openHistoryModal()" class="secondary">📜 View History</button>
+                <button onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
+                <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
+
+                <!-- Login Button (Shows when not admin) -->
+                <button onclick="openLoginModal()" id="loginBtn" class="secondary">🔐 Admin Login</button>
+            </div>
+
             <!-- Admin Controls (Hidden by default) -->
             <div id="adminControls" style="display: none; flex-basis: 100%; margin-top: 10px;">
                 <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
@@ -52,15 +63,6 @@
                 <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
                 <button onclick="logout()" class="danger">🚪 Logout</button>
             </div>
-
-            <!-- Public Controls -->
-            <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
-            <button onclick="openHistoryModal()" class="secondary">📜 View History</button>
-            <button onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
-            <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
-
-            <!-- Login Button (Shows when not admin) -->
-            <button onclick="openLoginModal()" id="loginBtn" class="secondary" style="margin-left: auto;">🔐 Admin Login</button>
         </div>
 
         <div class="main-content">
