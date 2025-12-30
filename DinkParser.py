@@ -139,7 +139,7 @@ def parse_item_line(item_text):
 @bot.event
 async def on_ready():
     print(f'{bot.user} is now tracking Dink drops!')
-    print('Listening for loot drops...')
+    print('Listening for loot drops and collection log updates...')
 
 
 @bot.event
@@ -156,8 +156,8 @@ async def on_message(message):
 
     embed = message.embeds[0]
 
-    # Check if this is a "Loot Drop" message
-    if embed.title and "Loot Drop" in embed.title:
+    # Check if this is a "Loot Drop" OR "Collection Log" message
+    if embed.title and ("Loot Drop" in embed.title or "Collection Log" in embed.title):
         drop_data = parse_drop_embed(embed, message)
 
         if drop_data:
@@ -184,14 +184,30 @@ def parse_drop_embed(embed, message):
         'source': None,
         'kill_count': None,
         'total_value': None,
-        'rarity': None
+        'rarity': None,
+        'drop_type': None  # 'loot' or 'collection_log'
     }
 
-    # Extract player name from description "Vuxten has looted:"
+    # Determine drop type
+    if embed.title:
+        if "Loot Drop" in embed.title:
+            drop_info['drop_type'] = 'loot'
+        elif "Collection Log" in embed.title:
+            drop_info['drop_type'] = 'collection_log'
+
+    # Extract player name from description
+    # Loot Drop format: "PlayerName has looted:"
+    # Collection Log format: "PlayerName has added [Item] to their collection"
     if embed.description:
+        # Try loot drop format first
         player_match = re.search(r'(.+?)\s+has looted:', embed.description)
         if player_match:
             drop_info['player'] = player_match.group(1).strip()
+        else:
+            # Try collection log format
+            player_match = re.search(r'(.+?)\s+has added', embed.description)
+            if player_match:
+                drop_info['player'] = player_match.group(1).strip()
 
     # Parse embed fields
     for field in embed.fields:
@@ -204,14 +220,18 @@ def parse_drop_embed(embed, message):
             if item:
                 drop_info['items'].append(item)
 
-        # Extract source "From: Brande the Fire Queen"
-        if field_value.startswith('From:'):
-            drop_info['source'] = field_value.replace('From:', '').strip()
+        # Extract source "From: Brande the Fire Queen" or "Source: Tombs of Amascut"
+        if field_value.startswith('From:') or field_name == 'Source':
+            source_text = field_value.replace('From:', '').replace('Source:', '').strip()
+            drop_info['source'] = source_text
 
         # Extract stats
-        if 'Kill Count' in field_name:
+        if 'Kill Count' in field_name or 'Completion Count' in field_name:
             try:
-                drop_info['kill_count'] = int(field_value)
+                # Handle formats like "24" or "351/1692 (20.7%)"
+                count_match = re.search(r'(\d+)', field_value)
+                if count_match:
+                    drop_info['kill_count'] = int(count_match.group(1))
             except:
                 pass
 
@@ -221,17 +241,29 @@ def parse_drop_embed(embed, message):
                 drop_info['total_value'] = field_value
                 drop_info['total_value_numeric'] = parse_value(field_value)
 
-        if 'Item Rarity' in field_name:
+        if 'Item Rarity' in field_name or 'Rank' in field_name:
             drop_info['rarity'] = field_value
 
-    # Sometimes item info is in the description
+    # Sometimes item info is in the description (especially for collection log)
     if not drop_info['items'] and embed.description:
-        lines = embed.description.split('\n')
-        for line in lines:
-            if ('x' in line and '(' in line) or ('x' in line and '[' in line):
-                item = parse_item_line(line)
-                if item:
-                    drop_info['items'].append(item)
+        # Try to extract item from collection log format: "PlayerName has added [Item Name] to their collection"
+        item_match = re.search(r'has added \[(.+?)\] to their collection', embed.description)
+        if item_match:
+            item_name = item_match.group(1).strip()
+            drop_info['items'].append({
+                'quantity': 1,
+                'name': item_name,
+                'value': 'Collection Log',
+                'value_numeric': 0
+            })
+        else:
+            # Check lines for item format
+            lines = embed.description.split('\n')
+            for line in lines:
+                if ('x' in line and '(' in line) or ('x' in line and '[' in line):
+                    item = parse_item_line(line)
+                    if item:
+                        drop_info['items'].append(item)
 
     return drop_info if drop_info['player'] else None
 
@@ -239,11 +271,12 @@ def parse_drop_embed(embed, message):
 def print_drop_info(drop_data):
     """Print the drop information to console"""
     print("\n" + "=" * 50)
-    print(f"🎉 NEW DROP DETECTED!")
+    drop_type = "COLLECTION LOG" if drop_data['drop_type'] == 'collection_log' else "LOOT DROP"
+    print(f"🎉 NEW {drop_type} DETECTED!")
     print(f"Player: {drop_data['player']}")
 
     for item in drop_data['items']:
-        if item['value'] == 'Unknown':
+        if item['value'] == 'Unknown' or item['value'] == 'Collection Log':
             print(f"Item: {item['quantity']}x {item['name']}")
         else:
             print(f"Item: {item['quantity']}x {item['name']} ({item['value']})")
@@ -251,7 +284,8 @@ def print_drop_info(drop_data):
     if drop_data['source']:
         print(f"Source: {drop_data['source']}")
     if drop_data['kill_count']:
-        print(f"Kill Count: {drop_data['kill_count']}")
+        count_label = "Completion Count" if drop_data['drop_type'] == 'collection_log' else "Kill Count"
+        print(f"{count_label}: {drop_data['kill_count']}")
     if drop_data['total_value']:
         print(f"Total Value: {drop_data['total_value']}")
     if drop_data['rarity']:
@@ -295,9 +329,13 @@ async def stats(ctx, player_name: str = None):
 
     total_value = sum(d.get('total_value_numeric', 0) for d in player_drops)
     total_drops = len(player_drops)
+    loot_drops = sum(1 for d in player_drops if d.get('drop_type') == 'loot')
+    collection_logs = sum(1 for d in player_drops if d.get('drop_type') == 'collection_log')
 
     msg = f"📊 **Drop Statistics{' for ' + player_name if player_name else ''}**\n"
     msg += f"Total Drops: {total_drops}\n"
+    msg += f"Loot Drops: {loot_drops}\n"
+    msg += f"Collection Log: {collection_logs}\n"
     msg += f"Total Value: {total_value:,.0f} gp"
 
     await ctx.send(msg)
@@ -315,6 +353,7 @@ if __name__ == "__main__":
     print("🤖 OSRS Bingo Drop Tracker Bot")
     print("=" * 50)
     print(f"Bingo API: {BINGO_API_URL}")
+    print("Tracking: Loot Drops + Collection Log updates")
     print("=" * 50)
 
     bot.run(TOKEN)
