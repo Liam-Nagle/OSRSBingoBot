@@ -195,6 +195,20 @@ Bandos boots
 
 OR for single items:
 Dragon warhammer"></textarea>
+
+            <div style="margin: 15px 0; padding: 15px; background: rgba(255,215,0,0.1); border: 2px solid #8B6914; border-radius: 5px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="requireAllItems" style="width: 20px; height: 20px; cursor: pointer;">
+                    <div>
+                        <strong style="color: #cd8b2d;">🔒 Require ALL items (Multi-Item Requirement)</strong>
+                        <p style="font-size: 11px; color: #666; margin-top: 5px; margin-left: 30px;">
+                            Check this for items like <strong>Abyssal Bludgeon</strong> or <strong>Noxious Halberd</strong> that require collecting multiple pieces.<br>
+                            Players must collect ALL listed items to complete the tile. Progress will be tracked (e.g., "2/3 pieces").
+                        </p>
+                    </div>
+                </label>
+            </div>
+
             <div id="itemPreview" class="item-preview"></div>
             <label>Points:</label>
             <input type="number" id="tileValue" placeholder="10" min="0">

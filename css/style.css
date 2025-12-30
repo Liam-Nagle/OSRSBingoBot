@@ -715,3 +715,58 @@
             padding: 20px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
+
+        /* Line Bonus Display */
+        .bonus-display {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            border: 2px solid #8B6914;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .bonus-display.completed {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .row-bonus {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+        }
+
+        .col-bonus {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 40px;
+            margin-top: 10px;
+        }
+
+        .diag-bonus {
+            position: absolute;
+            z-index: 10;
+        }
+
+        .diag-bonus.top-left {
+            top: -15px;
+            left: -15px;
+        }
+
+        .diag-bonus.top-right {
+            top: -15px;
+            right: -15px;
+        }

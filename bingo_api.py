@@ -288,8 +288,10 @@ def record_drop():
 
         display_name = tile['items'][0] if tile['items'] else 'Unknown'
         all_items = ', '.join(tile['items']) if len(tile['items']) > 1 else tile['items'][0]
+        is_multi_item = 'requiredItems' in tile and len(tile.get('requiredItems', [])) > 1
+
         print(
-            f"   Tile {index + 1}: Display='{display_name}' | Matches=[{all_items}] | Completed by: {tile['completedBy']}")
+            f"   Tile {index + 1}: Display='{display_name}' | Matches=[{all_items}] | Multi-item: {is_multi_item} | Completed by: {tile['completedBy']}")
 
         # Check if item matches any tile items
         for tile_item in tile['items']:
@@ -299,17 +301,55 @@ def record_drop():
             if tile_item_clean == item_name_clean or tile_item_clean in item_name_clean or item_name_clean in tile_item_clean:
                 print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
 
-                if player_name not in tile['completedBy']:
-                    tile['completedBy'].append(player_name)
-                    completed_tiles.append({
-                        'tile': index + 1,
-                        'items': tile['items'],
-                        'value': tile['value']
-                    })
-                    updated = True
-                    print(f"      → Added {player_name} to completedBy list")
+                # Handle multi-item requirement tiles
+                if is_multi_item:
+                    # Initialize itemProgress if not exists
+                    if 'itemProgress' not in tile:
+                        tile['itemProgress'] = {}
+                    if player_name not in tile['itemProgress']:
+                        tile['itemProgress'][player_name] = []
+
+                    # Add item to player's progress if not already there
+                    if tile_item not in tile['itemProgress'][player_name]:
+                        tile['itemProgress'][player_name].append(tile_item)
+                        updated = True
+                        print(
+                            f"      → Added {tile_item!r} to {player_name}'s progress: {len(tile['itemProgress'][player_name])}/{len(tile['requiredItems'])}")
+
+                    # Check if player has collected all required items
+                    required_items = tile['requiredItems']
+                    player_items = tile['itemProgress'][player_name]
+
+                    has_all = all(
+                        any(req_item.strip().lower() == pi.strip().lower() for pi in player_items) for req_item in
+                        required_items)
+
+                    if has_all and player_name not in tile['completedBy']:
+                        tile['completedBy'].append(player_name)
+                        completed_tiles.append({
+                            'tile': index + 1,
+                            'items': tile['items'],
+                            'value': tile['value']
+                        })
+                        print(
+                            f"      → 🎉 {player_name} completed multi-item tile! All {len(required_items)} items collected!")
+                    elif player_name in tile['completedBy']:
+                        print(f"      → {player_name} already completed this tile")
+                    else:
+                        print(f"      → Progress: {len(player_items)}/{len(required_items)} items")
                 else:
-                    print(f"      → {player_name} already completed this tile")
+                    # Regular tile - single item completion
+                    if player_name not in tile['completedBy']:
+                        tile['completedBy'].append(player_name)
+                        completed_tiles.append({
+                            'tile': index + 1,
+                            'items': tile['items'],
+                            'value': tile['value']
+                        })
+                        updated = True
+                        print(f"      → Added {player_name} to completedBy list")
+                    else:
+                        print(f"      → {player_name} already completed this tile")
                 break
 
     # Save to history

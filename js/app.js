@@ -527,15 +527,50 @@
         }
 
         function renderBoard() {
+            const boardContainer = document.querySelector('.board-container');
+            const oldWrapper = document.getElementById('boardWrapper');
+            if (oldWrapper) oldWrapper.remove();
+
+            const wrapper = document.createElement('div');
+            wrapper.id = 'boardWrapper';
+            wrapper.style.cssText = 'display: grid; grid-template-columns: 1fr auto; grid-template-rows: 1fr auto; gap: 10px; align-items: center; position: relative;';
+
             const board = document.getElementById('bingoBoard');
             board.innerHTML = '';
+            board.style.gridColumn = '1';
+            board.style.gridRow = '1';
 
+            const size = bingoData.boardSize;
+
+            // Add diagonal bonuses
+            if (currentPlayer) {
+                const diag1Complete = checkDiagonalComplete(currentPlayer, 0);
+                const diag2Complete = checkDiagonalComplete(currentPlayer, 1);
+
+                const diag1Bonus = document.createElement('div');
+                diag1Bonus.className = 'diag-bonus bonus-display top-left' + (diag1Complete ? ' completed' : '');
+                diag1Bonus.innerHTML = `↘ +${bingoData.lineBonuses.diags[0]}`;
+                diag1Bonus.title = 'Diagonal bonus (top-left to bottom-right)';
+                board.appendChild(diag1Bonus);
+
+                const diag2Bonus = document.createElement('div');
+                diag2Bonus.className = 'diag-bonus bonus-display top-right' + (diag2Complete ? ' completed' : '');
+                diag2Bonus.innerHTML = `↙ +${bingoData.lineBonuses.diags[1]}`;
+                diag2Bonus.title = 'Diagonal bonus (top-right to bottom-left)';
+                board.appendChild(diag2Bonus);
+            }
+
+            // Render tiles
             bingoData.tiles.forEach((tile, index) => {
                 const tileEl = document.createElement('div');
                 tileEl.className = 'bingo-tile';
 
-                if (tile.completedBy.length > 0) {
-                    if (currentPlayer && tile.completedBy.includes(currentPlayer)) {
+                // Check if tile is completed and by whom
+                const isCompleted = tile.completedBy && tile.completedBy.length > 0;
+                const completedByCurrentPlayer = currentPlayer && isCompleted && tile.completedBy.includes(currentPlayer);
+
+                if (isCompleted) {
+                    if (completedByCurrentPlayer) {
                         tileEl.classList.add('completed-by-current');
                     } else if (currentPlayer) {
                         tileEl.classList.add('completed-by-others');
@@ -544,11 +579,24 @@
                     }
                 }
 
-                const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
-                const players = tile.completedBy.length > 0 ? `✓ ${tile.completedBy.join(', ')}` : '';
+                const displayName = tile.displayTitle || (tile.items && tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
+                const players = isCompleted ? `✓ ${tile.completedBy.join(', ')}` : '';
+
+                // Handle multi-item requirements
+                let progressHtml = '';
+                if (tile.requiredItems && tile.requiredItems.length > 1) {
+                    // Multi-item tile
+                    const playerProgress = tile.itemProgress?.[currentPlayer] || [];
+                    const collected = playerProgress.length;
+                    const total = tile.requiredItems.length;
+
+                    if (currentPlayer && collected > 0 && !completedByCurrentPlayer) {
+                        progressHtml = `<div style="font-size: 11px; color: #cd8b2d; margin-top: 5px; font-weight: bold;">📦 ${collected}/${total} pieces</div>`;
+                    }
+                }
 
                 let imagesHtml = '';
-                if (tile.items.length > 0) {
+                if (tile.items && tile.items.length > 0) {
                     const displayItem = tile.items[0];
                     const imgId = `img-${index}`;
                     imagesHtml = `
@@ -558,14 +606,15 @@
                     `;
                 }
 
-                const itemCountHtml = tile.items.length > 1
-                    ? `<div style="font-size: 11px; color: ${tile.completedBy.length > 0 ? 'rgba(255,255,255,0.7)' : '#8B6914'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
+                const itemCountHtml = tile.items && tile.items.length > 1
+                    ? `<div style="font-size: 11px; color: ${isCompleted ? 'rgba(255,255,255,0.7)' : '#8B6914'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
                     : '';
 
                 tileEl.innerHTML = `
                     <div class="tile-content">${displayName}</div>
                     ${imagesHtml}
                     <div class="tile-value">${tile.value} points</div>
+                    ${progressHtml}
                     ${itemCountHtml}
                     ${players ? `<div class="tile-players">${players}</div>` : ''}
                 `;
@@ -573,7 +622,7 @@
                 tileEl.onclick = () => handleTileClick(index);
                 board.appendChild(tileEl);
 
-                if (tile.items.length > 0) {
+                if (tile.items && tile.items.length > 0) {
                     const imgId = `img-${index}`;
                     const img = document.getElementById(imgId);
                     if (img) {
@@ -582,7 +631,88 @@
                 }
             });
 
+            // Add row bonuses (right side)
+            if (currentPlayer) {
+                const rowBonusContainer = document.createElement('div');
+                rowBonusContainer.style.cssText = 'display: grid; grid-template-rows: repeat(' + size + ', 1fr); gap: 10px; grid-column: 2; grid-row: 1;';
+
+                for (let row = 0; row < size; row++) {
+                    const rowComplete = checkRowComplete(currentPlayer, row);
+                    const bonusDiv = document.createElement('div');
+                    bonusDiv.className = 'row-bonus bonus-display' + (rowComplete ? ' completed' : '');
+                    bonusDiv.innerHTML = `+${bingoData.lineBonuses.rows[row]}`;
+                    bonusDiv.title = `Row ${row + 1} bonus`;
+                    rowBonusContainer.appendChild(bonusDiv);
+                }
+
+                wrapper.appendChild(rowBonusContainer);
+            }
+
+            // Add column bonuses (bottom)
+            if (currentPlayer) {
+                const colBonusContainer = document.createElement('div');
+                colBonusContainer.style.cssText = 'display: grid; grid-template-columns: repeat(' + size + ', 1fr); gap: 10px; grid-column: 1; grid-row: 2;';
+
+                for (let col = 0; col < size; col++) {
+                    const colComplete = checkColComplete(currentPlayer, col);
+                    const bonusDiv = document.createElement('div');
+                    bonusDiv.className = 'col-bonus bonus-display' + (colComplete ? ' completed' : '');
+                    bonusDiv.innerHTML = `+${bingoData.lineBonuses.cols[col]}`;
+                    bonusDiv.title = `Column ${col + 1} bonus`;
+                    colBonusContainer.appendChild(bonusDiv);
+                }
+
+                wrapper.appendChild(colBonusContainer);
+            }
+
+            wrapper.insertBefore(board, wrapper.firstChild);
+            boardContainer.appendChild(wrapper);
+
             saveData();
+        }
+
+        function checkRowComplete(player, row) {
+            const size = bingoData.boardSize;
+            for (let col = 0; col < size; col++) {
+                const index = row * size + col;
+                if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function checkColComplete(player, col) {
+            const size = bingoData.boardSize;
+            for (let row = 0; row < size; row++) {
+                const index = row * size + col;
+                if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function checkDiagonalComplete(player, diagIndex) {
+            const size = bingoData.boardSize;
+            if (diagIndex === 0) {
+                // Top-left to bottom-right
+                for (let i = 0; i < size; i++) {
+                    const index = i * size + i;
+                    if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                        return false;
+                    }
+                }
+            } else {
+                // Top-right to bottom-left
+                for (let i = 0; i < size; i++) {
+                    const index = i * size + (size - 1 - i);
+                    if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         function handleTileClick(index) {
@@ -614,9 +744,13 @@
             currentTileIndex = index;
             const tile = bingoData.tiles[index];
             const textarea = document.getElementById('tileItems');
-            textarea.value = tile.items.join('\n');
-            document.getElementById('tileValue').value = tile.value;
+            textarea.value = tile.items ? tile.items.join('\n') : '';
+            document.getElementById('tileValue').value = tile.value || 10;
             document.getElementById('tileDisplayTitle').value = tile.displayTitle || '';
+
+            // Set multi-item requirement checkbox
+            const requireAllCheckbox = document.getElementById('requireAllItems');
+            requireAllCheckbox.checked = tile.requiredItems && tile.requiredItems.length > 1;
 
             updateItemPreview();
             textarea.oninput = updateItemPreview;
@@ -676,10 +810,21 @@
                 .filter(i => i.length > 0);
             const value = parseInt(document.getElementById('tileValue').value) || 10;
             const displayTitle = document.getElementById('tileDisplayTitle').value.trim();
+            const requireAll = document.getElementById('requireAllItems').checked;
 
             bingoData.tiles[currentTileIndex].items = items;
             bingoData.tiles[currentTileIndex].value = value;
             bingoData.tiles[currentTileIndex].displayTitle = displayTitle;
+
+            // Handle multi-item requirements
+            if (requireAll && items.length > 1) {
+                bingoData.tiles[currentTileIndex].requiredItems = items;
+                bingoData.tiles[currentTileIndex].itemProgress = bingoData.tiles[currentTileIndex].itemProgress || {};
+            } else {
+                // Regular tile - remove multi-item fields if they exist
+                delete bingoData.tiles[currentTileIndex].requiredItems;
+                delete bingoData.tiles[currentTileIndex].itemProgress;
+            }
 
             closeModal();
             renderBoard();
