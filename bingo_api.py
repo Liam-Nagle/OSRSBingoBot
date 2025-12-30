@@ -6,7 +6,8 @@ import os
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
 
-BINGO_FILE = 'bingo_data.json'
+# Use persistent disk path for data storage
+BINGO_FILE = '/data/bingo_data.json' if os.path.exists('/data') else 'bingo_data.json'
 ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')  # Change this or set environment variable
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')  # Set this in Render environment variables
 
@@ -16,6 +17,7 @@ print(f"   To change: export BINGO_ADMIN_PASSWORD='your_password_here'")
 print(
     f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
 print(f"   To change: export DROP_API_KEY='your_secret_key_here'")
+print(f"💾 Data will be saved to: {BINGO_FILE}")
 print()
 
 
