@@ -377,7 +377,7 @@ def manual_override():
         if player_name not in tile['completedBy']:
             tile['completedBy'].append(player_name)
 
-            # Save to history
+            # Save to history (only on add)
             save_drop_to_history(
                 player_name=player_name,
                 item_name=tile['items'][0] if tile['items'] else 'Manual Override',
@@ -405,6 +405,7 @@ def manual_override():
         if player_name in tile['completedBy']:
             tile['completedBy'].remove(player_name)
             save_bingo_data(bingo_data)
+            # Note: We don't remove from history - history is immutable audit log
             print(f"✅ Manual override: Removed {player_name} from tile {tile_index + 1}")
             return jsonify({
                 'success': True,
@@ -417,6 +418,38 @@ def manual_override():
             })
 
     return jsonify({'error': 'Invalid action'}), 400
+
+
+@app.route('/manual-drop', methods=['POST'])
+def manual_drop():
+    """Manually add drop to history (admin only) - for drops not on board or missed by bot"""
+    data = request.json
+    password = data.get('password')
+
+    # Verify admin password
+    if password != ADMIN_PASSWORD:
+        print(f"❌ Unauthorized manual drop attempt")
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    player_name = data.get('playerName')
+    item_name = data.get('itemName')
+
+    if not player_name or not item_name:
+        return jsonify({'error': 'Missing player name or item name'}), 400
+
+    # Save to history
+    save_drop_to_history(
+        player_name=player_name,
+        item_name=item_name,
+        tile_completed=False,
+        tiles_info=[]
+    )
+
+    print(f"✅ Manual drop added: {player_name} - {item_name}")
+    return jsonify({
+        'success': True,
+        'message': f'Added drop: {player_name} received {item_name}'
+    })
 
 
 @app.route('/health', methods=['GET'])

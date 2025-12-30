@@ -738,34 +738,58 @@
 
     <!-- Manual Override Modal -->
     <div class="modal" id="manualOverrideModal">
-        <div class="modal-content">
-            <h2>✏️ Manual Tile Override</h2>
-            <p style="color: #666; margin-bottom: 20px;">Manually add or remove players from tiles. Use this to fix errors.</p>
+        <div class="modal-content" style="max-width: 700px;">
+            <h2>✏️ Manual Override & Drop Logging</h2>
+            <p style="color: #666; margin-bottom: 20px;">Manually adjust tiles or log missed drops</p>
 
-            <label>Tile Number (1-<span id="maxTileNum">25</span>):</label>
-            <input type="number" id="overrideTileNum" placeholder="Enter tile number" min="1" max="25">
+            <!-- Section 1: Tile Override -->
+            <div style="background: rgba(255,255,255,0.3); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #8B6914;">
+                <h3 style="color: #2c1810; margin-bottom: 15px; font-size: 18px;">🎯 Tile Override</h3>
+                <p style="font-size: 12px; color: #666; margin-bottom: 15px;">Add or remove player completion from a tile</p>
 
-            <label style="margin-top: 15px;">Player Name:</label>
-            <input type="text" id="overridePlayerName" placeholder="Enter exact player name">
+                <label>Tile Number (1-<span id="maxTileNum">25</span>):</label>
+                <input type="number" id="overrideTileNum" placeholder="Enter tile number" min="1" max="25" style="margin-bottom: 15px;">
 
-            <label style="margin-top: 15px;">Action:</label>
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <label style="display: flex; align-items: center; gap: 5px;">
-                    <input type="radio" name="overrideAction" value="add" checked>
-                    <span>Mark as Complete</span>
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px;">
-                    <input type="radio" name="overrideAction" value="remove">
-                    <span>Remove Completion</span>
-                </label>
+                <label style="margin-top: 15px;">Player Name:</label>
+                <input type="text" id="overridePlayerName" placeholder="Enter exact player name" style="margin-bottom: 15px;">
+
+                <label style="margin-top: 15px;">Action:</label>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="overrideAction" value="add" checked>
+                        <span>Mark as Complete</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="overrideAction" value="remove">
+                        <span>Remove Completion</span>
+                    </label>
+                </div>
+
+                <p id="overrideError" style="color: #8b1a1a; font-size: 13px; margin-top: 5px; display: none;"></p>
+                <p id="overrideSuccess" style="color: #4CAF50; font-size: 13px; margin-top: 5px; display: none;"></p>
+
+                <button class="btn-save" onclick="executeTileOverride()" style="width: 100%; margin-top: 10px;">Execute Tile Override</button>
             </div>
 
-            <p id="overrideError" style="color: #8b1a1a; font-size: 13px; margin-top: 5px; display: none;"></p>
-            <p id="overrideSuccess" style="color: #4CAF50; font-size: 13px; margin-top: 5px; display: none;"></p>
+            <!-- Section 2: Manual Drop History -->
+            <div style="background: rgba(255,255,255,0.3); padding: 20px; border-radius: 8px; border: 2px solid #8B6914;">
+                <h3 style="color: #2c1810; margin-bottom: 15px; font-size: 18px;">📜 Add Drop to History</h3>
+                <p style="font-size: 12px; color: #666; margin-bottom: 15px;">Log a drop that wasn't caught by the bot (won't affect tiles)</p>
 
-            <div class="modal-buttons">
-                <button class="btn-cancel" onclick="closeManualOverrideModal()">Cancel</button>
-                <button class="btn-save" onclick="executeManualOverride()">Execute</button>
+                <label>Player Name:</label>
+                <input type="text" id="manualDropPlayer" placeholder="Enter player name" style="margin-bottom: 15px;">
+
+                <label style="margin-top: 15px;">Item Name:</label>
+                <input type="text" id="manualDropItem" placeholder="Enter item name" style="margin-bottom: 15px;">
+
+                <p id="manualDropError" style="color: #8b1a1a; font-size: 13px; margin-top: 5px; display: none;"></p>
+                <p id="manualDropSuccess" style="color: #4CAF50; font-size: 13px; margin-top: 5px; display: none;"></p>
+
+                <button class="btn-save" onclick="executeManualDrop()" style="width: 100%; margin-top: 10px;">Add Drop to History</button>
+            </div>
+
+            <div class="modal-buttons" style="margin-top: 20px;">
+                <button class="btn-cancel" onclick="closeManualOverrideModal()">Close</button>
             </div>
         </div>
     </div>
@@ -1240,11 +1264,18 @@ Dragon warhammer"></textarea>
             document.getElementById('maxTileNum').textContent = totalTiles;
             document.getElementById('overrideTileNum').max = totalTiles;
 
+            // Clear tile override section
             document.getElementById('overrideTileNum').value = '';
             document.getElementById('overridePlayerName').value = '';
             document.querySelector('input[name="overrideAction"][value="add"]').checked = true;
             document.getElementById('overrideError').style.display = 'none';
             document.getElementById('overrideSuccess').style.display = 'none';
+
+            // Clear manual drop section
+            document.getElementById('manualDropPlayer').value = '';
+            document.getElementById('manualDropItem').value = '';
+            document.getElementById('manualDropError').style.display = 'none';
+            document.getElementById('manualDropSuccess').style.display = 'none';
 
             document.getElementById('manualOverrideModal').classList.add('active');
         }
@@ -1253,7 +1284,7 @@ Dragon warhammer"></textarea>
             document.getElementById('manualOverrideModal').classList.remove('active');
         }
 
-        async function executeManualOverride() {
+        async function executeTileOverride() {
             const tileNum = parseInt(document.getElementById('overrideTileNum').value);
             const playerName = document.getElementById('overridePlayerName').value.trim();
             const action = document.querySelector('input[name="overrideAction"]:checked').value;
@@ -1304,8 +1335,11 @@ Dragon warhammer"></textarea>
 
                     await refreshFromAPI();
 
+                    // Clear inputs after success
                     setTimeout(() => {
-                        closeManualOverrideModal();
+                        document.getElementById('overrideTileNum').value = '';
+                        document.getElementById('overridePlayerName').value = '';
+                        successEl.style.display = 'none';
                     }, 2000);
                 } else {
                     errorEl.textContent = result.error || result.message || 'Override failed';
@@ -1313,6 +1347,71 @@ Dragon warhammer"></textarea>
                 }
             } catch (error) {
                 console.error('Manual override error:', error);
+                errorEl.textContent = '❌ Could not connect to server';
+                errorEl.style.display = 'block';
+            }
+        }
+
+        async function executeManualDrop() {
+            const playerName = document.getElementById('manualDropPlayer').value.trim();
+            const itemName = document.getElementById('manualDropItem').value.trim();
+
+            const errorEl = document.getElementById('manualDropError');
+            const successEl = document.getElementById('manualDropSuccess');
+
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+
+            // Validation
+            if (!playerName) {
+                errorEl.textContent = 'Please enter a player name';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            if (!itemName) {
+                errorEl.textContent = 'Please enter an item name';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            // Get admin password from session
+            const password = sessionStorage.getItem('adminPassword');
+            if (!password) {
+                errorEl.textContent = 'Session expired. Please log in again.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/manual-drop`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        password: password,
+                        playerName: playerName,
+                        itemName: itemName
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    successEl.textContent = `✅ ${result.message}`;
+                    successEl.style.display = 'block';
+
+                    // Clear inputs after success
+                    setTimeout(() => {
+                        document.getElementById('manualDropPlayer').value = '';
+                        document.getElementById('manualDropItem').value = '';
+                        successEl.style.display = 'none';
+                    }, 2000);
+                } else {
+                    errorEl.textContent = result.error || result.message || 'Failed to add drop';
+                    errorEl.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Manual drop error:', error);
                 errorEl.textContent = '❌ Could not connect to server';
                 errorEl.style.display = 'block';
             }
