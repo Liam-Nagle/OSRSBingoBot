@@ -2,86 +2,35 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import json
 import os
-from pymongo import MongoClient
-from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
 
-# MongoDB Configuration
-MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
-DATABASE_NAME = 'osrs_bingo'
-COLLECTION_NAME = 'bingo_data'
+# Use persistent disk path for data storage
+BINGO_FILE = '/data/bingo_data.json' if os.path.exists('/data') else 'bingo_data.json'
+ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')  # Change this or set environment variable
+DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')  # Set this in Render environment variables
 
-# Security
-ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')
-DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
-
-print("=" * 60)
-print("🎮 OSRS Bingo API Server with MongoDB")
-print("=" * 60)
 print(
     f"🔐 Admin password is set {'from environment variable' if os.environ.get('BINGO_ADMIN_PASSWORD') else 'to default (change this!)'}")
 print(f"   To change: export BINGO_ADMIN_PASSWORD='your_password_here'")
 print(
     f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
 print(f"   To change: export DROP_API_KEY='your_secret_key_here'")
-print(f"🗄️  MongoDB URI: {'Set from environment' if os.environ.get('MONGODB_URI') else 'Using default (localhost)'}")
-print(f"   Database: {DATABASE_NAME}")
-print(f"   Collection: {COLLECTION_NAME}")
-print("=" * 60)
+print(f"💾 Data will be saved to: {BINGO_FILE}")
 print()
-
-# MongoDB connection
-try:
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-    # Test connection
-    client.server_info()
-    db = client[DATABASE_NAME]
-    collection = db[COLLECTION_NAME]
-    print("✅ Successfully connected to MongoDB!")
-except Exception as e:
-    print(f"❌ MongoDB connection failed: {e}")
-    print("⚠️  Server will start but data operations will fail!")
-    client = None
-    db = None
-    collection = None
-
-
-def get_default_bingo_data(board_size=5):
-    """Create default bingo data structure"""
-    total_tiles = board_size * board_size
-    return {
-        'boardSize': board_size,
-        'tiles': [{'items': [], 'value': 10, 'completedBy': [], 'displayTitle': ''} for _ in range(total_tiles)],
-        'completions': {},
-        'lineBonuses': {
-            'rows': [50] * board_size,
-            'cols': [50] * board_size,
-            'diags': [100, 100]
-        },
-        'lastUpdated': datetime.utcnow().isoformat()
-    }
 
 
 def load_bingo_data():
-    """Load bingo data from MongoDB"""
-    if collection is None:
-        print("❌ MongoDB not connected, returning default data")
-        return get_default_bingo_data()
-
-    try:
-        # Find the single bingo board document
-        data = collection.find_one({'_id': 'bingo_board'})
-
-        if data:
-            # Remove MongoDB's _id field before returning
-            data.pop('_id', None)
-
+    if os.path.exists(BINGO_FILE):
+        with open(BINGO_FILE, 'r') as f:
+            data = json.load(f)
             # Ensure boardSize exists
             if 'boardSize' not in data:
                 data['boardSize'] = 5
-
+            # Remove adminPassword from data if it exists (moved to server-side)
+            if 'adminPassword' in data:
+                del data['adminPassword']
             # Ensure lineBonuses structure exists
             if 'lineBonuses' not in data:
                 size = data['boardSize']
@@ -90,53 +39,22 @@ def load_bingo_data():
                     'cols': [50] * size,
                     'diags': [100, 100]
                 }
-
-            # Ensure all tiles have displayTitle field (backwards compatibility)
-            for tile in data.get('tiles', []):
-                if 'displayTitle' not in tile:
-                    tile['displayTitle'] = ''
-
-            print("✅ Loaded bingo data from MongoDB")
             return data
-        else:
-            # No data exists, create default
-            print("ℹ️  No existing data found, creating default board")
-            default_data = get_default_bingo_data()
-            save_bingo_data(default_data)
-            return default_data
-
-    except Exception as e:
-        print(f"❌ Error loading from MongoDB: {e}")
-        return get_default_bingo_data()
+    return {
+        'boardSize': 5,
+        'tiles': [{'items': [], 'value': 10, 'completedBy': []} for _ in range(25)],
+        'completions': {},
+        'lineBonuses': {
+            'rows': [50, 50, 50, 50, 50],
+            'cols': [50, 50, 50, 50, 50],
+            'diags': [100, 100]
+        }
+    }
 
 
 def save_bingo_data(data):
-    """Save bingo data to MongoDB"""
-    if collection is None:
-        print("❌ MongoDB not connected, cannot save data")
-        return False
-
-    try:
-        # Add timestamp
-        data['lastUpdated'] = datetime.utcnow().isoformat()
-
-        # Use upsert to either insert or update the single document
-        result = collection.replace_one(
-            {'_id': 'bingo_board'},
-            {**data, '_id': 'bingo_board'},
-            upsert=True
-        )
-
-        if result.modified_count > 0 or result.upserted_id:
-            print("✅ Saved bingo data to MongoDB")
-            return True
-        else:
-            print("ℹ️  No changes to save")
-            return True
-
-    except Exception as e:
-        print(f"❌ Error saving to MongoDB: {e}")
-        return False
+    with open(BINGO_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
 
 
 @app.route('/bingo', methods=['GET'])
@@ -160,12 +78,6 @@ def admin_login():
 @app.route('/drop', methods=['POST'])
 def record_drop():
     """Receive drop from Discord bot"""
-    # Check API key
-    api_key = request.headers.get('X-API-Key')
-    if api_key != DROP_API_KEY:
-        print(f"❌ Unauthorized drop attempt - invalid API key")
-        return jsonify({'error': 'Unauthorized'}), 401
-
     data = request.json
     player_name = data.get('player')
     item_name = data.get('item')
@@ -217,7 +129,7 @@ def record_drop():
 
     if updated:
         save_bingo_data(bingo_data)
-        print(f"✅ Saved updated data to MongoDB")
+        print(f"✅ Saved updated data to {BINGO_FILE}")
         print(f"{'=' * 60}\n")
         return jsonify({
             'success': True,
@@ -237,10 +149,8 @@ def record_drop():
 def update_board():
     """Update entire board (for syncing from website)"""
     data = request.json
-    if save_bingo_data(data):
-        return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to save data'}), 500
+    save_bingo_data(data)
+    return jsonify({'success': True})
 
 
 @app.route('/manual-override', methods=['POST'])
@@ -301,29 +211,10 @@ def manual_override():
     return jsonify({'error': 'Invalid action'}), 400
 
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint for monitoring"""
-    mongo_status = "connected" if collection is not None else "disconnected"
-    try:
-        if client:
-            client.server_info()
-            mongo_status = "connected"
-    except:
-        mongo_status = "disconnected"
-
-    return jsonify({
-        'status': 'ok',
-        'mongodb': mongo_status,
-        'timestamp': datetime.utcnow().isoformat()
-    })
-
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print(f"🚀 Bingo API Server running on port {port}")
     print(f"Discord bot will send drops to: /drop endpoint")
     print(f"Website can fetch data from: /bingo endpoint")
-    print(f"Health check available at: /health endpoint")
     print()
     app.run(host='0.0.0.0', port=port, debug=False)
