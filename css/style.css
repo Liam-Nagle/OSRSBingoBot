@@ -658,3 +658,60 @@
             background: linear-gradient(135deg, #cd8b2d 0%, #8B6914 100%);
             border-radius: 10px;
         }
+
+        /* Date Filter Buttons */
+        .date-filter-btn {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #6b4423 0%, #4a2c1a 100%);
+            color: #f4e4c1;
+            border: 2px solid #8B6914;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .date-filter-btn:hover {
+            background: linear-gradient(135deg, #7d5229 0%, #5c3d2e 100%);
+            transform: translateY(-2px);
+        }
+
+        .date-filter-btn.active {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border-color: #FFD700;
+            box-shadow: 0 0 10px rgba(205,139,45,0.5);
+        }
+
+        /* Analytics Dashboard Styles */
+        .stat-card {
+            background: linear-gradient(135deg, #f4e4c1 0%, #d4c4a1 100%);
+            border: 3px solid #8B6914;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #cd8b2d;
+            margin-bottom: 8px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: #2c1810;
+            font-weight: bold;
+        }
+
+        .chart-container {
+            background: rgba(255,255,255,0.9);
+            border: 2px solid #8B6914;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
