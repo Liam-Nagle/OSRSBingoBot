@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+bingo_data.json
+drops_log.json
+*.key
+*.ppk
+.DS_Store
+
+# Virtual Environment
+venv/
+env/
+.venv/
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo

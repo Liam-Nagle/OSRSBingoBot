@@ -85,7 +85,7 @@
 
         .bingo-board {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(var(--board-size, 5), 1fr);
             gap: 10px;
             margin-bottom: 20px;
         }
@@ -421,14 +421,23 @@
         <h1>🎮 OSRS Bingo Board 🎮</h1>
 
         <div class="controls">
-            <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
-            <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
+            <!-- Admin Controls (Hidden by default) -->
+            <div id="adminControls" style="display: none;">
+                <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
+                <button onclick="openBoardSizeModal()" class="secondary">📐 Board Size</button>
+                <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
+                <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
+                <button onclick="exportBoard()" class="secondary">💾 Export</button>
+                <button onclick="importBoard()" class="secondary">📥 Import</button>
+                <button onclick="logout()" class="danger">🚪 Logout</button>
+            </div>
+
+            <!-- Public Controls -->
             <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
-            <button onclick="viewDebugInfo()" class="secondary">🐛 Debug Info</button>
-            <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
-            <button onclick="exportBoard()" class="secondary">💾 Export</button>
-            <button onclick="importBoard()" class="secondary">📥 Import</button>
             <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
+
+            <!-- Login Button (Shows when not admin) -->
+            <button onclick="openLoginModal()" id="loginBtn" class="secondary" style="margin-left: auto;">🔐 Admin Login</button>
         </div>
 
         <div class="main-content">
@@ -441,6 +450,44 @@
                 <div id="playerStats">
                     <div class="no-players">No drops recorded yet!</div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <h2>🔐 Admin Login</h2>
+            <p style="color: #666; margin-bottom: 20px;">Enter the admin password to access editing features.</p>
+
+            <label>Password:</label>
+            <input type="password" id="adminPasswordInput" placeholder="Enter password" onkeypress="if(event.key === 'Enter') attemptLogin()">
+            <p id="loginError" style="color: #f44336; font-size: 13px; margin-top: 5px; display: none;">Incorrect password!</p>
+
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeLoginModal()">Cancel</button>
+                <button class="btn-save" onclick="attemptLogin()">Login</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Board Size Modal -->
+    <div class="modal" id="boardSizeModal">
+        <div class="modal-content">
+            <h2>Change Board Size</h2>
+            <p style="color: #666; margin-bottom: 20px;">⚠️ Warning: Changing board size will clear all tiles and progress!</p>
+
+            <label>Select Board Size:</label>
+            <select id="boardSizeSelect" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                <option value="3">3x3 (9 tiles)</option>
+                <option value="5" selected>5x5 (25 tiles)</option>
+                <option value="7">7x7 (49 tiles)</option>
+                <option value="9">9x9 (81 tiles)</option>
+            </select>
+
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeBoardSizeModal()">Cancel</button>
+                <button class="btn-save" onclick="changeBoardSize()">Change Size</button>
             </div>
         </div>
     </div>
@@ -474,79 +521,7 @@ Dragon warhammer"></textarea>
     <!-- Bonus Configuration Modal -->
     <div class="modal" id="bonusModal">
         <div class="modal-content">
-            <h2>Configure Line Bonuses</h2>
-            <p style="color: #666; margin-bottom: 20px;">Set bonus points for completing each row, column, or diagonal.</p>
-
-            <div class="bonus-config-section">
-                <h3>Rows</h3>
-                <div class="bonus-grid">
-                    <div class="bonus-item">
-                        <label>Row 1:</label>
-                        <input type="number" id="row0" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Row 2:</label>
-                        <input type="number" id="row1" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Row 3:</label>
-                        <input type="number" id="row2" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Row 4:</label>
-                        <input type="number" id="row3" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Row 5:</label>
-                        <input type="number" id="row4" min="0" value="50">
-                    </div>
-                </div>
-            </div>
-
-            <div class="bonus-config-section">
-                <h3>Columns</h3>
-                <div class="bonus-grid">
-                    <div class="bonus-item">
-                        <label>Column 1:</label>
-                        <input type="number" id="col0" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Column 2:</label>
-                        <input type="number" id="col1" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Column 3:</label>
-                        <input type="number" id="col2" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Column 4:</label>
-                        <input type="number" id="col3" min="0" value="50">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Column 5:</label>
-                        <input type="number" id="col4" min="0" value="50">
-                    </div>
-                </div>
-            </div>
-
-            <div class="bonus-config-section">
-                <h3>Diagonals</h3>
-                <div class="bonus-grid">
-                    <div class="bonus-item">
-                        <label>Diagonal ↘:</label>
-                        <input type="number" id="diag0" min="0" value="100">
-                    </div>
-                    <div class="bonus-item">
-                        <label>Diagonal ↙:</label>
-                        <input type="number" id="diag1" min="0" value="100">
-                    </div>
-                </div>
-            </div>
-
-            <div class="modal-buttons" style="margin-top: 30px;">
-                <button class="btn-cancel" onclick="closeBonusModal()">Cancel</button>
-                <button class="btn-save" onclick="saveBonusConfig()">Save</button>
-            </div>
+            <!-- Content will be dynamically generated -->
         </div>
     </div>
 
@@ -569,7 +544,9 @@ Dragon warhammer"></textarea>
     <script>
         let editMode = false;
         let currentTileIndex = null;
+        let isAdmin = false;
         let bingoData = {
+            boardSize: 5,
             tiles: [],
             completions: {},
             lineBonuses: {
@@ -580,6 +557,82 @@ Dragon warhammer"></textarea>
         };
 
         const API_URL = 'http://localhost:5000';
+
+        // Check if user is admin on load
+        function checkAdminStatus() {
+            const savedAdmin = sessionStorage.getItem('isAdmin');
+            if (savedAdmin === 'true') {
+                isAdmin = true;
+                showAdminControls();
+            }
+        }
+
+        function openLoginModal() {
+            document.getElementById('adminPasswordInput').value = '';
+            document.getElementById('loginError').style.display = 'none';
+            document.getElementById('loginModal').classList.add('active');
+        }
+
+        function closeLoginModal() {
+            document.getElementById('loginModal').classList.remove('active');
+        }
+
+        async function attemptLogin() {
+            const password = document.getElementById('adminPasswordInput').value;
+            const errorElement = document.getElementById('loginError');
+
+            errorElement.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ password: password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    isAdmin = true;
+                    sessionStorage.setItem('isAdmin', 'true');
+                    showAdminControls();
+                    closeLoginModal();
+                    alert('✅ Admin access granted!');
+                } else {
+                    errorElement.textContent = result.message || 'Incorrect password!';
+                    errorElement.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                errorElement.textContent = '❌ Could not connect to server. Make sure the API is running.';
+                errorElement.style.display = 'block';
+            }
+        }
+
+        function logout() {
+            if (confirm('Logout from admin panel?')) {
+                isAdmin = false;
+                editMode = false;
+                sessionStorage.removeItem('isAdmin');
+                hideAdminControls();
+            }
+        }
+
+        function showAdminControls() {
+            document.getElementById('adminControls').style.display = 'flex';
+            document.getElementById('adminControls').style.gap = '10px';
+            document.getElementById('adminControls').style.flexWrap = 'wrap';
+            document.getElementById('loginBtn').style.display = 'none';
+        }
+
+        function hideAdminControls() {
+            document.getElementById('adminControls').style.display = 'none';
+            document.getElementById('loginBtn').style.display = 'block';
+            const btn = document.getElementById('editBtn');
+            btn.textContent = '📝 Edit Mode';
+            btn.style.background = '#4CAF50';
+        }
+
 
         // OSRS Wiki image URL generator
         function formatItemName(itemName) {
@@ -641,13 +694,14 @@ Dragon warhammer"></textarea>
                     bingoData = await response.json();
                     console.log('✅ Loaded bingo data from API:', bingoData);
 
+                    // Ensure boardSize exists
+                    if (!bingoData.boardSize) {
+                        bingoData.boardSize = 5;
+                    }
+
                     // Ensure lineBonuses exists
                     if (!bingoData.lineBonuses) {
-                        bingoData.lineBonuses = {
-                            rows: [50, 50, 50, 50, 50],
-                            cols: [50, 50, 50, 50, 50],
-                            diags: [100, 100]
-                        };
+                        bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                     }
                 } else {
                     console.log('❌ API returned error status');
@@ -659,29 +713,49 @@ Dragon warhammer"></textarea>
                 if (saved) {
                     bingoData = JSON.parse(saved);
                     console.log('✅ Loaded from localStorage');
+                    if (!bingoData.boardSize) {
+                        bingoData.boardSize = 5;
+                    }
                     if (!bingoData.lineBonuses) {
-                        bingoData.lineBonuses = {
-                            rows: [50, 50, 50, 50, 50],
-                            cols: [50, 50, 50, 50, 50],
-                            diags: [100, 100]
-                        };
+                        bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
+                    }
+                    // Remove adminPassword if it exists in old data
+                    if (bingoData.adminPassword) {
+                        delete bingoData.adminPassword;
                     }
                 } else {
                     console.log('📝 Creating new empty board');
-                    for (let i = 0; i < 25; i++) {
+                    bingoData.boardSize = 5;
+                    const totalTiles = bingoData.boardSize * bingoData.boardSize;
+                    for (let i = 0; i < totalTiles; i++) {
                         bingoData.tiles.push({
                             items: [],
                             value: 10,
                             completedBy: []
                         });
                     }
+                    bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                 }
             }
+
+            // Set CSS variable for grid
+            document.documentElement.style.setProperty('--board-size', bingoData.boardSize);
+
+            // Check if user is admin
+            checkAdminStatus();
 
             renderBoard();
             updatePlayerStats();
             setInterval(refreshFromAPI, 5000);
             console.log('✅ Board initialized, auto-refresh every 5 seconds');
+        }
+
+        function createDefaultBonuses(size) {
+            return {
+                rows: Array(size).fill(50),
+                cols: Array(size).fill(50),
+                diags: [100, 100]
+            };
         }
 
         async function refreshFromAPI() {
@@ -698,13 +772,16 @@ Dragon warhammer"></textarea>
                         console.log('📊 Data updated from API');
                         bingoData = newData;
 
-                        if (!bingoData.lineBonuses) {
-                            bingoData.lineBonuses = {
-                                rows: [50, 50, 50, 50, 50],
-                                cols: [50, 50, 50, 50, 50],
-                                diags: [100, 100]
-                            };
+                        if (!bingoData.boardSize) {
+                            bingoData.boardSize = 5;
                         }
+
+                        if (!bingoData.lineBonuses) {
+                            bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
+                        }
+
+                        // Update CSS variable
+                        document.documentElement.style.setProperty('--board-size', bingoData.boardSize);
 
                         renderBoard();
                         updatePlayerStats();
@@ -781,7 +858,7 @@ Dragon warhammer"></textarea>
         }
 
         function handleTileClick(index) {
-            if (editMode) {
+            if (editMode && isAdmin) {
                 openEditModal(index);
             } else {
                 const tile = bingoData.tiles[index];
@@ -795,6 +872,10 @@ Dragon warhammer"></textarea>
         }
 
         function toggleEditMode() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
             editMode = !editMode;
             const btn = document.getElementById('editBtn');
             btn.textContent = editMode ? '✓ Edit Mode ON' : '📝 Edit Mode';
@@ -876,14 +957,116 @@ Dragon warhammer"></textarea>
             renderBoard();
         }
 
-        function openBonusConfig() {
-            // Load current values
-            for (let i = 0; i < 5; i++) {
-                document.getElementById(`row${i}`).value = bingoData.lineBonuses.rows[i];
-                document.getElementById(`col${i}`).value = bingoData.lineBonuses.cols[i];
+        function openBoardSizeModal() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
             }
-            document.getElementById('diag0').value = bingoData.lineBonuses.diags[0];
-            document.getElementById('diag1').value = bingoData.lineBonuses.diags[1];
+            document.getElementById('boardSizeSelect').value = bingoData.boardSize;
+            document.getElementById('boardSizeModal').classList.add('active');
+        }
+
+        function closeBoardSizeModal() {
+            document.getElementById('boardSizeModal').classList.remove('active');
+        }
+
+        function changeBoardSize() {
+            const newSize = parseInt(document.getElementById('boardSizeSelect').value);
+
+            if (confirm(`Change board to ${newSize}x${newSize}? This will clear all tiles and progress!`)) {
+                bingoData = {
+                    boardSize: newSize,
+                    tiles: [],
+                    completions: {},
+                    lineBonuses: createDefaultBonuses(newSize)
+                };
+
+                const totalTiles = newSize * newSize;
+                for (let i = 0; i < totalTiles; i++) {
+                    bingoData.tiles.push({
+                        items: [],
+                        value: 10,
+                        completedBy: []
+                    });
+                }
+
+                // Update CSS variable
+                document.documentElement.style.setProperty('--board-size', newSize);
+
+                closeBoardSizeModal();
+                renderBoard();
+                updatePlayerStats();
+                saveData();
+            }
+        }
+
+        function openBonusConfig() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+            const size = bingoData.boardSize;
+
+            // Generate dynamic bonus configuration HTML
+            let rowsHtml = '';
+            for (let i = 0; i < size; i++) {
+                rowsHtml += `
+                    <div class="bonus-item">
+                        <label>Row ${i + 1}:</label>
+                        <input type="number" id="row${i}" min="0" value="${bingoData.lineBonuses.rows[i] || 50}">
+                    </div>
+                `;
+            }
+
+            let colsHtml = '';
+            for (let i = 0; i < size; i++) {
+                colsHtml += `
+                    <div class="bonus-item">
+                        <label>Column ${i + 1}:</label>
+                        <input type="number" id="col${i}" min="0" value="${bingoData.lineBonuses.cols[i] || 50}">
+                    </div>
+                `;
+            }
+
+            // Update modal content
+            const modalContent = document.querySelector('#bonusModal .modal-content');
+            modalContent.innerHTML = `
+                <h2>Configure Line Bonuses</h2>
+                <p style="color: #666; margin-bottom: 20px;">Set bonus points for completing each row, column, or diagonal.</p>
+
+                <div class="bonus-config-section">
+                    <h3>Rows</h3>
+                    <div class="bonus-grid">
+                        ${rowsHtml}
+                    </div>
+                </div>
+
+                <div class="bonus-config-section">
+                    <h3>Columns</h3>
+                    <div class="bonus-grid">
+                        ${colsHtml}
+                    </div>
+                </div>
+
+                <div class="bonus-config-section">
+                    <h3>Diagonals</h3>
+                    <div class="bonus-grid">
+                        <div class="bonus-item">
+                            <label>Diagonal ↘:</label>
+                            <input type="number" id="diag0" min="0" value="${bingoData.lineBonuses.diags[0] || 100}">
+                        </div>
+                        <div class="bonus-item">
+                            <label>Diagonal ↙:</label>
+                            <input type="number" id="diag1" min="0" value="${bingoData.lineBonuses.diags[1] || 100}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-buttons" style="margin-top: 30px;">
+                    <button class="btn-cancel" onclick="closeBonusModal()">Cancel</button>
+                    <button class="btn-save" onclick="saveBonusConfig()">Save</button>
+                </div>
+            `;
 
             document.getElementById('bonusModal').classList.add('active');
         }
@@ -893,13 +1076,15 @@ Dragon warhammer"></textarea>
         }
 
         function saveBonusConfig() {
+            const size = bingoData.boardSize;
+
             bingoData.lineBonuses = {
                 rows: [],
                 cols: [],
                 diags: []
             };
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < size; i++) {
                 bingoData.lineBonuses.rows.push(parseInt(document.getElementById(`row${i}`).value) || 0);
                 bingoData.lineBonuses.cols.push(parseInt(document.getElementById(`col${i}`).value) || 0);
             }
@@ -913,16 +1098,15 @@ Dragon warhammer"></textarea>
 
         function clearBoard() {
             if (confirm('Clear all tiles and player progress?')) {
+                const currentSize = bingoData.boardSize;
                 bingoData = {
+                    boardSize: currentSize,
                     tiles: [],
                     completions: {},
-                    lineBonuses: {
-                        rows: [50, 50, 50, 50, 50],
-                        cols: [50, 50, 50, 50, 50],
-                        diags: [100, 100]
-                    }
+                    lineBonuses: createDefaultBonuses(currentSize)
                 };
-                for (let i = 0; i < 25; i++) {
+                const totalTiles = currentSize * currentSize;
+                for (let i = 0; i < totalTiles; i++) {
                     bingoData.tiles.push({
                         items: [],
                         value: 10,
@@ -975,13 +1159,20 @@ Dragon warhammer"></textarea>
 
         async function saveData() {
             console.log('💾 Saving data...');
-            localStorage.setItem('bingoData', JSON.stringify(bingoData));
+
+            // Remove adminPassword from data if it exists (should never be saved to client-side)
+            const dataToSave = {...bingoData};
+            if (dataToSave.adminPassword) {
+                delete dataToSave.adminPassword;
+            }
+
+            localStorage.setItem('bingoData', JSON.stringify(dataToSave));
 
             try {
                 const response = await fetch(`${API_URL}/update`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(bingoData)
+                    body: JSON.stringify(dataToSave)
                 });
 
                 if (response.ok) {
@@ -995,6 +1186,7 @@ Dragon warhammer"></textarea>
         }
 
         function checkLineCompletion(player) {
+            const size = bingoData.boardSize;
             const completions = {
                 rows: [],
                 cols: [],
@@ -1002,10 +1194,10 @@ Dragon warhammer"></textarea>
             };
 
             // Check rows
-            for (let row = 0; row < 5; row++) {
+            for (let row = 0; row < size; row++) {
                 let complete = true;
-                for (let col = 0; col < 5; col++) {
-                    const index = row * 5 + col;
+                for (let col = 0; col < size; col++) {
+                    const index = row * size + col;
                     if (!bingoData.tiles[index].completedBy.includes(player)) {
                         complete = false;
                         break;
@@ -1015,10 +1207,10 @@ Dragon warhammer"></textarea>
             }
 
             // Check columns
-            for (let col = 0; col < 5; col++) {
+            for (let col = 0; col < size; col++) {
                 let complete = true;
-                for (let row = 0; row < 5; row++) {
-                    const index = row * 5 + col;
+                for (let row = 0; row < size; row++) {
+                    const index = row * size + col;
                     if (!bingoData.tiles[index].completedBy.includes(player)) {
                         complete = false;
                         break;
@@ -1029,9 +1221,9 @@ Dragon warhammer"></textarea>
 
             // Check diagonals
             let diag1 = true, diag2 = true;
-            for (let i = 0; i < 5; i++) {
-                if (!bingoData.tiles[i * 5 + i].completedBy.includes(player)) diag1 = false;
-                if (!bingoData.tiles[i * 5 + (4 - i)].completedBy.includes(player)) diag2 = false;
+            for (let i = 0; i < size; i++) {
+                if (!bingoData.tiles[i * size + i].completedBy.includes(player)) diag1 = false;
+                if (!bingoData.tiles[i * size + (size - 1 - i)].completedBy.includes(player)) diag2 = false;
             }
             if (diag1) completions.diagonals.push(0);
             if (diag2) completions.diagonals.push(1);
