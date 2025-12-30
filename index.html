@@ -424,6 +424,7 @@
             <!-- Admin Controls (Hidden by default) -->
             <div id="adminControls" style="display: none;">
                 <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
+                <button onclick="openManualOverrideModal()" class="secondary">✏️ Manual Override</button>
                 <button onclick="openBoardSizeModal()" class="secondary">📐 Board Size</button>
                 <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
                 <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
@@ -467,6 +468,40 @@
             <div class="modal-buttons">
                 <button class="btn-cancel" onclick="closeLoginModal()">Cancel</button>
                 <button class="btn-save" onclick="attemptLogin()">Login</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Override Modal -->
+    <div class="modal" id="manualOverrideModal">
+        <div class="modal-content">
+            <h2>✏️ Manual Tile Override</h2>
+            <p style="color: #666; margin-bottom: 20px;">Manually add or remove players from tiles. Use this to fix errors.</p>
+
+            <label>Tile Number (1-<span id="maxTileNum">25</span>):</label>
+            <input type="number" id="overrideTileNum" placeholder="Enter tile number" min="1" max="25">
+
+            <label style="margin-top: 15px;">Player Name:</label>
+            <input type="text" id="overridePlayerName" placeholder="Enter exact player name">
+
+            <label style="margin-top: 15px;">Action:</label>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <label style="display: flex; align-items: center; gap: 5px;">
+                    <input type="radio" name="overrideAction" value="add" checked>
+                    <span>Mark as Complete</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px;">
+                    <input type="radio" name="overrideAction" value="remove">
+                    <span>Remove Completion</span>
+                </label>
+            </div>
+
+            <p id="overrideError" style="color: #f44336; font-size: 13px; margin-top: 5px; display: none;"></p>
+            <p id="overrideSuccess" style="color: #4CAF50; font-size: 13px; margin-top: 5px; display: none;"></p>
+
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeManualOverrideModal()">Cancel</button>
+                <button class="btn-save" onclick="executeManualOverride()">Execute</button>
             </div>
         </div>
     </div>
@@ -602,6 +637,7 @@ Dragon warhammer"></textarea>
                 if (response.ok && result.success) {
                     isAdmin = true;
                     sessionStorage.setItem('isAdmin', 'true');
+                    sessionStorage.setItem('adminPassword', password);  // Store for manual override
                     showAdminControls();
                     closeLoginModal();
                     alert('✅ Admin access granted!');
@@ -621,7 +657,102 @@ Dragon warhammer"></textarea>
                 isAdmin = false;
                 editMode = false;
                 sessionStorage.removeItem('isAdmin');
+                sessionStorage.removeItem('adminPassword');
                 hideAdminControls();
+            }
+        }
+
+        function openManualOverrideModal() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+
+            // Update max tile number based on board size
+            const totalTiles = bingoData.boardSize * bingoData.boardSize;
+            document.getElementById('maxTileNum').textContent = totalTiles;
+            document.getElementById('overrideTileNum').max = totalTiles;
+
+            // Clear previous inputs
+            document.getElementById('overrideTileNum').value = '';
+            document.getElementById('overridePlayerName').value = '';
+            document.querySelector('input[name="overrideAction"][value="add"]').checked = true;
+            document.getElementById('overrideError').style.display = 'none';
+            document.getElementById('overrideSuccess').style.display = 'none';
+
+            document.getElementById('manualOverrideModal').classList.add('active');
+        }
+
+        function closeManualOverrideModal() {
+            document.getElementById('manualOverrideModal').classList.remove('active');
+        }
+
+        async function executeManualOverride() {
+            const tileNum = parseInt(document.getElementById('overrideTileNum').value);
+            const playerName = document.getElementById('overridePlayerName').value.trim();
+            const action = document.querySelector('input[name="overrideAction"]:checked').value;
+
+            const errorEl = document.getElementById('overrideError');
+            const successEl = document.getElementById('overrideSuccess');
+
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+
+            // Validation
+            const totalTiles = bingoData.boardSize * bingoData.boardSize;
+            if (!tileNum || tileNum < 1 || tileNum > totalTiles) {
+                errorEl.textContent = `Please enter a tile number between 1 and ${totalTiles}`;
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            if (!playerName) {
+                errorEl.textContent = 'Please enter a player name';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            // Get admin password from session (we need it for API call)
+            const password = sessionStorage.getItem('adminPassword');
+            if (!password) {
+                errorEl.textContent = 'Session expired. Please log in again.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/manual-override`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        password: password,
+                        tileIndex: tileNum - 1,  // Convert to 0-based index
+                        playerName: playerName,
+                        action: action
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    successEl.textContent = `✅ ${result.message}`;
+                    successEl.style.display = 'block';
+
+                    // Refresh board data
+                    await refreshFromAPI();
+
+                    // Close modal after 2 seconds
+                    setTimeout(() => {
+                        closeManualOverrideModal();
+                    }, 2000);
+                } else {
+                    errorEl.textContent = result.error || result.message || 'Override failed';
+                    errorEl.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Manual override error:', error);
+                errorEl.textContent = '❌ Could not connect to server';
+                errorEl.style.display = 'block';
             }
         }
 

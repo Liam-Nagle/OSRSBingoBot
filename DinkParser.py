@@ -15,17 +15,24 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Store drops in memory (you can later save to a file or database)
 drops_data = []
 
-# Bingo API Configuration - Updated for Render deployment
+# Bingo API Configuration
 BINGO_API_URL = os.environ.get('BINGO_API_URL', 'http://localhost:5000/drop')
+DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
 
 def send_to_bingo_api(player_name, item_name):
     """Send drop to bingo board API"""
     try:
-        response = requests.post(BINGO_API_URL, json={
-            'player': player_name,
-            'item': item_name
-        }, timeout=5)
+        response = requests.post(BINGO_API_URL,
+            headers={
+                'Content-Type': 'application/json',
+                'X-API-Key': DROP_API_KEY
+            },
+            json={
+                'player': player_name,
+                'item': item_name
+            },
+            timeout=5)
 
         if response.status_code == 200:
             result = response.json()
@@ -35,6 +42,8 @@ def send_to_bingo_api(player_name, item_name):
                     print(f"   Tile {tile['tile']}: {', '.join(tile['items'])} ({tile['value']} points)")
             else:
                 print(f"ℹ️  Bingo API: {result.get('message')}")
+        elif response.status_code == 401:
+            print(f"❌ Bingo API: Unauthorized - Check DROP_API_KEY environment variable")
         else:
             print(f"⚠️  Bingo API returned status {response.status_code}")
     except requests.exceptions.RequestException as e:

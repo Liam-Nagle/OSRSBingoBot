@@ -8,10 +8,14 @@ CORS(app)  # Allow cross-origin requests from GitHub Pages
 
 BINGO_FILE = 'bingo_data.json'
 ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')  # Change this or set environment variable
+DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')  # Set this in Render environment variables
 
 print(
     f"🔐 Admin password is set {'from environment variable' if os.environ.get('BINGO_ADMIN_PASSWORD') else 'to default (change this!)'}")
 print(f"   To change: export BINGO_ADMIN_PASSWORD='your_password_here'")
+print(
+    f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
+print(f"   To change: export DROP_API_KEY='your_secret_key_here'")
 print()
 
 
@@ -145,6 +149,64 @@ def update_board():
     data = request.json
     save_bingo_data(data)
     return jsonify({'success': True})
+
+
+@app.route('/manual-override', methods=['POST'])
+def manual_override():
+    """Manual tile completion override (admin only)"""
+    data = request.json
+    password = data.get('password')
+
+    # Verify admin password
+    if password != ADMIN_PASSWORD:
+        print(f"❌ Unauthorized manual override attempt")
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    tile_index = data.get('tileIndex')
+    player_name = data.get('playerName')
+    action = data.get('action')  # 'add' or 'remove'
+
+    if tile_index is None or not player_name or not action:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    bingo_data = load_bingo_data()
+
+    if tile_index < 0 or tile_index >= len(bingo_data['tiles']):
+        return jsonify({'error': 'Invalid tile index'}), 400
+
+    tile = bingo_data['tiles'][tile_index]
+
+    if action == 'add':
+        if player_name not in tile['completedBy']:
+            tile['completedBy'].append(player_name)
+            save_bingo_data(bingo_data)
+            print(f"✅ Manual override: Added {player_name} to tile {tile_index + 1}")
+            return jsonify({
+                'success': True,
+                'message': f'Added {player_name} to tile {tile_index + 1}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'{player_name} already completed this tile'
+            })
+
+    elif action == 'remove':
+        if player_name in tile['completedBy']:
+            tile['completedBy'].remove(player_name)
+            save_bingo_data(bingo_data)
+            print(f"✅ Manual override: Removed {player_name} from tile {tile_index + 1}")
+            return jsonify({
+                'success': True,
+                'message': f'Removed {player_name} from tile {tile_index + 1}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'{player_name} has not completed this tile'
+            })
+
+    return jsonify({'error': 'Invalid action'}), 400
 
 
 if __name__ == '__main__':
