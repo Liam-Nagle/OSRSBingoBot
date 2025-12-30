@@ -452,6 +452,56 @@ def manual_drop():
     })
 
 
+@app.route('/delete-history', methods=['POST'])
+def delete_history():
+    """Delete a drop from history (admin only) - for fixing mistakes or test data"""
+    if history_collection is None:
+        return jsonify({'error': 'Database not available'}), 503
+
+    data = request.json
+    password = data.get('password')
+
+    # Verify admin password
+    if password != ADMIN_PASSWORD:
+        print(f"❌ Unauthorized delete history attempt")
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    player_name = data.get('playerName')
+    item_name = data.get('itemName')
+    timestamp = data.get('timestamp')
+
+    if not player_name or not item_name or not timestamp:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        # Convert timestamp string to datetime
+        from datetime import datetime as dt
+        timestamp_dt = dt.fromisoformat(timestamp.replace('Z', '+00:00'))
+
+        # Delete the specific record
+        result = history_collection.delete_one({
+            'player': player_name,
+            'item': item_name,
+            'timestamp': timestamp_dt
+        })
+
+        if result.deleted_count > 0:
+            print(f"✅ Deleted history record: {player_name} - {item_name} at {timestamp}")
+            return jsonify({
+                'success': True,
+                'message': f'Deleted drop: {player_name} - {item_name}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Drop not found in history'
+            }), 404
+
+    except Exception as e:
+        print(f"❌ Error deleting history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint for monitoring"""
