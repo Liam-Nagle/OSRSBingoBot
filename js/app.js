@@ -1558,7 +1558,7 @@
 
                 const data = await response.json();
 
-                if (!data.success || data.history.length === 0) {
+                if (!data.history || data.history.length === 0) {
                     loadingDiv.innerHTML = '<div style="text-align: center; padding: 60px; color: #666;">No data available yet!</div>';
                     return;
                 }
