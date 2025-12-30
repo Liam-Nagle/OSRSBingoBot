@@ -1304,7 +1304,7 @@
 
                 const data = await response.json();
 
-                if (!data.success || data.history.length === 0) {
+                if (!data.history  || data.history.length === 0) {
                     contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No drops found for this time period!</div>';
                     countSpan.textContent = '(0 drops)';
                     return;
