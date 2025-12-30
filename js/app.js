@@ -534,9 +534,7 @@
             }
 
             board.innerHTML = '';
-            const size = bingoData.boardSize;
 
-            // Render tiles first
             bingoData.tiles.forEach((tile, index) => {
                 const tileEl = document.createElement('div');
                 tileEl.className = 'bingo-tile';
@@ -560,12 +558,12 @@
 
                 // Handle multi-item requirements
                 let progressHtml = '';
-                if (tile.requiredItems && tile.requiredItems.length > 1) {
-                    const playerProgress = tile.itemProgress?.[currentPlayer] || [];
+                if (tile.requiredItems && tile.requiredItems.length > 1 && currentPlayer) {
+                    const playerProgress = (tile.itemProgress && tile.itemProgress[currentPlayer]) ? tile.itemProgress[currentPlayer] : [];
                     const collected = playerProgress.length;
                     const total = tile.requiredItems.length;
 
-                    if (currentPlayer && collected > 0 && !completedByCurrentPlayer) {
+                    if (collected > 0 && !completedByCurrentPlayer) {
                         progressHtml = `<div style="font-size: 11px; color: #cd8b2d; margin-top: 5px; font-weight: bold;">📦 ${collected}/${total} pieces</div>`;
                     }
                 }
@@ -606,96 +604,17 @@
                 }
             });
 
-            // Now handle bonuses - add them to board container, not board itself
-            updateBonusDisplay();
             saveData();
         }
 
-        function updateBonusDisplay() {
-            const boardContainer = document.querySelector('.board-container');
-            if (!boardContainer) return;
-
-            // Remove old bonuses
-            const oldBonuses = boardContainer.querySelectorAll('.bonus-container');
-            oldBonuses.forEach(b => b.remove());
-
-            if (!currentPlayer) return; // Only show bonuses when viewing as a player
-
-            const size = bingoData.boardSize;
-            const board = document.getElementById('bingoBoard');
-
-            // Add row bonuses (right side)
-            const rowBonusContainer = document.createElement('div');
-            rowBonusContainer.className = 'bonus-container';
-            rowBonusContainer.style.cssText = `
-                position: absolute;
-                right: -70px;
-                top: 0;
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-                height: 100%;
-                justify-content: space-around;
-            `;
-
-            for (let row = 0; row < size; row++) {
-                const rowComplete = checkRowComplete(currentPlayer, row);
-                const bonusDiv = document.createElement('div');
-                bonusDiv.className = 'row-bonus bonus-display' + (rowComplete ? ' completed' : '');
-                bonusDiv.innerHTML = `+${bingoData.lineBonuses.rows[row]}`;
-                bonusDiv.title = `Row ${row + 1} bonus`;
-                rowBonusContainer.appendChild(bonusDiv);
-            }
-
-            board.style.position = 'relative';
-            board.appendChild(rowBonusContainer);
-
-            // Add column bonuses (bottom)
-            const colBonusContainer = document.createElement('div');
-            colBonusContainer.className = 'bonus-container';
-            colBonusContainer.style.cssText = `
-                position: absolute;
-                bottom: -50px;
-                left: 0;
-                right: 0;
-                display: flex;
-                gap: 10px;
-                justify-content: space-around;
-            `;
-
-            for (let col = 0; col < size; col++) {
-                const colComplete = checkColComplete(currentPlayer, col);
-                const bonusDiv = document.createElement('div');
-                bonusDiv.className = 'col-bonus bonus-display' + (colComplete ? ' completed' : '');
-                bonusDiv.innerHTML = `+${bingoData.lineBonuses.cols[col]}`;
-                bonusDiv.title = `Column ${col + 1} bonus`;
-                colBonusContainer.appendChild(bonusDiv);
-            }
-
-            board.appendChild(colBonusContainer);
-
-            // Add diagonal bonuses (corners)
-            const diag1Complete = checkDiagonalComplete(currentPlayer, 0);
-            const diag2Complete = checkDiagonalComplete(currentPlayer, 1);
-
-            const diag1Bonus = document.createElement('div');
-            diag1Bonus.className = 'diag-bonus bonus-display top-left' + (diag1Complete ? ' completed' : '');
-            diag1Bonus.innerHTML = `↘ +${bingoData.lineBonuses.diags[0]}`;
-            diag1Bonus.title = 'Diagonal bonus (top-left to bottom-right)';
-            board.appendChild(diag1Bonus);
-
-            const diag2Bonus = document.createElement('div');
-            diag2Bonus.className = 'diag-bonus bonus-display top-right' + (diag2Complete ? ' completed' : '');
-            diag2Bonus.innerHTML = `↙ +${bingoData.lineBonuses.diags[1]}`;
-            diag2Bonus.title = 'Diagonal bonus (top-right to bottom-left)';
-            board.appendChild(diag2Bonus);
-        }
-
+        // Simplified check functions that don't break if data is incomplete
         function checkRowComplete(player, row) {
-            const size = bingoData.boardSize;
+            if (!player || !bingoData.tiles) return false;
+            const size = bingoData.boardSize || 5;
             for (let col = 0; col < size; col++) {
                 const index = row * size + col;
-                if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                const tile = bingoData.tiles[index];
+                if (!tile || !tile.completedBy || !tile.completedBy.includes(player)) {
                     return false;
                 }
             }
@@ -703,10 +622,12 @@
         }
 
         function checkColComplete(player, col) {
-            const size = bingoData.boardSize;
+            if (!player || !bingoData.tiles) return false;
+            const size = bingoData.boardSize || 5;
             for (let row = 0; row < size; row++) {
                 const index = row * size + col;
-                if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                const tile = bingoData.tiles[index];
+                if (!tile || !tile.completedBy || !tile.completedBy.includes(player)) {
                     return false;
                 }
             }
@@ -714,12 +635,14 @@
         }
 
         function checkDiagonalComplete(player, diagIndex) {
-            const size = bingoData.boardSize;
+            if (!player || !bingoData.tiles) return false;
+            const size = bingoData.boardSize || 5;
             if (diagIndex === 0) {
                 // Top-left to bottom-right
                 for (let i = 0; i < size; i++) {
                     const index = i * size + i;
-                    if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                    const tile = bingoData.tiles[index];
+                    if (!tile || !tile.completedBy || !tile.completedBy.includes(player)) {
                         return false;
                     }
                 }
@@ -727,7 +650,8 @@
                 // Top-right to bottom-left
                 for (let i = 0; i < size; i++) {
                     const index = i * size + (size - 1 - i);
-                    if (!bingoData.tiles[index].completedBy || !bingoData.tiles[index].completedBy.includes(player)) {
+                    const tile = bingoData.tiles[index];
+                    if (!tile || !tile.completedBy || !tile.completedBy.includes(player)) {
                         return false;
                     }
                 }

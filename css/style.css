@@ -219,7 +219,6 @@
         .board-container {
             display: flex;
             flex-direction: column;
-            padding: 30px 80px 60px 10px; /* Extra padding for bonuses */
         }
 
         .bingo-board {
