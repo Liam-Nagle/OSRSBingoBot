@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OSRS Bingo Board</title>
+    <title>Unsociables Bingo Board</title>
     <style>
         * {
             margin: 0;
@@ -12,108 +12,159 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: #fff;
+            font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', sans-serif;
+            background: linear-gradient(135deg, #2c1810 0%, #4a2c1a 50%, #2c1810 100%);
+            background-attachment: fixed;
+            color: #f4e4c1;
             padding: 20px;
             min-height: 100vh;
+            position: relative;
+        }
+
+        /* OSRS-style texture overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                repeating-linear-gradient(0deg, rgba(0,0,0,0.05) 0px, transparent 2px),
+                repeating-linear-gradient(90deg, rgba(0,0,0,0.05) 0px, transparent 2px);
+            pointer-events: none;
+            z-index: 1;
         }
 
         .container {
             max-width: 1600px;
             margin: 0 auto;
+            position: relative;
+            z-index: 2;
         }
 
         h1 {
             text-align: center;
             margin-bottom: 30px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-size: 42px;
+            color: #ffcc33;
+            text-shadow:
+                3px 3px 0px #8B4513,
+                4px 4px 10px rgba(0,0,0,0.5);
+            font-weight: bold;
+            letter-spacing: 2px;
         }
 
         .controls {
-            background: rgba(255,255,255,0.1);
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
             padding: 20px;
-            border-radius: 10px;
+            border-radius: 8px;
             margin-bottom: 20px;
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
             align-items: center;
+            border: 3px solid #8B6914;
+            box-shadow:
+                inset 0 2px 5px rgba(255,255,255,0.1),
+                0 5px 15px rgba(0,0,0,0.5);
         }
 
         .controls button {
-            background: #4CAF50;
-            color: white;
-            border: none;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
             padding: 10px 20px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.3s;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 1px rgba(255,255,255,0.3);
         }
 
         .controls button:hover {
-            background: #45a049;
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 12px rgba(0,0,0,0.4);
+        }
+
+        .controls button:active {
+            transform: translateY(0px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
 
         .controls button.secondary {
-            background: #2196F3;
+            background: linear-gradient(135deg, #6b4423 0%, #4a2c1a 100%);
+            color: #f4e4c1;
+            border: 2px solid #8B6914;
         }
 
         .controls button.secondary:hover {
-            background: #0b7dda;
+            background: linear-gradient(135deg, #7d5229 0%, #5c3d2e 100%);
         }
 
         .controls button.danger {
-            background: #f44336;
+            background: linear-gradient(135deg, #8b1a1a 0%, #660000 100%);
+            color: #f4e4c1;
+            border: 2px solid #4d0000;
         }
 
         .controls button.danger:hover {
-            background: #da190b;
+            background: linear-gradient(135deg, #a32020 0%, #7a0000 100%);
         }
 
         .player-selector {
             display: flex;
             align-items: center;
             gap: 10px;
-            background: rgba(255,255,255,0.15);
+            background: rgba(0,0,0,0.3);
             padding: 10px 15px;
             border-radius: 5px;
+            border: 2px solid #8B6914;
         }
 
         .player-selector label {
             font-weight: bold;
             font-size: 14px;
+            color: #ffcc33;
+            text-shadow: 2px 2px 3px rgba(0,0,0,0.5);
         }
 
         .player-selector select {
             padding: 8px 12px;
             border-radius: 5px;
-            border: none;
-            background: white;
-            color: #333;
+            border: 2px solid #8B6914;
+            background: linear-gradient(135deg, #f4e4c1 0%, #d4c4a1 100%);
+            color: #2c1810;
             font-size: 14px;
+            font-weight: bold;
             cursor: pointer;
             min-width: 150px;
         }
 
         .player-selector .star-btn {
-            background: #FFC107;
-            color: #333;
-            border: none;
+            background: linear-gradient(135deg, #FFD700 0%, #DAA520 100%);
+            color: #2c1810;
+            border: 2px solid #B8860B;
             padding: 8px 12px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.3s;
+            font-weight: bold;
+            transition: all 0.3s;
         }
 
         .player-selector .star-btn:hover {
-            background: #FFD54F;
+            background: linear-gradient(135deg, #FFE44D 0%, #E6B800 100%);
+            transform: scale(1.05);
         }
 
         .player-selector .star-btn.active {
-            background: #FF9800;
+            background: linear-gradient(135deg, #FF8C00 0%, #FF7000 100%);
+            border-color: #CC6600;
+            box-shadow: 0 0 15px rgba(255,140,0,0.5);
         }
 
         .view-legend {
@@ -122,6 +173,7 @@
             align-items: center;
             font-size: 13px;
             margin-left: auto;
+            color: #f4e4c1;
         }
 
         .legend-item {
@@ -134,7 +186,7 @@
             width: 20px;
             height: 20px;
             border-radius: 4px;
-            border: 2px solid rgba(255,255,255,0.3);
+            border: 2px solid #8B6914;
         }
 
         .legend-box.green {
@@ -168,7 +220,7 @@
         }
 
         .bingo-tile {
-            background: rgba(255,255,255,0.95);
+            background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
             border-radius: 8px;
             padding: 15px;
             min-height: 180px;
@@ -178,21 +230,28 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            border: 3px solid #8B6914;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         }
 
         .bingo-tile:hover {
             transform: translateY(-5px);
-            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            border-color: #cd8b2d;
         }
 
         .bingo-tile.completed-by-current {
             background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
             color: white;
+            border-color: #2d7a2f;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3), 0 0 20px rgba(76,175,80,0.3);
         }
 
         .bingo-tile.completed-by-others {
             background: linear-gradient(135deg, #FFC107 0%, #FFB300 100%);
             color: white;
+            border-color: #cd9a00;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3), 0 0 20px rgba(255,193,7,0.3);
         }
 
         .bingo-tile.completed-by-current::after {
@@ -202,6 +261,7 @@
             right: 10px;
             font-size: 24px;
             font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
 
         .bingo-tile.completed-by-others::after {
@@ -211,12 +271,13 @@
             right: 10px;
             font-size: 24px;
             font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
 
         .tile-content {
-            color: #333;
+            color: #2c1810;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: bold;
             margin-bottom: 15px;
             text-align: center;
             width: 100%;
@@ -225,6 +286,7 @@
         .bingo-tile.completed-by-current .tile-content,
         .bingo-tile.completed-by-others .tile-content {
             color: white;
+            text-shadow: 2px 2px 3px rgba(0,0,0,0.5);
         }
 
         .tile-images {
@@ -244,10 +306,11 @@
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
 
         .tile-value {
-            color: #666;
+            color: #8B6914;
             font-size: 12px;
             font-weight: bold;
             text-align: center;
@@ -260,65 +323,82 @@
         }
 
         .tile-players {
-            color: #2196F3;
+            color: #cd8b2d;
             font-size: 11px;
             margin-top: 5px;
             text-align: center;
+            font-weight: bold;
         }
 
         .bingo-tile.completed-by-current .tile-players,
         .bingo-tile.completed-by-others .tile-players {
-            color: rgba(255,255,255,0.8);
+            color: rgba(255,255,255,0.9);
         }
 
         .leaderboard {
-            background: rgba(255,255,255,0.1);
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
             padding: 20px;
-            border-radius: 10px;
+            border-radius: 8px;
             height: fit-content;
             position: sticky;
             top: 20px;
+            border: 3px solid #8B6914;
+            box-shadow:
+                inset 0 2px 5px rgba(255,255,255,0.1),
+                0 5px 15px rgba(0,0,0,0.5);
         }
 
         .leaderboard h2 {
             margin-bottom: 20px;
             text-align: center;
-            font-size: 24px;
+            font-size: 28px;
+            color: #ffcc33;
+            text-shadow:
+                2px 2px 0px #8B4513,
+                3px 3px 8px rgba(0,0,0,0.5);
         }
 
         .player-card {
-            background: rgba(255,255,255,0.05);
+            background: linear-gradient(135deg, rgba(139,105,20,0.3) 0%, rgba(92,61,46,0.3) 100%);
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 12px;
-            border-left: 4px solid #4CAF50;
+            border-left: 4px solid #cd8b2d;
             transition: all 0.3s;
             position: relative;
+            border: 2px solid #8B6914;
         }
 
         .player-card:hover {
-            background: rgba(255,255,255,0.1);
+            background: linear-gradient(135deg, rgba(139,105,20,0.5) 0%, rgba(92,61,46,0.5) 100%);
             transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
 
         .player-card.rank-1 {
             border-left-color: #FFD700;
-            background: linear-gradient(135deg, rgba(255,215,0,0.2) 0%, rgba(255,215,0,0.05) 100%);
+            border-color: #DAA520;
+            background: linear-gradient(135deg, rgba(255,215,0,0.3) 0%, rgba(218,165,32,0.2) 100%);
+            box-shadow: 0 0 15px rgba(255,215,0,0.2);
         }
 
         .player-card.rank-2 {
             border-left-color: #C0C0C0;
-            background: linear-gradient(135deg, rgba(192,192,192,0.2) 0%, rgba(192,192,192,0.05) 100%);
+            border-color: #A9A9A9;
+            background: linear-gradient(135deg, rgba(192,192,192,0.3) 0%, rgba(169,169,169,0.2) 100%);
+            box-shadow: 0 0 15px rgba(192,192,192,0.2);
         }
 
         .player-card.rank-3 {
             border-left-color: #CD7F32;
-            background: linear-gradient(135deg, rgba(205,127,50,0.2) 0%, rgba(205,127,50,0.05) 100%);
+            border-color: #A0522D;
+            background: linear-gradient(135deg, rgba(205,127,50,0.3) 0%, rgba(160,82,45,0.2) 100%);
+            box-shadow: 0 0 15px rgba(205,127,50,0.2);
         }
 
         .player-card.current-view {
             border-left-width: 6px;
-            box-shadow: 0 0 15px rgba(76, 175, 80, 0.5);
+            box-shadow: 0 0 20px rgba(205,139,45,0.6);
         }
 
         .player-rank {
@@ -326,6 +406,7 @@
             top: 10px;
             right: 10px;
             font-size: 24px;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.5));
         }
 
         .player-name {
@@ -333,6 +414,8 @@
             font-size: 18px;
             margin-bottom: 8px;
             padding-right: 40px;
+            color: #ffcc33;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
 
         .player-score {
@@ -340,28 +423,31 @@
             font-size: 16px;
             font-weight: bold;
             margin-bottom: 5px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
 
         .player-stats {
             font-size: 12px;
-            color: rgba(255,255,255,0.7);
+            color: rgba(244,228,193,0.8);
             margin-top: 5px;
         }
 
         .bonus-badge {
             display: inline-block;
-            background: #FF9800;
+            background: linear-gradient(135deg, #FF8C00 0%, #FF7000 100%);
             color: white;
             padding: 2px 8px;
             border-radius: 12px;
             font-size: 11px;
             margin-left: 5px;
             font-weight: bold;
+            border: 1px solid #CC6600;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
 
         .no-players {
             text-align: center;
-            color: rgba(255,255,255,0.5);
+            color: rgba(244,228,193,0.5);
             padding: 40px 20px;
             font-style: italic;
         }
@@ -373,7 +459,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.8);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -384,34 +470,41 @@
         }
 
         .modal-content {
-            background: white;
+            background: linear-gradient(135deg, #f4e4c1 0%, #d4c4a1 100%);
             padding: 30px;
             border-radius: 10px;
             max-width: 600px;
             width: 90%;
-            color: #333;
+            color: #2c1810;
             max-height: 90vh;
             overflow-y: auto;
+            border: 4px solid #8B6914;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.7);
         }
 
         .modal-content h2 {
             margin-bottom: 20px;
-            color: #333;
+            color: #2c1810;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
         }
 
         .modal-content input,
-        .modal-content textarea {
+        .modal-content textarea,
+        .modal-content select {
             width: 100%;
             padding: 10px;
             margin-bottom: 15px;
-            border: 1px solid #ddd;
+            border: 2px solid #8B6914;
             border-radius: 5px;
             font-size: 14px;
+            background: white;
+            color: #2c1810;
         }
 
         .modal-content textarea {
             min-height: 100px;
             resize: vertical;
+            font-family: 'Courier New', monospace;
         }
 
         .modal-buttons {
@@ -422,20 +515,21 @@
 
         .modal-buttons button {
             padding: 10px 20px;
-            border: none;
+            border: 2px solid #8B6914;
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
+            font-weight: bold;
         }
 
         .btn-save {
-            background: #4CAF50;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
             color: white;
         }
 
         .btn-cancel {
-            background: #ccc;
-            color: #333;
+            background: linear-gradient(135deg, #8b8b8b 0%, #666666 100%);
+            color: white;
         }
 
         .item-preview {
@@ -444,8 +538,9 @@
             gap: 10px;
             margin: 15px 0;
             padding: 15px;
-            background: #f5f5f5;
+            background: rgba(255,255,255,0.5);
             border-radius: 5px;
+            border: 2px solid #8B6914;
         }
 
         .item-preview-item {
@@ -464,10 +559,11 @@
 
         .item-preview-item span {
             font-size: 11px;
-            color: #666;
+            color: #2c1810;
             max-width: 80px;
             text-align: center;
             word-break: break-word;
+            font-weight: bold;
         }
 
         .bonus-config-section {
@@ -475,7 +571,7 @@
         }
 
         .bonus-config-section h3 {
-            color: #333;
+            color: #2c1810;
             margin-bottom: 15px;
             font-size: 16px;
         }
@@ -494,8 +590,8 @@
 
         .bonus-item label {
             font-size: 13px;
-            color: #666;
-            font-weight: 500;
+            color: #2c1810;
+            font-weight: bold;
         }
 
         .bonus-item input {
@@ -518,11 +614,31 @@
                 flex-basis: 100%;
             }
         }
+
+        /* Scroll bar styling */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #2c1810;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #cd8b2d 0%, #8B6914 100%);
+            border-radius: 10px;
+            border: 2px solid #2c1810;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #a67318 100%);
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎮 OSRS Bingo Board 🎮</h1>
+        <h1>⚔️ Unsociables BINGO BOARD ⚔️</h1>
 
         <div class="controls">
             <!-- Player View Selector -->
@@ -578,7 +694,7 @@
             </div>
 
             <div class="leaderboard">
-                <h2>🏆 Leaderboard</h2>
+                <h2>🏆 Leaderboard 🏆</h2>
                 <div id="playerStats">
                     <div class="no-players">No drops recorded yet!</div>
                 </div>
@@ -594,7 +710,7 @@
 
             <label>Password:</label>
             <input type="password" id="adminPasswordInput" placeholder="Enter password" onkeypress="if(event.key === 'Enter') attemptLogin()">
-            <p id="loginError" style="color: #f44336; font-size: 13px; margin-top: 5px; display: none;">Incorrect password!</p>
+            <p id="loginError" style="color: #8b1a1a; font-size: 13px; margin-top: 5px; display: none;">Incorrect password!</p>
 
             <div class="modal-buttons">
                 <button class="btn-cancel" onclick="closeLoginModal()">Cancel</button>
@@ -627,7 +743,7 @@
                 </label>
             </div>
 
-            <p id="overrideError" style="color: #f44336; font-size: 13px; margin-top: 5px; display: none;"></p>
+            <p id="overrideError" style="color: #8b1a1a; font-size: 13px; margin-top: 5px; display: none;"></p>
             <p id="overrideSuccess" style="color: #4CAF50; font-size: 13px; margin-top: 5px; display: none;"></p>
 
             <div class="modal-buttons">
@@ -640,11 +756,11 @@
     <!-- Board Size Modal -->
     <div class="modal" id="boardSizeModal">
         <div class="modal-content">
-            <h2>Change Board Size</h2>
+            <h2>📐 Change Board Size</h2>
             <p style="color: #666; margin-bottom: 20px;">⚠️ Warning: Changing board size will clear all tiles and progress!</p>
 
             <label>Select Board Size:</label>
-            <select id="boardSizeSelect" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+            <select id="boardSizeSelect">
                 <option value="3">3x3 (9 tiles)</option>
                 <option value="5" selected>5x5 (25 tiles)</option>
                 <option value="7">7x7 (49 tiles)</option>
@@ -661,16 +777,16 @@
     <!-- Edit Tile Modal -->
     <div class="modal" id="editModal">
         <div class="modal-content">
-            <h2>Edit Tile</h2>
+            <h2>✏️ Edit Tile</h2>
 
             <label>Display Title (shown on tile):</label>
             <input type="text" id="tileDisplayTitle" placeholder="e.g., Any Bandos Piece, Rare Drop, etc." style="margin-bottom: 15px;">
-            <p style="font-size: 12px; color: #999; margin-bottom: 15px;">
+            <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
                 Leave blank to show the first item name as the title
             </p>
 
             <label>Item Name(s) - One per line:</label>
-            <p style="font-size: 12px; color: #999; margin-bottom: 10px;">
+            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
                 <strong>First item</strong> = Used for the tile image<br>
                 <strong>All items</strong> = Can trigger tile completion<br>
                 <em>Example: List "Bandos chestplate" first (for image), then add "Bandos tassets" and "Bandos boots" to make ANY Bandos armor complete this tile.</em>
@@ -701,7 +817,7 @@ Dragon warhammer"></textarea>
     <!-- API Info Modal -->
     <div class="modal" id="apiModal">
         <div class="modal-content">
-            <h2>API Integration</h2>
+            <h2>🔗 API Integration</h2>
             <p>To connect your Discord bot, add this endpoint URL to your bot:</p>
             <input type="text" id="apiUrl" readonly value="http://localhost:8000/drop">
             <p style="margin-top: 15px; font-size: 12px; color: #666;">
@@ -718,7 +834,7 @@ Dragon warhammer"></textarea>
         let editMode = false;
         let currentTileIndex = null;
         let isAdmin = false;
-        let currentPlayer = null; // Currently selected player for viewing
+        let currentPlayer = null;
         let bingoData = {
             boardSize: 5,
             tiles: [],
@@ -732,7 +848,6 @@ Dragon warhammer"></textarea>
 
         const API_URL = 'https://osrsbingobot.onrender.com';
 
-        // Player view functions
         function changePlayer() {
             currentPlayer = document.getElementById('playerSelect').value || null;
             localStorage.setItem('lastViewedPlayer', currentPlayer || '');
@@ -774,16 +889,13 @@ Dragon warhammer"></textarea>
             const select = document.getElementById('playerSelect');
             const currentValue = select.value;
 
-            // Get all unique players
             const allPlayers = new Set();
             bingoData.tiles.forEach(tile => {
                 tile.completedBy.forEach(player => allPlayers.add(player));
             });
 
-            // Sort players alphabetically
             const sortedPlayers = Array.from(allPlayers).sort();
 
-            // Rebuild dropdown
             select.innerHTML = '<option value="">Everyone (No Filter)</option>';
             sortedPlayers.forEach(player => {
                 const option = document.createElement('option');
@@ -792,13 +904,11 @@ Dragon warhammer"></textarea>
                 select.appendChild(option);
             });
 
-            // Restore selection if player still exists
             if (currentValue && sortedPlayers.includes(currentValue)) {
                 select.value = currentValue;
             } else if (currentPlayer && sortedPlayers.includes(currentPlayer)) {
                 select.value = currentPlayer;
             } else {
-                // Check for favorite player
                 const favoritePlayer = localStorage.getItem('favoritePlayer');
                 if (favoritePlayer && sortedPlayers.includes(favoritePlayer)) {
                     select.value = favoritePlayer;
@@ -807,7 +917,6 @@ Dragon warhammer"></textarea>
             }
         }
 
-        // Check if user is admin on load
         function checkAdminStatus() {
             const savedAdmin = sessionStorage.getItem('isAdmin');
             if (savedAdmin === 'true') {
@@ -969,7 +1078,7 @@ Dragon warhammer"></textarea>
             document.getElementById('loginBtn').style.display = 'block';
             const btn = document.getElementById('editBtn');
             btn.textContent = '📝 Edit Mode';
-            btn.style.background = '#4CAF50';
+            btn.style.background = 'linear-gradient(135deg, #cd8b2d 0%, #a67318 100%)';
         }
 
         function formatItemName(itemName) {
@@ -1083,10 +1192,8 @@ Dragon warhammer"></textarea>
 
             checkAdminStatus();
 
-            // Update player dropdown
             updatePlayerDropdown();
 
-            // Load favorite or last viewed player
             const favoritePlayer = localStorage.getItem('favoritePlayer');
             const lastViewedPlayer = localStorage.getItem('lastViewedPlayer');
 
@@ -1168,14 +1275,12 @@ Dragon warhammer"></textarea>
                 const tileEl = document.createElement('div');
                 tileEl.className = 'bingo-tile';
 
-                // Determine tile state based on current player view
                 if (tile.completedBy.length > 0) {
                     if (currentPlayer && tile.completedBy.includes(currentPlayer)) {
                         tileEl.classList.add('completed-by-current');
                     } else if (currentPlayer) {
                         tileEl.classList.add('completed-by-others');
                     } else {
-                        // Everyone view - show as completed if anyone completed it
                         tileEl.classList.add('completed-by-current');
                     }
                 }
@@ -1195,7 +1300,7 @@ Dragon warhammer"></textarea>
                 }
 
                 const itemCountHtml = tile.items.length > 1
-                    ? `<div style="font-size: 11px; color: ${tile.completedBy.length > 0 ? 'rgba(255,255,255,0.7)' : '#999'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
+                    ? `<div style="font-size: 11px; color: ${tile.completedBy.length > 0 ? 'rgba(255,255,255,0.7)' : '#8B6914'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
                     : '';
 
                 tileEl.innerHTML = `
@@ -1243,7 +1348,7 @@ Dragon warhammer"></textarea>
             editMode = !editMode;
             const btn = document.getElementById('editBtn');
             btn.textContent = editMode ? '✓ Edit Mode ON' : '📝 Edit Mode';
-            btn.style.background = editMode ? '#ff9800' : '#4CAF50';
+            btn.style.background = editMode ? 'linear-gradient(135deg, #FF8C00 0%, #FF7000 100%)' : 'linear-gradient(135deg, #cd8b2d 0%, #a67318 100%)';
         }
 
         function openEditModal(index) {
@@ -1289,7 +1394,7 @@ Dragon warhammer"></textarea>
                         <span><strong>${items[0]}</strong> (Display)</span>
                     </div>
                     <div style="flex-basis: 100%; height: 0;"></div>
-                    <div style="font-size: 11px; color: #666; padding: 5px; width: 100%;">
+                    <div style="font-size: 11px; color: #2c1810; padding: 5px; width: 100%;">
                         <strong>Also triggers on:</strong> ${items.slice(1).join(', ')}
                     </div>
                 `;
@@ -1393,7 +1498,7 @@ Dragon warhammer"></textarea>
 
             const modalContent = document.querySelector('#bonusModal .modal-content');
             modalContent.innerHTML = `
-                <h2>Configure Line Bonuses</h2>
+                <h2>⚙️ Configure Line Bonuses</h2>
                 <p style="color: #666; margin-bottom: 20px;">Set bonus points for completing each row, column, or diagonal.</p>
 
                 <div class="bonus-config-section">
@@ -1671,7 +1776,6 @@ Dragon warhammer"></textarea>
             document.getElementById('apiModal').classList.remove('active');
         }
 
-        // Initialize
         (async () => {
             await initBoard();
         })();
