@@ -532,6 +532,7 @@
         }
 
         function renderBoard() {
+            console.log('🔄 renderBoard called, bonusOverlayVisible:', bonusOverlayVisible);
             const board = document.getElementById('bingoBoard');
             if (!board) {
                 console.error('Board element not found!');
@@ -613,6 +614,7 @@
 
             // Restore bonus overlay if it was visible
             if (bonusOverlayVisible) {
+                console.log('🎁 renderBoard finished - restoring bonus overlay');
                 showBonusOverlay();
             }
         }
@@ -1429,6 +1431,7 @@
 
         function toggleBonusOverlay() {
             bonusOverlayVisible = !bonusOverlayVisible;
+            console.log(`🎁 Toggle overlay: ${bonusOverlayVisible ? 'SHOW' : 'HIDE'}`);
             const btn = document.getElementById('bonusToggleBtn');
 
             if (bonusOverlayVisible) {
@@ -1443,10 +1446,14 @@
         }
 
         function showBonusOverlay() {
+            console.log('🎁 showBonusOverlay called');
             const board = document.getElementById('bingoBoard');
             const boardContainer = document.querySelector('.board-container');
 
-            if (!board || !bingoData.lineBonuses) return;
+            if (!board || !bingoData.lineBonuses) {
+                console.log('❌ Cannot show overlay - board or bonuses missing');
+                return;
+            }
 
             // Remove any existing overlay
             hideBonusOverlay();
@@ -1515,13 +1522,17 @@
             // Add extra padding to board container so bonuses don't get cut off
             boardContainer.style.paddingRight = '90px';
             boardContainer.style.paddingBottom = '70px';
+
+            console.log('✅ Overlay added successfully');
         }
 
         function hideBonusOverlay() {
+            console.log('🎁 hideBonusOverlay called');
             const overlay = document.getElementById('bonusOverlay');
             const boardContainer = document.querySelector('.board-container');
 
             if (overlay) {
+                console.log('  → Removing overlay');
                 overlay.remove();
             }
 
