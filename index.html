@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unsociables Bingo Board</title>
+    <title>OSRS Bingo Board</title>
     <style>
         * {
             margin: 0;
@@ -634,11 +634,26 @@
         ::-webkit-scrollbar-thumb:hover {
             background: linear-gradient(135deg, #e09d3d 0%, #a67318 100%);
         }
+
+        /* History content scroll */
+        #historyContent::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        #historyContent::-webkit-scrollbar-track {
+            background: rgba(44,24,16,0.2);
+            border-radius: 10px;
+        }
+
+        #historyContent::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #cd8b2d 0%, #8B6914 100%);
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>⚔️ Unsociables BINGO BOARD ⚔️</h1>
+        <h1>⚔️ OSRS BINGO BOARD ⚔️</h1>
 
         <div class="controls">
             <!-- Player View Selector -->
@@ -683,6 +698,7 @@
 
             <!-- Public Controls -->
             <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
+            <button onclick="openHistoryModal()" class="secondary">📜 View History</button>
 
             <!-- Login Button (Shows when not admin) -->
             <button onclick="openLoginModal()" id="loginBtn" class="secondary" style="margin-left: auto;">🔐 Admin Login</button>
@@ -826,6 +842,30 @@ Dragon warhammer"></textarea>
             </p>
             <div class="modal-buttons">
                 <button class="btn-save" onclick="closeApiModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drop History Modal -->
+    <div class="modal" id="historyModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <h2>📜 Drop History</h2>
+            <p style="color: #666; margin-bottom: 20px;">Recent drops recorded from Discord</p>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
+                <label style="font-weight: bold;">Filter by Player:</label>
+                <select id="historyPlayerFilter" onchange="loadHistory()" style="padding: 8px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold;">
+                    <option value="">All Players</option>
+                </select>
+                <button onclick="loadHistory()" class="btn-save" style="padding: 8px 16px; margin-left: auto;">🔄 Refresh</button>
+            </div>
+
+            <div id="historyContent" style="max-height: 500px; overflow-y: auto; background: rgba(255,255,255,0.5); border-radius: 5px; padding: 15px; border: 2px solid #8B6914;">
+                <div style="text-align: center; color: #666; padding: 40px;">Loading history...</div>
+            </div>
+
+            <div class="modal-buttons" style="margin-top: 20px;">
+                <button class="btn-cancel" onclick="closeHistoryModal()">Close</button>
             </div>
         </div>
     </div>
@@ -1774,6 +1814,117 @@ Dragon warhammer"></textarea>
 
         function closeApiModal() {
             document.getElementById('apiModal').classList.remove('active');
+        }
+
+        function openHistoryModal() {
+            document.getElementById('historyModal').classList.add('active');
+            loadHistory();
+            updateHistoryPlayerFilter();
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('historyModal').classList.remove('active');
+        }
+
+        function updateHistoryPlayerFilter() {
+            const select = document.getElementById('historyPlayerFilter');
+            const currentValue = select.value;
+
+            // Get all unique players
+            const allPlayers = new Set();
+            bingoData.tiles.forEach(tile => {
+                tile.completedBy.forEach(player => allPlayers.add(player));
+            });
+
+            const sortedPlayers = Array.from(allPlayers).sort();
+
+            // Rebuild dropdown
+            select.innerHTML = '<option value="">All Players</option>';
+            sortedPlayers.forEach(player => {
+                const option = document.createElement('option');
+                option.value = player;
+                option.textContent = player;
+                select.appendChild(option);
+            });
+
+            // Restore selection
+            if (currentValue && sortedPlayers.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        async function loadHistory() {
+            const contentDiv = document.getElementById('historyContent');
+            const playerFilter = document.getElementById('historyPlayerFilter').value;
+
+            contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">Loading history...</div>';
+
+            try {
+                let url = `${API_URL}/history?limit=100`;
+                if (playerFilter) {
+                    url += `&player=${encodeURIComponent(playerFilter)}`;
+                }
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch history');
+                }
+
+                const data = await response.json();
+
+                if (!data.success || data.history.length === 0) {
+                    contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No drops recorded yet!</div>';
+                    return;
+                }
+
+                // Render history
+                let html = '';
+                data.history.forEach((record, index) => {
+                    const timestamp = new Date(record.timestamp);
+                    const timeAgo = getTimeAgo(timestamp);
+                    const dateStr = timestamp.toLocaleDateString();
+                    const timeStr = timestamp.toLocaleTimeString();
+
+                    const tileInfo = record.tileCompleted && record.tilesInfo && record.tilesInfo.length > 0
+                        ? `<div style="margin-top: 5px; padding: 5px; background: rgba(76,175,80,0.2); border-radius: 3px; font-size: 11px;">
+                             ✅ Completed Tile ${record.tilesInfo[0].tile}: ${record.tilesInfo[0].items.join(', ')} (+${record.tilesInfo[0].value} points)
+                           </div>`
+                        : '<div style="margin-top: 5px; font-size: 11px; color: #999;">No tile completed</div>';
+
+                    html += `
+                        <div style="background: white; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
+                                <div>
+                                    <strong style="color: #ffcc33; background: #2c1810; padding: 2px 8px; border-radius: 3px; font-size: 13px;">${record.player}</strong>
+                                    <span style="color: #2c1810; margin-left: 10px; font-weight: bold;">received</span>
+                                    <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
+                                </div>
+                                <div style="text-align: right; font-size: 11px; color: #666;">
+                                    <div>${timeAgo}</div>
+                                    <div>${dateStr} ${timeStr}</div>
+                                </div>
+                            </div>
+                            ${tileInfo}
+                        </div>
+                    `;
+                });
+
+                contentDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading history:', error);
+                contentDiv.innerHTML = '<div style="text-align: center; color: #8b1a1a; padding: 40px;">❌ Failed to load history. Make sure the API is running.</div>';
+            }
+        }
+
+        function getTimeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+            if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+            return `${Math.floor(seconds / 604800)} weeks ago`;
         }
 
         (async () => {
