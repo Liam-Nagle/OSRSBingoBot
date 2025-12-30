@@ -72,6 +72,83 @@
             background: #da190b;
         }
 
+        .player-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255,255,255,0.15);
+            padding: 10px 15px;
+            border-radius: 5px;
+        }
+
+        .player-selector label {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .player-selector select {
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: none;
+            background: white;
+            color: #333;
+            font-size: 14px;
+            cursor: pointer;
+            min-width: 150px;
+        }
+
+        .player-selector .star-btn {
+            background: #FFC107;
+            color: #333;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .player-selector .star-btn:hover {
+            background: #FFD54F;
+        }
+
+        .player-selector .star-btn.active {
+            background: #FF9800;
+        }
+
+        .view-legend {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            font-size: 13px;
+            margin-left: auto;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .legend-box.green {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+
+        .legend-box.yellow {
+            background: linear-gradient(135deg, #FFC107 0%, #FFB300 100%);
+        }
+
+        .legend-box.white {
+            background: rgba(255,255,255,0.95);
+        }
+
         .main-content {
             display: grid;
             grid-template-columns: 1fr 350px;
@@ -108,13 +185,27 @@
             box-shadow: 0 5px 20px rgba(0,0,0,0.3);
         }
 
-        .bingo-tile.completed {
+        .bingo-tile.completed-by-current {
             background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
             color: white;
         }
 
-        .bingo-tile.completed::after {
+        .bingo-tile.completed-by-others {
+            background: linear-gradient(135deg, #FFC107 0%, #FFB300 100%);
+            color: white;
+        }
+
+        .bingo-tile.completed-by-current::after {
             content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .bingo-tile.completed-by-others::after {
+            content: '○';
             position: absolute;
             top: 10px;
             right: 10px;
@@ -131,7 +222,8 @@
             width: 100%;
         }
 
-        .bingo-tile.completed .tile-content {
+        .bingo-tile.completed-by-current .tile-content,
+        .bingo-tile.completed-by-others .tile-content {
             color: white;
         }
 
@@ -162,7 +254,8 @@
             margin-top: 10px;
         }
 
-        .bingo-tile.completed .tile-value {
+        .bingo-tile.completed-by-current .tile-value,
+        .bingo-tile.completed-by-others .tile-value {
             color: rgba(255,255,255,0.9);
         }
 
@@ -173,7 +266,8 @@
             text-align: center;
         }
 
-        .bingo-tile.completed .tile-players {
+        .bingo-tile.completed-by-current .tile-players,
+        .bingo-tile.completed-by-others .tile-players {
             color: rgba(255,255,255,0.8);
         }
 
@@ -220,6 +314,11 @@
         .player-card.rank-3 {
             border-left-color: #CD7F32;
             background: linear-gradient(135deg, rgba(205,127,50,0.2) 0%, rgba(205,127,50,0.05) 100%);
+        }
+
+        .player-card.current-view {
+            border-left-width: 6px;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.5);
         }
 
         .player-rank {
@@ -413,6 +512,11 @@
                 position: relative;
                 top: 0;
             }
+
+            .view-legend {
+                margin-left: 0;
+                flex-basis: 100%;
+            }
         }
     </style>
 </head>
@@ -421,8 +525,35 @@
         <h1>🎮 OSRS Bingo Board 🎮</h1>
 
         <div class="controls">
+            <!-- Player View Selector -->
+            <div class="player-selector">
+                <label>👤 View as:</label>
+                <select id="playerSelect" onchange="changePlayer()">
+                    <option value="">Everyone (No Filter)</option>
+                </select>
+                <button class="star-btn" id="favoriteBtn" onclick="toggleFavorite()" title="Set as favorite player">
+                    ⭐ Favorite
+                </button>
+            </div>
+
+            <!-- Legend -->
+            <div class="view-legend">
+                <div class="legend-item">
+                    <div class="legend-box green"></div>
+                    <span>You completed</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box yellow"></div>
+                    <span>Others completed</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box white"></div>
+                    <span>Not completed</span>
+                </div>
+            </div>
+
             <!-- Admin Controls (Hidden by default) -->
-            <div id="adminControls" style="display: none;">
+            <div id="adminControls" style="display: none; flex-basis: 100%; margin-top: 10px;">
                 <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
                 <button onclick="openManualOverrideModal()" class="secondary">✏️ Manual Override</button>
                 <button onclick="openBoardSizeModal()" class="secondary">📐 Board Size</button>
@@ -587,6 +718,7 @@ Dragon warhammer"></textarea>
         let editMode = false;
         let currentTileIndex = null;
         let isAdmin = false;
+        let currentPlayer = null; // Currently selected player for viewing
         let bingoData = {
             boardSize: 5,
             tiles: [],
@@ -599,6 +731,81 @@ Dragon warhammer"></textarea>
         };
 
         const API_URL = 'https://osrsbingobot.onrender.com';
+
+        // Player view functions
+        function changePlayer() {
+            currentPlayer = document.getElementById('playerSelect').value || null;
+            localStorage.setItem('lastViewedPlayer', currentPlayer || '');
+            renderBoard();
+            updateFavoriteButton();
+        }
+
+        function toggleFavorite() {
+            if (!currentPlayer) {
+                alert('Please select a player first!');
+                return;
+            }
+
+            const favoritePlayer = localStorage.getItem('favoritePlayer');
+            if (favoritePlayer === currentPlayer) {
+                localStorage.removeItem('favoritePlayer');
+                alert(`${currentPlayer} removed from favorites`);
+            } else {
+                localStorage.setItem('favoritePlayer', currentPlayer);
+                alert(`${currentPlayer} set as favorite! The board will load with this player's view next time.`);
+            }
+            updateFavoriteButton();
+        }
+
+        function updateFavoriteButton() {
+            const btn = document.getElementById('favoriteBtn');
+            const favoritePlayer = localStorage.getItem('favoritePlayer');
+
+            if (currentPlayer && favoritePlayer === currentPlayer) {
+                btn.classList.add('active');
+                btn.textContent = '⭐ Favorited';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = '⭐ Favorite';
+            }
+        }
+
+        function updatePlayerDropdown() {
+            const select = document.getElementById('playerSelect');
+            const currentValue = select.value;
+
+            // Get all unique players
+            const allPlayers = new Set();
+            bingoData.tiles.forEach(tile => {
+                tile.completedBy.forEach(player => allPlayers.add(player));
+            });
+
+            // Sort players alphabetically
+            const sortedPlayers = Array.from(allPlayers).sort();
+
+            // Rebuild dropdown
+            select.innerHTML = '<option value="">Everyone (No Filter)</option>';
+            sortedPlayers.forEach(player => {
+                const option = document.createElement('option');
+                option.value = player;
+                option.textContent = player;
+                select.appendChild(option);
+            });
+
+            // Restore selection if player still exists
+            if (currentValue && sortedPlayers.includes(currentValue)) {
+                select.value = currentValue;
+            } else if (currentPlayer && sortedPlayers.includes(currentPlayer)) {
+                select.value = currentPlayer;
+            } else {
+                // Check for favorite player
+                const favoritePlayer = localStorage.getItem('favoritePlayer');
+                if (favoritePlayer && sortedPlayers.includes(favoritePlayer)) {
+                    select.value = favoritePlayer;
+                    currentPlayer = favoritePlayer;
+                }
+            }
+        }
 
         // Check if user is admin on load
         function checkAdminStatus() {
@@ -637,7 +844,7 @@ Dragon warhammer"></textarea>
                 if (response.ok && result.success) {
                     isAdmin = true;
                     sessionStorage.setItem('isAdmin', 'true');
-                    sessionStorage.setItem('adminPassword', password);  // Store for manual override
+                    sessionStorage.setItem('adminPassword', password);
                     showAdminControls();
                     closeLoginModal();
                     alert('✅ Admin access granted!');
@@ -668,12 +875,10 @@ Dragon warhammer"></textarea>
                 return;
             }
 
-            // Update max tile number based on board size
             const totalTiles = bingoData.boardSize * bingoData.boardSize;
             document.getElementById('maxTileNum').textContent = totalTiles;
             document.getElementById('overrideTileNum').max = totalTiles;
 
-            // Clear previous inputs
             document.getElementById('overrideTileNum').value = '';
             document.getElementById('overridePlayerName').value = '';
             document.querySelector('input[name="overrideAction"][value="add"]').checked = true;
@@ -698,7 +903,6 @@ Dragon warhammer"></textarea>
             errorEl.style.display = 'none';
             successEl.style.display = 'none';
 
-            // Validation
             const totalTiles = bingoData.boardSize * bingoData.boardSize;
             if (!tileNum || tileNum < 1 || tileNum > totalTiles) {
                 errorEl.textContent = `Please enter a tile number between 1 and ${totalTiles}`;
@@ -712,7 +916,6 @@ Dragon warhammer"></textarea>
                 return;
             }
 
-            // Get admin password from session (we need it for API call)
             const password = sessionStorage.getItem('adminPassword');
             if (!password) {
                 errorEl.textContent = 'Session expired. Please log in again.';
@@ -726,7 +929,7 @@ Dragon warhammer"></textarea>
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         password: password,
-                        tileIndex: tileNum - 1,  // Convert to 0-based index
+                        tileIndex: tileNum - 1,
                         playerName: playerName,
                         action: action
                     })
@@ -738,10 +941,8 @@ Dragon warhammer"></textarea>
                     successEl.textContent = `✅ ${result.message}`;
                     successEl.style.display = 'block';
 
-                    // Refresh board data
                     await refreshFromAPI();
 
-                    // Close modal after 2 seconds
                     setTimeout(() => {
                         closeManualOverrideModal();
                     }, 2000);
@@ -771,28 +972,21 @@ Dragon warhammer"></textarea>
             btn.style.background = '#4CAF50';
         }
 
-
-        // OSRS Wiki image URL generator
         function formatItemName(itemName) {
-            // If already has underscores, keep original capitalization
             if (itemName.includes('_')) {
                 return itemName.trim();
             }
-
-            // Convert spaces to underscores, keep original capitalization
             return itemName.trim().replace(/\s+/g, '_');
         }
 
-        // Fallback image loader with multiple attempts
         function loadItemImage(img, itemName) {
             const baseUrl = 'https://oldschool.runescape.wiki/images/';
 
-            // Try different format variations
             const formats = [
-                formatItemName(itemName),  // Proper title case with underscores
-                itemName.trim().replace(/\s+/g, '_'),  // Keep original capitalization
-                itemName.trim().toLowerCase().replace(/\s+/g, '_'),  // All lowercase
-                itemName.trim().toUpperCase().replace(/\s+/g, '_')   // All uppercase
+                formatItemName(itemName),
+                itemName.trim().replace(/\s+/g, '_'),
+                itemName.trim().toLowerCase().replace(/\s+/g, '_'),
+                itemName.trim().toUpperCase().replace(/\s+/g, '_')
             ];
 
             let attemptIndex = 0;
@@ -832,17 +1026,14 @@ Dragon warhammer"></textarea>
                     bingoData = await response.json();
                     console.log('✅ Loaded bingo data from API:', bingoData);
 
-                    // Ensure boardSize exists
                     if (!bingoData.boardSize) {
                         bingoData.boardSize = 5;
                     }
 
-                    // Ensure lineBonuses exists
                     if (!bingoData.lineBonuses) {
                         bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                     }
 
-                    // Ensure all tiles have displayTitle field (backwards compatibility)
                     bingoData.tiles.forEach(tile => {
                         if (!tile.hasOwnProperty('displayTitle')) {
                             tile.displayTitle = '';
@@ -864,11 +1055,9 @@ Dragon warhammer"></textarea>
                     if (!bingoData.lineBonuses) {
                         bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                     }
-                    // Remove adminPassword if it exists in old data
                     if (bingoData.adminPassword) {
                         delete bingoData.adminPassword;
                     }
-                    // Ensure all tiles have displayTitle field (backwards compatibility)
                     bingoData.tiles.forEach(tile => {
                         if (!tile.hasOwnProperty('displayTitle')) {
                             tile.displayTitle = '';
@@ -890,12 +1079,26 @@ Dragon warhammer"></textarea>
                 }
             }
 
-            // Set CSS variable for grid
             document.documentElement.style.setProperty('--board-size', bingoData.boardSize);
 
-            // Check if user is admin
             checkAdminStatus();
 
+            // Update player dropdown
+            updatePlayerDropdown();
+
+            // Load favorite or last viewed player
+            const favoritePlayer = localStorage.getItem('favoritePlayer');
+            const lastViewedPlayer = localStorage.getItem('lastViewedPlayer');
+
+            if (favoritePlayer) {
+                currentPlayer = favoritePlayer;
+                document.getElementById('playerSelect').value = favoritePlayer;
+            } else if (lastViewedPlayer) {
+                currentPlayer = lastViewedPlayer;
+                document.getElementById('playerSelect').value = lastViewedPlayer;
+            }
+
+            updateFavoriteButton();
             renderBoard();
             updatePlayerStats();
             setInterval(refreshFromAPI, 5000);
@@ -916,7 +1119,6 @@ Dragon warhammer"></textarea>
                 if (response.ok) {
                     const newData = await response.json();
 
-                    // Check if data actually changed
                     const oldDataStr = JSON.stringify(bingoData);
                     const newDataStr = JSON.stringify(newData);
 
@@ -932,20 +1134,18 @@ Dragon warhammer"></textarea>
                             bingoData.lineBonuses = createDefaultBonuses(bingoData.boardSize);
                         }
 
-                        // Ensure all tiles have displayTitle field (backwards compatibility)
                         bingoData.tiles.forEach(tile => {
                             if (!tile.hasOwnProperty('displayTitle')) {
                                 tile.displayTitle = '';
                             }
                         });
 
-                        // Update CSS variable
                         document.documentElement.style.setProperty('--board-size', bingoData.boardSize);
 
+                        updatePlayerDropdown();
                         renderBoard();
                         updatePlayerStats();
 
-                        // Also update localStorage
                         localStorage.setItem('bingoData', JSON.stringify(bingoData));
                     }
                 }
@@ -967,15 +1167,22 @@ Dragon warhammer"></textarea>
             bingoData.tiles.forEach((tile, index) => {
                 const tileEl = document.createElement('div');
                 tileEl.className = 'bingo-tile';
+
+                // Determine tile state based on current player view
                 if (tile.completedBy.length > 0) {
-                    tileEl.classList.add('completed');
+                    if (currentPlayer && tile.completedBy.includes(currentPlayer)) {
+                        tileEl.classList.add('completed-by-current');
+                    } else if (currentPlayer) {
+                        tileEl.classList.add('completed-by-others');
+                    } else {
+                        // Everyone view - show as completed if anyone completed it
+                        tileEl.classList.add('completed-by-current');
+                    }
                 }
 
-                // Use custom display title if set, otherwise use first item name
                 const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
                 const players = tile.completedBy.length > 0 ? `✓ ${tile.completedBy.join(', ')}` : '';
 
-                // Create image only for the first item (display item)
                 let imagesHtml = '';
                 if (tile.items.length > 0) {
                     const displayItem = tile.items[0];
@@ -987,7 +1194,6 @@ Dragon warhammer"></textarea>
                     `;
                 }
 
-                // Show count if multiple items can trigger this tile
                 const itemCountHtml = tile.items.length > 1
                     ? `<div style="font-size: 11px; color: ${tile.completedBy.length > 0 ? 'rgba(255,255,255,0.7)' : '#999'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
                     : '';
@@ -1003,7 +1209,6 @@ Dragon warhammer"></textarea>
                 tileEl.onclick = () => handleTileClick(index);
                 board.appendChild(tileEl);
 
-                // Load image after adding to DOM
                 if (tile.items.length > 0) {
                     const imgId = `img-${index}`;
                     const img = document.getElementById(imgId);
@@ -1047,6 +1252,7 @@ Dragon warhammer"></textarea>
             const textarea = document.getElementById('tileItems');
             textarea.value = tile.items.join('\n');
             document.getElementById('tileValue').value = tile.value;
+            document.getElementById('tileDisplayTitle').value = tile.displayTitle || '';
 
             updateItemPreview();
             textarea.oninput = updateItemPreview;
@@ -1070,7 +1276,6 @@ Dragon warhammer"></textarea>
             previewDiv.style.display = 'flex';
 
             if (items.length === 1) {
-                // Single item - show it
                 previewDiv.innerHTML = `
                     <div class="item-preview-item">
                         <img id="preview-img-0" alt="${items[0]}">
@@ -1078,7 +1283,6 @@ Dragon warhammer"></textarea>
                     </div>
                 `;
             } else {
-                // Multiple items - show first as main display, list others
                 previewDiv.innerHTML = `
                     <div class="item-preview-item">
                         <img id="preview-img-0" alt="${items[0]}">
@@ -1091,7 +1295,6 @@ Dragon warhammer"></textarea>
                 `;
             }
 
-            // Load preview image for first item
             const img = document.getElementById('preview-img-0');
             if (img) {
                 loadItemImage(img, items[0]);
@@ -1152,7 +1355,6 @@ Dragon warhammer"></textarea>
                     });
                 }
 
-                // Update CSS variable
                 document.documentElement.style.setProperty('--board-size', newSize);
 
                 closeBoardSizeModal();
@@ -1169,7 +1371,6 @@ Dragon warhammer"></textarea>
             }
             const size = bingoData.boardSize;
 
-            // Generate dynamic bonus configuration HTML
             let rowsHtml = '';
             for (let i = 0; i < size; i++) {
                 rowsHtml += `
@@ -1190,7 +1391,6 @@ Dragon warhammer"></textarea>
                 `;
             }
 
-            // Update modal content
             const modalContent = document.querySelector('#bonusModal .modal-content');
             modalContent.innerHTML = `
                 <h2>Configure Line Bonuses</h2>
@@ -1323,7 +1523,6 @@ Dragon warhammer"></textarea>
         async function saveData() {
             console.log('💾 Saving data...');
 
-            // Remove adminPassword from data if it exists (should never be saved to client-side)
             const dataToSave = {...bingoData};
             if (dataToSave.adminPassword) {
                 delete dataToSave.adminPassword;
@@ -1356,7 +1555,6 @@ Dragon warhammer"></textarea>
                 diagonals: []
             };
 
-            // Check rows
             for (let row = 0; row < size; row++) {
                 let complete = true;
                 for (let col = 0; col < size; col++) {
@@ -1369,7 +1567,6 @@ Dragon warhammer"></textarea>
                 if (complete) completions.rows.push(row);
             }
 
-            // Check columns
             for (let col = 0; col < size; col++) {
                 let complete = true;
                 for (let row = 0; row < size; row++) {
@@ -1382,7 +1579,6 @@ Dragon warhammer"></textarea>
                 if (complete) completions.cols.push(col);
             }
 
-            // Check diagonals
             let diag1 = true, diag2 = true;
             for (let i = 0; i < size; i++) {
                 if (!bingoData.tiles[i * size + i].completedBy.includes(player)) diag1 = false;
@@ -1398,7 +1594,6 @@ Dragon warhammer"></textarea>
             const statsDiv = document.getElementById('playerStats');
             const playerScores = {};
 
-            // Calculate base scores from tiles
             bingoData.tiles.forEach(tile => {
                 tile.completedBy.forEach(player => {
                     if (!playerScores[player]) {
@@ -1414,7 +1609,6 @@ Dragon warhammer"></textarea>
                 });
             });
 
-            // Calculate line bonuses
             Object.keys(playerScores).forEach(player => {
                 const lines = checkLineCompletion(player);
                 playerScores[player].lines = lines;
@@ -1439,7 +1633,6 @@ Dragon warhammer"></textarea>
                 return;
             }
 
-            // Sort by points
             const sorted = Object.entries(playerScores).sort((a, b) => b[1].points - a[1].points);
 
             const rankEmojis = ['🥇', '🥈', '🥉'];
@@ -1447,6 +1640,7 @@ Dragon warhammer"></textarea>
             statsDiv.innerHTML = sorted.map(([player, stats], index) => {
                 const rankClass = index < 3 ? `rank-${index + 1}` : '';
                 const rankEmoji = index < 3 ? rankEmojis[index] : '';
+                const isCurrentView = player === currentPlayer ? 'current-view' : '';
 
                 const lineText = [];
                 if (stats.lines.rows.length > 0) lineText.push(`${stats.lines.rows.length} row${stats.lines.rows.length > 1 ? 's' : ''}`);
@@ -1454,7 +1648,7 @@ Dragon warhammer"></textarea>
                 if (stats.lines.diagonals.length > 0) lineText.push(`${stats.lines.diagonals.length} diagonal${stats.lines.diagonals.length > 1 ? 's' : ''}`);
 
                 return `
-                    <div class="player-card ${rankClass}">
+                    <div class="player-card ${rankClass} ${isCurrentView}">
                         ${rankEmoji ? `<div class="player-rank">${rankEmoji}</div>` : ''}
                         <div class="player-name">${player}</div>
                         <div class="player-score">${stats.points.toLocaleString()} points</div>
@@ -1475,29 +1669,6 @@ Dragon warhammer"></textarea>
 
         function closeApiModal() {
             document.getElementById('apiModal').classList.remove('active');
-        }
-
-        async function viewDebugInfo() {
-            console.log('=== CURRENT BINGO DATA ===');
-            console.log(JSON.stringify(bingoData, null, 2));
-
-            let debugText = '=== TILES WITH ITEMS ===\n\n';
-            bingoData.tiles.forEach((tile, idx) => {
-                if (tile.items.length > 0) {
-                    debugText += `Tile ${idx + 1}:\n`;
-                    if (tile.displayTitle) {
-                        debugText += `  Title: ${tile.displayTitle}\n`;
-                    }
-                    debugText += `  Display Image: ${tile.items[0]}\n`;
-                    if (tile.items.length > 1) {
-                        debugText += `  Also matches: ${tile.items.slice(1).join(', ')}\n`;
-                    }
-                    debugText += `  Completed By: ${tile.completedBy.join(', ') || 'Nobody'}\n`;
-                    debugText += `  Value: ${tile.value} points\n\n`;
-                }
-            });
-
-            alert(debugText + '\nFull data logged to browser console (F12)');
         }
 
         // Initialize
