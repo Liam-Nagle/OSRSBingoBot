@@ -40,20 +40,30 @@ print(
 print()
 
 
-def check_duplicate_in_history(player, item, seconds=5):
-    """Check if this drop already exists in history (within last N seconds)"""
+def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
+    """Check if this drop already exists in history (within N seconds of the message timestamp)"""
     if not USE_MONGODB:
         return False  # Skip deduplication for file storage
 
     try:
-        # Calculate time threshold
-        time_threshold = datetime.utcnow() - timedelta(seconds=seconds)
+        # Parse timestamp if it's a string
+        if isinstance(message_timestamp, str):
+            msg_time = datetime.fromisoformat(message_timestamp.replace('Z', '+00:00'))
+        else:
+            msg_time = message_timestamp
 
-        # Check for duplicate
+        # Calculate time window around the message timestamp
+        time_start = msg_time - timedelta(seconds=seconds)
+        time_end = msg_time + timedelta(seconds=seconds)
+
+        # Check for duplicate within the time window
         duplicate = history_collection.find_one({
             'player': player,
             'item': item,
-            'timestamp': {'$gte': time_threshold}
+            'timestamp': {
+                '$gte': time_start,
+                '$lte': time_end
+            }
         })
 
         return duplicate is not None
@@ -163,8 +173,8 @@ def record_drop():
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
-    # Check for duplicates in history (within last 5 seconds)
-    is_duplicate = check_duplicate_in_history(player_name, item_name, seconds=5)
+    # Check for duplicates in history (within last 5 seconds of the drop timestamp)
+    is_duplicate = check_duplicate_in_history(player_name, item_name, timestamp, seconds=5)
 
     if is_duplicate:
         print(f"⚠️  Duplicate detected - skipping history save (likely Loot Drop + Collection Log)")
@@ -293,8 +303,8 @@ def record_history_only():
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
-    # Check for duplicates (within last 5 seconds)
-    is_duplicate = check_duplicate_in_history(player_name, item_name, seconds=5)
+    # Check for duplicates (within 5 seconds of the drop timestamp)
+    is_duplicate = check_duplicate_in_history(player_name, item_name, timestamp, seconds=5)
 
     if is_duplicate:
         return jsonify({
@@ -330,9 +340,11 @@ def record_death():
     """Record player death"""
     data = request.json
     player_name = data.get('player')
+    npc = data.get('npc')
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
-    print(f"\n💀 Death recorded: {player_name}")
+    npc_text = f" to {npc}" if npc else ""
+    print(f"\n💀 Death recorded: {player_name}{npc_text}")
 
     if not player_name:
         return jsonify({'error': 'Missing player name'}), 400
@@ -341,6 +353,7 @@ def record_death():
         try:
             deaths_collection.insert_one({
                 'player': player_name,
+                'npc': npc,
                 'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
                                                                                                     str) else timestamp
             })
@@ -367,7 +380,8 @@ def get_deaths():
                 '$group': {
                     '_id': '$player',
                     'deaths': {'$sum': 1},
-                    'last_death': {'$max': '$timestamp'}
+                    'last_death': {'$max': '$timestamp'},
+                    'last_npc': {'$last': '$npc'}
                 }
             },
             {
@@ -387,7 +401,8 @@ def get_deaths():
             death_stats.append({
                 'player': result['_id'],
                 'deaths': deaths,
-                'last_death': result['last_death'].isoformat() if result['last_death'] else None
+                'last_death': result['last_death'].isoformat() if result['last_death'] else None,
+                'last_npc': result.get('last_npc')
             })
 
         return jsonify({
@@ -397,6 +412,54 @@ def get_deaths():
 
     except Exception as e:
         return jsonify({'error': f'Failed to get deaths: {str(e)}'}), 500
+
+
+@app.route('/deaths/by-npc', methods=['GET'])
+def get_deaths_by_npc():
+    """Get death statistics grouped by NPC/location"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Aggregate deaths by NPC
+        pipeline = [
+            {
+                '$match': {'npc': {'$ne': None}}  # Only include deaths with NPC
+            },
+            {
+                '$group': {
+                    '_id': '$npc',
+                    'deaths': {'$sum': 1},
+                    'players': {'$addToSet': '$player'}
+                }
+            },
+            {
+                '$sort': {'deaths': -1}
+            },
+            {
+                '$limit': 50  # Top 50 most deadly NPCs
+            }
+        ]
+
+        results = list(deaths_collection.aggregate(pipeline))
+
+        # Format results
+        npc_stats = []
+        for result in results:
+            npc_stats.append({
+                'npc': result['_id'],
+                'deaths': result['deaths'],
+                'unique_players': len(result['players']),
+                'players': result['players']
+            })
+
+        return jsonify({
+            'npc_stats': npc_stats,
+            'count': len(npc_stats)
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get NPC deaths: {str(e)}'}), 500
 
 
 @app.route('/history', methods=['GET'])
@@ -513,6 +576,6 @@ if __name__ == '__main__':
     print(f"Discord bot will send drops to: /drop endpoint")
     print(f"History imports to: /history-only endpoint")
     print(f"Deaths tracked at: /death endpoint")
-    print(f"Website can fetch data from: /bingo, /history, /deaths endpoints")
+    print(f"Website can fetch data from: /bingo, /history, /deaths, /deaths/by-npc endpoints")
     print()
     app.run(host='0.0.0.0', port=port, debug=False)

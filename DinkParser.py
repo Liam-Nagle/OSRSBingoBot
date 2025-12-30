@@ -85,7 +85,7 @@ def send_to_history_only(player_name, item_name, drop_type='loot', source=None, 
         return False, False
 
 
-def send_death_to_api(player_name, timestamp=None):
+def send_death_to_api(player_name, npc=None, timestamp=None):
     """Send death to bingo board API"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/death",
@@ -95,6 +95,7 @@ def send_death_to_api(player_name, timestamp=None):
                                  },
                                  json={
                                      'player': player_name,
+                                     'npc': npc,
                                      'timestamp': timestamp or datetime.utcnow().isoformat()
                                  },
                                  timeout=5)
@@ -102,7 +103,8 @@ def send_death_to_api(player_name, timestamp=None):
         if response.status_code == 200:
             result = response.json()
             if result.get('success'):
-                print(f"💀 Death recorded: {player_name}")
+                npc_text = f" to {npc}" if npc else ""
+                print(f"💀 Death recorded: {player_name}{npc_text}")
             return True
         else:
             print(f"⚠️  Death API returned status {response.status_code}")
@@ -239,9 +241,11 @@ async def on_message(message):
             print(f"\n{'=' * 50}")
             print(f"💀 PLAYER DEATH DETECTED!")
             print(f"Player: {death_data['player']}")
+            if death_data.get('npc'):
+                print(f"Cause: {death_data['npc']}")
             print(f"{'=' * 50}\n")
 
-            send_death_to_api(death_data['player'], death_data['timestamp'])
+            send_death_to_api(death_data['player'], death_data.get('npc'), death_data['timestamp'])
 
 
 def parse_drop_embed(embed, message):
@@ -327,17 +331,25 @@ def parse_drop_embed(embed, message):
 
 
 def parse_death_embed(embed, message):
-    """Extract player name from death notification"""
+    """Extract player name and NPC from death notification"""
     death_info = {
         'timestamp': message.created_at.isoformat(),
-        'player': None
+        'player': None,
+        'npc': None
     }
 
     if embed.description:
-        # Format: "PlayerName has died..."
-        player_match = re.search(r'(.+?)\s+has died', embed.description)
-        if player_match:
-            death_info['player'] = player_match.group(1).strip()
+        # Format: "PlayerName has died... to NPC Name"
+        # Also handle old format without NPC: "PlayerName has died..."
+        death_match = re.search(r'(.+?)\s+has died', embed.description)
+        if death_match:
+            death_info['player'] = death_match.group(1).strip()
+
+            # Try to extract NPC/location
+            npc_match = re.search(r'has died.*?to\s+(.+?)(?:\.|$)', embed.description)
+            if npc_match:
+                death_info['npc'] = npc_match.group(1).strip()
+                print(f"   💀 Death cause: {death_info['npc']}")
 
     return death_info if death_info['player'] else None
 
@@ -525,6 +537,7 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
                     if death_data and death_data['player']:
                         success = send_death_to_api(
                             death_data['player'],
+                            npc=death_data.get('npc'),
                             timestamp=death_data['timestamp']
                         )
 
