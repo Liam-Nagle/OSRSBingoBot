@@ -527,40 +527,16 @@
         }
 
         function renderBoard() {
-            const boardContainer = document.querySelector('.board-container');
-            const oldWrapper = document.getElementById('boardWrapper');
-            if (oldWrapper) oldWrapper.remove();
-
-            const wrapper = document.createElement('div');
-            wrapper.id = 'boardWrapper';
-            wrapper.style.cssText = 'display: grid; grid-template-columns: 1fr auto; grid-template-rows: 1fr auto; gap: 10px; align-items: center; position: relative;';
-
             const board = document.getElementById('bingoBoard');
-            board.innerHTML = '';
-            board.style.gridColumn = '1';
-            board.style.gridRow = '1';
-
-            const size = bingoData.boardSize;
-
-            // Add diagonal bonuses
-            if (currentPlayer) {
-                const diag1Complete = checkDiagonalComplete(currentPlayer, 0);
-                const diag2Complete = checkDiagonalComplete(currentPlayer, 1);
-
-                const diag1Bonus = document.createElement('div');
-                diag1Bonus.className = 'diag-bonus bonus-display top-left' + (diag1Complete ? ' completed' : '');
-                diag1Bonus.innerHTML = `↘ +${bingoData.lineBonuses.diags[0]}`;
-                diag1Bonus.title = 'Diagonal bonus (top-left to bottom-right)';
-                board.appendChild(diag1Bonus);
-
-                const diag2Bonus = document.createElement('div');
-                diag2Bonus.className = 'diag-bonus bonus-display top-right' + (diag2Complete ? ' completed' : '');
-                diag2Bonus.innerHTML = `↙ +${bingoData.lineBonuses.diags[1]}`;
-                diag2Bonus.title = 'Diagonal bonus (top-right to bottom-left)';
-                board.appendChild(diag2Bonus);
+            if (!board) {
+                console.error('Board element not found!');
+                return;
             }
 
-            // Render tiles
+            board.innerHTML = '';
+            const size = bingoData.boardSize;
+
+            // Render tiles first
             bingoData.tiles.forEach((tile, index) => {
                 const tileEl = document.createElement('div');
                 tileEl.className = 'bingo-tile';
@@ -585,7 +561,6 @@
                 // Handle multi-item requirements
                 let progressHtml = '';
                 if (tile.requiredItems && tile.requiredItems.length > 1) {
-                    // Multi-item tile
                     const playerProgress = tile.itemProgress?.[currentPlayer] || [];
                     const collected = playerProgress.length;
                     const total = tile.requiredItems.length;
@@ -631,44 +606,89 @@
                 }
             });
 
+            // Now handle bonuses - add them to board container, not board itself
+            updateBonusDisplay();
+            saveData();
+        }
+
+        function updateBonusDisplay() {
+            const boardContainer = document.querySelector('.board-container');
+            if (!boardContainer) return;
+
+            // Remove old bonuses
+            const oldBonuses = boardContainer.querySelectorAll('.bonus-container');
+            oldBonuses.forEach(b => b.remove());
+
+            if (!currentPlayer) return; // Only show bonuses when viewing as a player
+
+            const size = bingoData.boardSize;
+            const board = document.getElementById('bingoBoard');
+
             // Add row bonuses (right side)
-            if (currentPlayer) {
-                const rowBonusContainer = document.createElement('div');
-                rowBonusContainer.style.cssText = 'display: grid; grid-template-rows: repeat(' + size + ', 1fr); gap: 10px; grid-column: 2; grid-row: 1;';
+            const rowBonusContainer = document.createElement('div');
+            rowBonusContainer.className = 'bonus-container';
+            rowBonusContainer.style.cssText = `
+                position: absolute;
+                right: -70px;
+                top: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                height: 100%;
+                justify-content: space-around;
+            `;
 
-                for (let row = 0; row < size; row++) {
-                    const rowComplete = checkRowComplete(currentPlayer, row);
-                    const bonusDiv = document.createElement('div');
-                    bonusDiv.className = 'row-bonus bonus-display' + (rowComplete ? ' completed' : '');
-                    bonusDiv.innerHTML = `+${bingoData.lineBonuses.rows[row]}`;
-                    bonusDiv.title = `Row ${row + 1} bonus`;
-                    rowBonusContainer.appendChild(bonusDiv);
-                }
-
-                wrapper.appendChild(rowBonusContainer);
+            for (let row = 0; row < size; row++) {
+                const rowComplete = checkRowComplete(currentPlayer, row);
+                const bonusDiv = document.createElement('div');
+                bonusDiv.className = 'row-bonus bonus-display' + (rowComplete ? ' completed' : '');
+                bonusDiv.innerHTML = `+${bingoData.lineBonuses.rows[row]}`;
+                bonusDiv.title = `Row ${row + 1} bonus`;
+                rowBonusContainer.appendChild(bonusDiv);
             }
+
+            board.style.position = 'relative';
+            board.appendChild(rowBonusContainer);
 
             // Add column bonuses (bottom)
-            if (currentPlayer) {
-                const colBonusContainer = document.createElement('div');
-                colBonusContainer.style.cssText = 'display: grid; grid-template-columns: repeat(' + size + ', 1fr); gap: 10px; grid-column: 1; grid-row: 2;';
+            const colBonusContainer = document.createElement('div');
+            colBonusContainer.className = 'bonus-container';
+            colBonusContainer.style.cssText = `
+                position: absolute;
+                bottom: -50px;
+                left: 0;
+                right: 0;
+                display: flex;
+                gap: 10px;
+                justify-content: space-around;
+            `;
 
-                for (let col = 0; col < size; col++) {
-                    const colComplete = checkColComplete(currentPlayer, col);
-                    const bonusDiv = document.createElement('div');
-                    bonusDiv.className = 'col-bonus bonus-display' + (colComplete ? ' completed' : '');
-                    bonusDiv.innerHTML = `+${bingoData.lineBonuses.cols[col]}`;
-                    bonusDiv.title = `Column ${col + 1} bonus`;
-                    colBonusContainer.appendChild(bonusDiv);
-                }
-
-                wrapper.appendChild(colBonusContainer);
+            for (let col = 0; col < size; col++) {
+                const colComplete = checkColComplete(currentPlayer, col);
+                const bonusDiv = document.createElement('div');
+                bonusDiv.className = 'col-bonus bonus-display' + (colComplete ? ' completed' : '');
+                bonusDiv.innerHTML = `+${bingoData.lineBonuses.cols[col]}`;
+                bonusDiv.title = `Column ${col + 1} bonus`;
+                colBonusContainer.appendChild(bonusDiv);
             }
 
-            wrapper.insertBefore(board, wrapper.firstChild);
-            boardContainer.appendChild(wrapper);
+            board.appendChild(colBonusContainer);
 
-            saveData();
+            // Add diagonal bonuses (corners)
+            const diag1Complete = checkDiagonalComplete(currentPlayer, 0);
+            const diag2Complete = checkDiagonalComplete(currentPlayer, 1);
+
+            const diag1Bonus = document.createElement('div');
+            diag1Bonus.className = 'diag-bonus bonus-display top-left' + (diag1Complete ? ' completed' : '');
+            diag1Bonus.innerHTML = `↘ +${bingoData.lineBonuses.diags[0]}`;
+            diag1Bonus.title = 'Diagonal bonus (top-left to bottom-right)';
+            board.appendChild(diag1Bonus);
+
+            const diag2Bonus = document.createElement('div');
+            diag2Bonus.className = 'diag-bonus bonus-display top-right' + (diag2Complete ? ' completed' : '');
+            diag2Bonus.innerHTML = `↙ +${bingoData.lineBonuses.diags[1]}`;
+            diag2Bonus.title = 'Diagonal bonus (top-right to bottom-left)';
+            board.appendChild(diag2Bonus);
         }
 
         function checkRowComplete(player, row) {
