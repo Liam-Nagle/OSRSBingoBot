@@ -1912,6 +1912,121 @@
             });
         }
 
+        // ===========================
+        // DEATH TRACKING
+        // ===========================
+
+        function openDeathsModal() {
+            document.getElementById('deathsModal').classList.add('active');
+            loadDeathStats();
+        }
+
+        function closeDeathsModal() {
+            document.getElementById('deathsModal').classList.remove('active');
+        }
+
+        async function loadDeathStats() {
+            const loadingDiv = document.getElementById('deathsLoading');
+            const contentDiv = document.getElementById('deathsContent');
+
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_URL}/deaths`);
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch death statistics');
+                }
+
+                const data = await response.json();
+
+                // Update total deaths
+                document.getElementById('totalDeathsCount').textContent = data.total_deaths.toLocaleString();
+
+                // Build player stats HTML
+                const playerStatsDiv = document.getElementById('deathPlayerStats');
+
+                if (data.player_stats.length === 0) {
+                    playerStatsDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">No deaths recorded yet!</div>';
+                } else {
+                    let html = '<div style="display: grid; gap: 15px;">';
+
+                    data.player_stats.forEach((player, index) => {
+                        const rank = index + 1;
+                        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+                        const rankClass = rank <= 3 ? `rank-${rank}` : '';
+
+                        // Format last death date
+                        let lastDeathText = '';
+                        if (player.last_death) {
+                            const date = new Date(player.last_death);
+                            const now = new Date();
+                            const diffMs = now - date;
+                            const diffMins = Math.floor(diffMs / 60000);
+                            const diffHours = Math.floor(diffMs / 3600000);
+                            const diffDays = Math.floor(diffMs / 86400000);
+
+                            if (diffMins < 60) {
+                                lastDeathText = `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+                            } else if (diffHours < 24) {
+                                lastDeathText = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+                            } else {
+                                lastDeathText = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+                            }
+                        }
+
+                        html += `
+                            <div style="background: ${rankClass ? 'linear-gradient(135deg, rgba(139,0,0,0.1) 0%, rgba(107,0,0,0.05) 100%)' : 'rgba(0,0,0,0.03)'};
+                                        padding: 20px;
+                                        border-radius: 8px;
+                                        border-left: 4px solid ${rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : '#8B0000'};
+                                        display: grid;
+                                        grid-template-columns: auto 1fr auto;
+                                        align-items: center;
+                                        gap: 15px;">
+
+                                <div style="font-size: 32px;">${medal || '💀'}</div>
+
+                                <div>
+                                    <div style="font-weight: bold; font-size: 18px; color: #2c1810; margin-bottom: 5px;">
+                                        #${rank} ${player.player}
+                                    </div>
+                                    ${lastDeathText ? `<div style="font-size: 12px; color: #666;">Last death: ${lastDeathText}</div>` : ''}
+                                </div>
+
+                                <div style="text-align: right;">
+                                    <div style="font-size: 28px; font-weight: bold; color: #8B0000;">
+                                        ${player.deaths}
+                                    </div>
+                                    <div style="font-size: 12px; color: #666;">
+                                        death${player.deaths !== 1 ? 's' : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += '</div>';
+                    playerStatsDiv.innerHTML = html;
+                }
+
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+
+            } catch (error) {
+                console.error('Error loading death stats:', error);
+                loadingDiv.innerHTML = `
+                    <div style="text-align: center; padding: 40px;">
+                        <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
+                        <div style="color: #d32f2f; font-weight: bold; font-size: 18px;">Failed to load death statistics</div>
+                        <div style="color: #666; font-size: 14px; margin-top: 10px;">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+
         (async () => {
             await initBoard();
         })();

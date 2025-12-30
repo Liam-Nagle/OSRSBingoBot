@@ -876,3 +876,26 @@
             top: -15px;
             right: -15px;
         }
+
+        /* Death Stats Specific Styles */
+        .death-stat-card {
+            background: linear-gradient(135deg, rgba(139, 0, 0, 0.1) 0%, rgba(107, 0, 0, 0.05) 100%);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #8B0000;
+        }
+
+        .death-stat-card.rank-1 {
+            border-left-color: #FFD700;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 215, 0, 0.05) 100%);
+        }
+
+        .death-stat-card.rank-2 {
+            border-left-color: #C0C0C0;
+            background: linear-gradient(135deg, rgba(192, 192, 192, 0.2) 0%, rgba(192, 192, 192, 0.05) 100%);
+        }
+
+        .death-stat-card.rank-3 {
+            border-left-color: #CD7F32;
+            background: linear-gradient(135deg, rgba(205, 127, 50, 0.2) 0%, rgba(205, 127, 50, 0.05) 100%);
+        }

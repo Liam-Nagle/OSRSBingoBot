@@ -46,6 +46,7 @@
                 <button onclick="openHistoryModal()" class="secondary">📜 View History</button>
                 <button onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
                 <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
+                <button onclick="openDeathsModal()" class="secondary">💀 Deaths</button>
 
                 <!-- Login Button (Shows when not admin) -->
                 <button onclick="openLoginModal()" id="loginBtn" class="secondary">🔐 Admin Login</button>
@@ -419,6 +420,44 @@ Dragon warhammer"></textarea>
             </div>
         </div>
     </div>
+
+    <!-- Deaths Modal -->
+    <div class="modal" id="deathsModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <h2>💀 Death Statistics</h2>
+            <p style="color: #666; margin-bottom: 20px;">Total deaths tracked across all players</p>
+
+            <!-- Loading State -->
+            <div id="deathsLoading" style="text-align: center; padding: 60px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+                <div style="color: #2c1810; font-weight: bold; font-size: 18px;">Loading death data...</div>
+            </div>
+
+            <!-- Deaths Content -->
+            <div id="deathsContent" style="display: none;">
+
+                <!-- Total Deaths Card -->
+                <div style="background: linear-gradient(135deg, #8B0000 0%, #6B0000 100%); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px; border: 3px solid #4A0000;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">☠️</div>
+                    <div style="font-size: 42px; font-weight: bold; color: white;" id="totalDeathsCount">0</div>
+                    <div style="font-size: 18px; color: rgba(255,255,255,0.9); margin-top: 5px;">Total Deaths</div>
+                </div>
+
+                <!-- Player Death Stats -->
+                <div style="background: rgba(255,255,255,0.9); border: 2px solid #8B6914; border-radius: 8px; padding: 20px;">
+                    <h3 style="color: #2c1810; margin-bottom: 20px; text-align: center;">💀 Death Rankings</h3>
+                    <div id="deathPlayerStats"></div>
+                </div>
+
+            </div>
+
+            <div class="modal-buttons" style="margin-top: 20px;">
+                <button class="btn-save" onclick="loadDeathStats()">🔄 Refresh Data</button>
+                <button class="btn-cancel" onclick="closeDeathsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Chart.js Library (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

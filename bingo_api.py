@@ -2,91 +2,87 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import json
 import os
+from datetime import datetime, timedelta
 from pymongo import MongoClient
-from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
 
 # MongoDB Configuration
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
-DATABASE_NAME = 'osrs_bingo'
-COLLECTION_NAME = 'bingo_data'
-HISTORY_COLLECTION_NAME = 'drop_history'
+mongo_client = MongoClient(MONGODB_URI)
+db = mongo_client['osrs_bingo']
 
-# Security
+# Collections
+bingo_collection = db['bingo_board']
+history_collection = db['drop_history']
+deaths_collection = db['deaths']
+
+# Fallback to file-based storage if MongoDB not available
+USE_MONGODB = True
+try:
+    # Test MongoDB connection
+    mongo_client.admin.command('ping')
+    print("✅ Connected to MongoDB")
+except Exception as e:
+    print(f"⚠️  MongoDB not available, falling back to file storage: {e}")
+    USE_MONGODB = False
+    BINGO_FILE = '/data/bingo_data.json' if os.path.exists('/data') else 'bingo_data.json'
+
+# Configuration
 ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
-print("=" * 60)
-print("🎮 OSRS Bingo API Server with MongoDB")
-print("=" * 60)
 print(
     f"🔐 Admin password is set {'from environment variable' if os.environ.get('BINGO_ADMIN_PASSWORD') else 'to default (change this!)'}")
-print(f"   To change: export BINGO_ADMIN_PASSWORD='your_password_here'")
 print(
     f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
-print(f"   To change: export DROP_API_KEY='your_secret_key_here'")
-print(f"🗄️  MongoDB URI: {'Set from environment' if os.environ.get('MONGODB_URI') else 'Using default (localhost)'}")
-print(f"   Database: {DATABASE_NAME}")
-print(f"   Collection: {COLLECTION_NAME}")
-print(f"   History Collection: {HISTORY_COLLECTION_NAME}")
-print("=" * 60)
 print()
 
-# MongoDB connection
-try:
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-    # Test connection
-    client.server_info()
-    db = client[DATABASE_NAME]
-    collection = db[COLLECTION_NAME]
-    history_collection = db[HISTORY_COLLECTION_NAME]
-    print("✅ Successfully connected to MongoDB!")
-except Exception as e:
-    print(f"❌ MongoDB connection failed: {e}")
-    print("⚠️  Server will start but data operations will fail!")
-    client = None
-    db = None
-    collection = None
-    history_collection = None
 
+def check_duplicate_in_history(player, item, seconds=5):
+    """Check if this drop already exists in history (within last N seconds)"""
+    if not USE_MONGODB:
+        return False  # Skip deduplication for file storage
 
-def get_default_bingo_data(board_size=5):
-    """Create default bingo data structure"""
-    total_tiles = board_size * board_size
-    return {
-        'boardSize': board_size,
-        'tiles': [{'items': [], 'value': 10, 'completedBy': [], 'displayTitle': ''} for _ in range(total_tiles)],
-        'completions': {},
-        'lineBonuses': {
-            'rows': [50] * board_size,
-            'cols': [50] * board_size,
-            'diags': [100, 100]
-        },
-        'lastUpdated': datetime.utcnow().isoformat()
-    }
+    try:
+        # Calculate time threshold
+        time_threshold = datetime.utcnow() - timedelta(seconds=seconds)
+
+        # Check for duplicate
+        duplicate = history_collection.find_one({
+            'player': player,
+            'item': item,
+            'timestamp': {'$gte': time_threshold}
+        })
+
+        return duplicate is not None
+    except Exception as e:
+        print(f"Error checking duplicate: {e}")
+        return False
 
 
 def load_bingo_data():
-    """Load bingo data from MongoDB"""
-    if collection is None:
-        print("❌ MongoDB not connected, returning default data")
-        return get_default_bingo_data()
+    """Load bingo board data from MongoDB or file"""
+    if USE_MONGODB:
+        try:
+            board = bingo_collection.find_one({'type': 'current_board'})
+            if board:
+                # Remove MongoDB _id field
+                board.pop('_id', None)
+                board.pop('type', None)
+                return board
+        except Exception as e:
+            print(f"Error loading from MongoDB: {e}")
 
-    try:
-        # Find the single bingo board document
-        data = collection.find_one({'_id': 'bingo_board'})
-
-        if data:
-            # Remove MongoDB's _id field before returning
-            data.pop('_id', None)
-
-            # Ensure boardSize exists
+    # Fallback to file storage
+    if os.path.exists(BINGO_FILE):
+        with open(BINGO_FILE, 'r') as f:
+            data = json.load(f)
             if 'boardSize' not in data:
                 data['boardSize'] = 5
-
-            # Ensure lineBonuses structure exists
+            if 'adminPassword' in data:
+                del data['adminPassword']
             if 'lineBonuses' not in data:
                 size = data['boardSize']
                 data['lineBonuses'] = {
@@ -94,152 +90,45 @@ def load_bingo_data():
                     'cols': [50] * size,
                     'diags': [100, 100]
                 }
-
-            # Ensure all tiles have displayTitle field (backwards compatibility)
-            for tile in data.get('tiles', []):
-                if 'displayTitle' not in tile:
-                    tile['displayTitle'] = ''
-
-            print("✅ Loaded bingo data from MongoDB")
             return data
-        else:
-            # No data exists, create default
-            print("ℹ️  No existing data found, creating default board")
-            default_data = get_default_bingo_data()
-            save_bingo_data(default_data)
-            return default_data
 
-    except Exception as e:
-        print(f"❌ Error loading from MongoDB: {e}")
-        return get_default_bingo_data()
+    # Return default empty board
+    return {
+        'boardSize': 5,
+        'tiles': [{'items': [], 'value': 10, 'completedBy': [], 'displayTitle': ''} for _ in range(25)],
+        'completions': {},
+        'lineBonuses': {
+            'rows': [50, 50, 50, 50, 50],
+            'cols': [50, 50, 50, 50, 50],
+            'diags': [100, 100]
+        }
+    }
 
 
 def save_bingo_data(data):
-    """Save bingo data to MongoDB"""
-    if collection is None:
-        print("❌ MongoDB not connected, cannot save data")
-        return False
+    """Save bingo board data to MongoDB or file"""
+    if USE_MONGODB:
+        try:
+            data['type'] = 'current_board'
+            bingo_collection.replace_one(
+                {'type': 'current_board'},
+                data,
+                upsert=True
+            )
+            print("✅ Saved to MongoDB")
+            return
+        except Exception as e:
+            print(f"Error saving to MongoDB: {e}")
 
-    try:
-        # Add timestamp
-        data['lastUpdated'] = datetime.utcnow().isoformat()
-
-        # Use upsert to either insert or update the single document
-        result = collection.replace_one(
-            {'_id': 'bingo_board'},
-            {**data, '_id': 'bingo_board'},
-            upsert=True
-        )
-
-        if result.modified_count > 0 or result.upserted_id:
-            print("✅ Saved bingo data to MongoDB")
-            return True
-        else:
-            print("ℹ️  No changes to save")
-            return True
-
-    except Exception as e:
-        print(f"❌ Error saving to MongoDB: {e}")
-        return False
-
-
-def save_drop_to_history(player_name, item_name, tile_completed=False, tiles_info=None):
-    """Save drop to history collection"""
-    if history_collection is None:
-        print("❌ MongoDB not connected, cannot save history")
-        return False
-
-    try:
-        drop_record = {
-            'timestamp': datetime.utcnow(),
-            'player': player_name,
-            'item': item_name,
-            'tileCompleted': tile_completed,
-            'tilesInfo': tiles_info or []
-        }
-
-        history_collection.insert_one(drop_record)
-        print(f"✅ Saved drop to history: {player_name} - {item_name}")
-        return True
-    except Exception as e:
-        print(f"❌ Error saving to history: {e}")
-        return False
+    # Fallback to file storage
+    with open(BINGO_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
 
 
 @app.route('/bingo', methods=['GET'])
 def get_bingo():
     """Get current bingo board state"""
     return jsonify(load_bingo_data())
-
-
-@app.route('/history', methods=['GET'])
-def get_history():
-    """Get drop history with date filtering"""
-    if history_collection is None:
-        return jsonify({'error': 'Database not available'}), 503
-
-    try:
-        # Get query parameters
-        limit = int(request.args.get('limit', 1000))
-        player = request.args.get('player', None)
-        start_date = request.args.get('start_date', None)
-        end_date = request.args.get('end_date', None)
-
-        # Build query
-        query = {}
-
-        # Player filter
-        if player:
-            query['player'] = player
-
-        # Date range filter
-        if start_date or end_date:
-            query['timestamp'] = {}
-
-            if start_date:
-                try:
-                    # Parse ISO format date string
-                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                    query['timestamp']['$gte'] = start_dt
-                    print(f"🔍 Filtering from: {start_dt}")
-                except ValueError as e:
-                    print(f"⚠️  Invalid start_date format: {e}")
-
-            if end_date:
-                try:
-                    # Parse ISO format date string and add 1 day to include the entire end date
-                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    # Add 23:59:59 to include the entire day
-                    from datetime import timedelta
-                    end_dt = end_dt + timedelta(days=1, seconds=-1)
-                    query['timestamp']['$lte'] = end_dt
-                    print(f"🔍 Filtering until: {end_dt}")
-                except ValueError as e:
-                    print(f"⚠️  Invalid end_date format: {e}")
-
-        print(f"🔍 Query: {query}")
-
-        # Fetch history sorted by most recent first
-        history = list(history_collection.find(
-            query,
-            {'_id': 0}  # Exclude MongoDB _id field
-        ).sort('timestamp', -1).limit(limit))
-
-        # Convert datetime objects to ISO format strings
-        for record in history:
-            if 'timestamp' in record and isinstance(record['timestamp'], datetime):
-                record['timestamp'] = record['timestamp'].isoformat()
-
-        print(f"✅ Fetched {len(history)} history records")
-        return jsonify({
-            'success': True,
-            'count': len(history),
-            'history': history
-        })
-
-    except Exception as e:
-        print(f"❌ Error fetching history: {e}")
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/login', methods=['POST'])
@@ -256,26 +145,46 @@ def admin_login():
 
 @app.route('/drop', methods=['POST'])
 def record_drop():
-    """Receive drop from Discord bot"""
-    # Check API key
-    api_key = request.headers.get('X-API-Key')
-    if api_key != DROP_API_KEY:
-        print(f"❌ Unauthorized drop attempt - invalid API key")
-        return jsonify({'error': 'Unauthorized'}), 401
-
+    """Receive drop from Discord bot - checks tiles AND saves to history"""
     data = request.json
     player_name = data.get('player')
     item_name = data.get('item')
+    drop_type = data.get('drop_type', 'loot')  # 'loot' or 'collection_log'
+    source = data.get('source')
+    timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
     print(f"\n{'=' * 60}")
     print(f"📥 Received drop from Discord bot:")
     print(f"   Player: {player_name}")
     print(f"   Item: {item_name}")
+    print(f"   Type: {drop_type}")
     print(f"{'=' * 60}")
 
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
+    # Check for duplicates in history (within last 5 seconds)
+    is_duplicate = check_duplicate_in_history(player_name, item_name, seconds=5)
+
+    if is_duplicate:
+        print(f"⚠️  Duplicate detected - skipping history save (likely Loot Drop + Collection Log)")
+    else:
+        # Save to history
+        if USE_MONGODB:
+            try:
+                history_collection.insert_one({
+                    'player': player_name,
+                    'item': item_name,
+                    'drop_type': drop_type,
+                    'source': source,
+                    'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
+                                                                                                        str) else timestamp
+                })
+                print(f"💾 Saved to history collection")
+            except Exception as e:
+                print(f"❌ Error saving to history: {e}")
+
+    # Check tiles for completion
     bingo_data = load_bingo_data()
     updated = False
     completed_tiles = []
@@ -286,43 +195,38 @@ def record_drop():
         if not tile['items']:
             continue
 
-        display_name = tile['items'][0] if tile['items'] else 'Unknown'
-        all_items = ', '.join(tile['items']) if len(tile['items']) > 1 else tile['items'][0]
-        is_multi_item = 'requiredItems' in tile and len(tile.get('requiredItems', [])) > 1
+        # Check if this is a multi-item requirement tile
+        if tile.get('requiredItems') and len(tile['requiredItems']) > 1:
+            # Multi-item tile - track progress
+            if 'itemProgress' not in tile:
+                tile['itemProgress'] = {}
 
-        print(
-            f"   Tile {index + 1}: Display='{display_name}' | Matches=[{all_items}] | Multi-item: {is_multi_item} | Completed by: {tile['completedBy']}")
+            if player_name not in tile['itemProgress']:
+                tile['itemProgress'][player_name] = []
 
-        # Check if item matches any tile items
-        for tile_item in tile['items']:
-            tile_item_clean = tile_item.strip().lower()
-            item_name_clean = item_name.strip().lower()
+            player_items = tile['itemProgress'][player_name]
 
-            if tile_item_clean == item_name_clean or tile_item_clean in item_name_clean or item_name_clean in tile_item_clean:
-                print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
+            # Check if this item is required and not yet collected
+            for req_item in tile['requiredItems']:
+                req_item_clean = req_item.strip().lower()
+                item_name_clean = item_name.strip().lower()
 
-                # Handle multi-item requirement tiles
-                if is_multi_item:
-                    # Initialize itemProgress if not exists
-                    if 'itemProgress' not in tile:
-                        tile['itemProgress'] = {}
-                    if player_name not in tile['itemProgress']:
-                        tile['itemProgress'][player_name] = []
+                if (req_item_clean == item_name_clean or
+                        req_item_clean in item_name_clean or
+                        item_name_clean in req_item_clean):
 
-                    # Add item to player's progress if not already there
-                    if tile_item not in tile['itemProgress'][player_name]:
-                        tile['itemProgress'][player_name].append(tile_item)
-                        updated = True
+                    # Add to progress if not already there
+                    if item_name not in player_items:
+                        player_items.append(item_name)
                         print(
-                            f"      → Added {tile_item!r} to {player_name}'s progress: {len(tile['itemProgress'][player_name])}/{len(tile['requiredItems'])}")
+                            f"   Tile {index + 1}: Added {item_name} to {player_name}'s progress ({len(player_items)}/{len(tile['requiredItems'])})")
+                        updated = True
 
-                    # Check if player has collected all required items
-                    required_items = tile['requiredItems']
-                    player_items = tile['itemProgress'][player_name]
-
+                    # Check if all items collected
                     has_all = all(
-                        any(req_item.strip().lower() == pi.strip().lower() for pi in player_items) for req_item in
-                        required_items)
+                        any(req_item.strip().lower() == pi.strip().lower() for pi in player_items)
+                        for req_item in tile['requiredItems']
+                    )
 
                     if has_all and player_name not in tile['completedBy']:
                         tile['completedBy'].append(player_name)
@@ -331,14 +235,18 @@ def record_drop():
                             'items': tile['items'],
                             'value': tile['value']
                         })
-                        print(
-                            f"      → 🎉 {player_name} completed multi-item tile! All {len(required_items)} items collected!")
-                    elif player_name in tile['completedBy']:
-                        print(f"      → {player_name} already completed this tile")
-                    else:
-                        print(f"      → Progress: {len(player_items)}/{len(required_items)} items")
-                else:
-                    # Regular tile - single item completion
+                        print(f"   ✅ Tile {index + 1} COMPLETED by {player_name} (all items collected)!")
+
+                    break
+        else:
+            # Regular tile - any matching item completes it
+            for tile_item in tile['items']:
+                tile_item_clean = tile_item.strip().lower()
+                item_name_clean = item_name.strip().lower()
+
+                if tile_item_clean == item_name_clean or tile_item_clean in item_name_clean or item_name_clean in tile_item_clean:
+                    print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
+
                     if player_name not in tile['completedBy']:
                         tile['completedBy'].append(player_name)
                         completed_tiles.append({
@@ -350,42 +258,195 @@ def record_drop():
                         print(f"      → Added {player_name} to completedBy list")
                     else:
                         print(f"      → {player_name} already completed this tile")
-                break
-
-    # Save to history
-    save_drop_to_history(
-        player_name=player_name,
-        item_name=item_name,
-        tile_completed=updated,
-        tiles_info=completed_tiles
-    )
+                    break
 
     if updated:
         save_bingo_data(bingo_data)
-        print(f"✅ Saved updated data to MongoDB")
+        print(f"✅ Saved updated board data")
         print(f"{'=' * 60}\n")
         return jsonify({
             'success': True,
             'message': f'{player_name} completed {len(completed_tiles)} tile(s)!',
-            'completedTiles': completed_tiles
+            'completedTiles': completed_tiles,
+            'duplicate': is_duplicate
         })
 
     print(f"❌ No matching tiles found or already completed")
     print(f"{'=' * 60}\n")
     return jsonify({
         'success': False,
-        'message': 'No matching tiles found or already completed'
+        'message': 'No matching tiles found or already completed',
+        'duplicate': is_duplicate
     })
+
+
+@app.route('/history-only', methods=['POST'])
+def record_history_only():
+    """Save drop to history ONLY (no tile checking) - for historical imports"""
+    data = request.json
+    player_name = data.get('player')
+    item_name = data.get('item')
+    drop_type = data.get('drop_type', 'loot')
+    source = data.get('source')
+    timestamp = data.get('timestamp', datetime.utcnow().isoformat())
+
+    if not player_name or not item_name:
+        return jsonify({'error': 'Missing player or item'}), 400
+
+    # Check for duplicates (within last 5 seconds)
+    is_duplicate = check_duplicate_in_history(player_name, item_name, seconds=5)
+
+    if is_duplicate:
+        return jsonify({
+            'success': False,
+            'message': 'Duplicate detected - skipped',
+            'duplicate': True
+        })
+
+    # Save to history
+    if USE_MONGODB:
+        try:
+            history_collection.insert_one({
+                'player': player_name,
+                'item': item_name,
+                'drop_type': drop_type,
+                'source': source,
+                'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
+                                                                                                    str) else timestamp
+            })
+            return jsonify({
+                'success': True,
+                'message': f'Saved {player_name} - {item_name} to history',
+                'duplicate': False
+            })
+        except Exception as e:
+            return jsonify({'error': f'Failed to save: {str(e)}'}), 500
+    else:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+
+@app.route('/death', methods=['POST'])
+def record_death():
+    """Record player death"""
+    data = request.json
+    player_name = data.get('player')
+    timestamp = data.get('timestamp', datetime.utcnow().isoformat())
+
+    print(f"\n💀 Death recorded: {player_name}")
+
+    if not player_name:
+        return jsonify({'error': 'Missing player name'}), 400
+
+    if USE_MONGODB:
+        try:
+            deaths_collection.insert_one({
+                'player': player_name,
+                'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
+                                                                                                    str) else timestamp
+            })
+            return jsonify({
+                'success': True,
+                'message': f'{player_name} death recorded'
+            })
+        except Exception as e:
+            return jsonify({'error': f'Failed to save death: {str(e)}'}), 500
+    else:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+
+@app.route('/deaths', methods=['GET'])
+def get_deaths():
+    """Get death statistics"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Aggregate deaths by player
+        pipeline = [
+            {
+                '$group': {
+                    '_id': '$player',
+                    'deaths': {'$sum': 1},
+                    'last_death': {'$max': '$timestamp'}
+                }
+            },
+            {
+                '$sort': {'deaths': -1}
+            }
+        ]
+
+        results = list(deaths_collection.aggregate(pipeline))
+
+        # Format results
+        death_stats = []
+        total_deaths = 0
+
+        for result in results:
+            deaths = result['deaths']
+            total_deaths += deaths
+            death_stats.append({
+                'player': result['_id'],
+                'deaths': deaths,
+                'last_death': result['last_death'].isoformat() if result['last_death'] else None
+            })
+
+        return jsonify({
+            'total_deaths': total_deaths,
+            'player_stats': death_stats
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get deaths: {str(e)}'}), 500
+
+
+@app.route('/history', methods=['GET'])
+def get_history():
+    """Get drop history with optional filters"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get query parameters
+        player = request.args.get('player')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        limit = int(request.args.get('limit', 100))
+
+        # Build query
+        query = {}
+        if player:
+            query['player'] = player
+        if start_date or end_date:
+            query['timestamp'] = {}
+            if start_date:
+                query['timestamp']['$gte'] = datetime.fromisoformat(start_date)
+            if end_date:
+                query['timestamp']['$lte'] = datetime.fromisoformat(end_date)
+
+        # Fetch history
+        history = list(history_collection.find(query).sort('timestamp', -1).limit(limit))
+
+        # Format results (remove MongoDB _id)
+        for item in history:
+            item['_id'] = str(item['_id'])
+            if isinstance(item['timestamp'], datetime):
+                item['timestamp'] = item['timestamp'].isoformat()
+
+        return jsonify({
+            'history': history,
+            'count': len(history)
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get history: {str(e)}'}), 500
 
 
 @app.route('/update', methods=['POST'])
 def update_board():
     """Update entire board (for syncing from website)"""
     data = request.json
-    if save_bingo_data(data):
-        return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to save data'}), 500
+    save_bingo_data(data)
+    return jsonify({'success': True})
 
 
 @app.route('/manual-override', methods=['POST'])
@@ -416,19 +477,6 @@ def manual_override():
     if action == 'add':
         if player_name not in tile['completedBy']:
             tile['completedBy'].append(player_name)
-
-            # Save to history (only on add)
-            save_drop_to_history(
-                player_name=player_name,
-                item_name=tile['items'][0] if tile['items'] else 'Manual Override',
-                tile_completed=True,
-                tiles_info=[{
-                    'tile': tile_index + 1,
-                    'items': tile['items'],
-                    'value': tile['value']
-                }]
-            )
-
             save_bingo_data(bingo_data)
             print(f"✅ Manual override: Added {player_name} to tile {tile_index + 1}")
             return jsonify({
@@ -445,7 +493,6 @@ def manual_override():
         if player_name in tile['completedBy']:
             tile['completedBy'].remove(player_name)
             save_bingo_data(bingo_data)
-            # Note: We don't remove from history - history is immutable audit log
             print(f"✅ Manual override: Removed {player_name} from tile {tile_index + 1}")
             return jsonify({
                 'success': True,
@@ -460,112 +507,12 @@ def manual_override():
     return jsonify({'error': 'Invalid action'}), 400
 
 
-@app.route('/manual-drop', methods=['POST'])
-def manual_drop():
-    """Manually add drop to history (admin only) - for drops not on board or missed by bot"""
-    data = request.json
-    password = data.get('password')
-
-    # Verify admin password
-    if password != ADMIN_PASSWORD:
-        print(f"❌ Unauthorized manual drop attempt")
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    player_name = data.get('playerName')
-    item_name = data.get('itemName')
-
-    if not player_name or not item_name:
-        return jsonify({'error': 'Missing player name or item name'}), 400
-
-    # Save to history
-    save_drop_to_history(
-        player_name=player_name,
-        item_name=item_name,
-        tile_completed=False,
-        tiles_info=[]
-    )
-
-    print(f"✅ Manual drop added: {player_name} - {item_name}")
-    return jsonify({
-        'success': True,
-        'message': f'Added drop: {player_name} received {item_name}'
-    })
-
-
-@app.route('/delete-history', methods=['POST'])
-def delete_history():
-    """Delete a drop from history (admin only) - for fixing mistakes or test data"""
-    if history_collection is None:
-        return jsonify({'error': 'Database not available'}), 503
-
-    data = request.json
-    password = data.get('password')
-
-    # Verify admin password
-    if password != ADMIN_PASSWORD:
-        print(f"❌ Unauthorized delete history attempt")
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    player_name = data.get('playerName')
-    item_name = data.get('itemName')
-    timestamp = data.get('timestamp')
-
-    if not player_name or not item_name or not timestamp:
-        return jsonify({'error': 'Missing required fields'}), 400
-
-    try:
-        # Convert timestamp string to datetime
-        from datetime import datetime as dt
-        timestamp_dt = dt.fromisoformat(timestamp.replace('Z', '+00:00'))
-
-        # Delete the specific record
-        result = history_collection.delete_one({
-            'player': player_name,
-            'item': item_name,
-            'timestamp': timestamp_dt
-        })
-
-        if result.deleted_count > 0:
-            print(f"✅ Deleted history record: {player_name} - {item_name} at {timestamp}")
-            return jsonify({
-                'success': True,
-                'message': f'Deleted drop: {player_name} - {item_name}'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'Drop not found in history'
-            }), 404
-
-    except Exception as e:
-        print(f"❌ Error deleting history: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint for monitoring"""
-    mongo_status = "connected" if collection is not None else "disconnected"
-    try:
-        if client:
-            client.server_info()
-            mongo_status = "connected"
-    except:
-        mongo_status = "disconnected"
-
-    return jsonify({
-        'status': 'ok',
-        'mongodb': mongo_status,
-        'timestamp': datetime.utcnow().isoformat()
-    })
-
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print(f"🚀 Bingo API Server running on port {port}")
     print(f"Discord bot will send drops to: /drop endpoint")
-    print(f"Website can fetch data from: /bingo endpoint")
-    print(f"History available at: /history endpoint")
-    print(f"Health check available at: /health endpoint")
+    print(f"History imports to: /history-only endpoint")
+    print(f"Deaths tracked at: /death endpoint")
+    print(f"Website can fetch data from: /bingo, /history, /deaths endpoints")
     print()
     app.run(host='0.0.0.0', port=port, debug=False)

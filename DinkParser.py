@@ -1,38 +1,41 @@
 import os
-
 import discord
 from discord.ext import commands
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
+import asyncio
 
 # Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Store drops in memory (you can later save to a file or database)
+# Store drops in memory
 drops_data = []
 
 # Bingo API Configuration
-BINGO_API_URL = os.environ.get('BINGO_API_URL', 'http://localhost:5000/drop')
+BINGO_API_URL = os.environ.get('BINGO_API_URL', 'http://localhost:5000')
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
 
-def send_to_bingo_api(player_name, item_name):
+def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, timestamp=None):
     """Send drop to bingo board API"""
     try:
-        response = requests.post(BINGO_API_URL,
-            headers={
-                'Content-Type': 'application/json',
-                'X-API-Key': DROP_API_KEY
-            },
-            json={
-                'player': player_name,
-                'item': item_name
-            },
-            timeout=5)
+        response = requests.post(f"{BINGO_API_URL}/drop",
+                                 headers={
+                                     'Content-Type': 'application/json',
+                                     'X-API-Key': DROP_API_KEY
+                                 },
+                                 json={
+                                     'player': player_name,
+                                     'item': item_name,
+                                     'drop_type': drop_type,
+                                     'source': source,
+                                     'timestamp': timestamp or datetime.utcnow().isoformat()
+                                 },
+                                 timeout=5)
 
         if response.status_code == 200:
             result = response.json()
@@ -52,17 +55,67 @@ def send_to_bingo_api(player_name, item_name):
         print(f"❌ Bingo API error: {e}")
 
 
+def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None):
+    """Send drop to history-only endpoint (no tile checking)"""
+    try:
+        response = requests.post(f"{BINGO_API_URL}/history-only",
+                                 headers={
+                                     'Content-Type': 'application/json',
+                                     'X-API-Key': DROP_API_KEY
+                                 },
+                                 json={
+                                     'player': player_name,
+                                     'item': item_name,
+                                     'drop_type': drop_type,
+                                     'source': source,
+                                     'timestamp': timestamp or datetime.utcnow().isoformat()
+                                 },
+                                 timeout=5)
+
+        if response.status_code == 200:
+            result = response.json()
+            return result.get('success', False), result.get('duplicate', False)
+        return False, False
+    except Exception as e:
+        print(f"❌ History API error: {e}")
+        return False, False
+
+
+def send_death_to_api(player_name, timestamp=None):
+    """Send death to bingo board API"""
+    try:
+        response = requests.post(f"{BINGO_API_URL}/death",
+                                 headers={
+                                     'Content-Type': 'application/json',
+                                     'X-API-Key': DROP_API_KEY
+                                 },
+                                 json={
+                                     'player': player_name,
+                                     'timestamp': timestamp or datetime.utcnow().isoformat()
+                                 },
+                                 timeout=5)
+
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                print(f"💀 Death recorded: {player_name}")
+            return True
+        else:
+            print(f"⚠️  Death API returned status {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"❌ Death API error: {e}")
+        return False
+
+
 def parse_value(value_str):
     """Convert value strings like '2.95M' to numbers"""
-    # Skip if it's a URL
     if value_str.startswith('http') or value_str.startswith('HTTP'):
         return 0
 
-    # Remove Discord code block formatting
     value_str = value_str.replace('```', '').replace('LDIF', '').replace('ldif', '').replace('\n', '')
     value_str = value_str.upper().replace('GP', '').replace(',', '').strip()
 
-    # Handle empty or invalid strings
     if not value_str or value_str == '':
         return 0
 
@@ -74,7 +127,6 @@ def parse_value(value_str):
         else:
             return float(value_str)
     except ValueError:
-        # Only print warning if it doesn't look like a URL
         if not any(x in value_str for x in ['HTTP', 'HTTPS', 'WWW', '://']):
             print(f"Warning: Could not parse value: {value_str}")
         return 0
@@ -82,7 +134,6 @@ def parse_value(value_str):
 
 def parse_item_line(item_text):
     """Parse '1 x [Item Name] (wiki URL)' or '1 x Item Name (2.95M)' """
-    # Try pattern with square brackets first (newer Dink format)
     pattern_brackets = r'(\d+)\s*x\s*\[(.+?)\]\s*\((.+?)\)'
     match = re.search(pattern_brackets, item_text)
 
@@ -91,9 +142,7 @@ def parse_item_line(item_text):
         item_name = match.group(2).strip()
         third_group = match.group(3).strip()
 
-        # Check if third group is a URL (wiki link) or a value
         if third_group.startswith('http'):
-            # It's a wiki URL, no value available
             return {
                 'quantity': quantity,
                 'name': item_name,
@@ -101,7 +150,6 @@ def parse_item_line(item_text):
                 'value_numeric': 0
             }
         else:
-            # It's a value
             return {
                 'quantity': quantity,
                 'name': item_name,
@@ -109,7 +157,6 @@ def parse_item_line(item_text):
                 'value_numeric': parse_value(third_group)
             }
 
-    # Try old pattern without brackets
     pattern_old = r'(\d+)\s*x\s*(.+?)\s*\((.+?)\)'
     match = re.search(pattern_old, item_text)
     if match:
@@ -117,7 +164,6 @@ def parse_item_line(item_text):
         item_name = match.group(2).strip()
         value = match.group(3).strip()
 
-        # Check if it's a URL
         if value.startswith('http'):
             return {
                 'quantity': quantity,
@@ -138,25 +184,28 @@ def parse_item_line(item_text):
 
 @bot.event
 async def on_ready():
-    print(f'{bot.user} is now tracking Dink drops!')
-    print('Listening for loot drops and collection log updates...')
+    print(f'{bot.user} is now tracking Dink notifications!')
+    print('Listening for: Loot Drops, Collection Logs, Deaths')
+    print('Commands available:')
+    print('  !import_history [channel_id] [limit] - Import drop history')
+    print('  !import_deaths [channel_id] [limit] - Import death history')
+    print('  !stats [player] - Show drop statistics')
 
 
 @bot.event
 async def on_message(message):
-    # Check if this is a webhook message (Dink posts via webhook)
+    # Check if this is a webhook message
     if message.webhook_id is None:
         await bot.process_commands(message)
         return
 
-    # Check if message has embeds (Dink uses embeds)
     if not message.embeds:
         await bot.process_commands(message)
         return
 
     embed = message.embeds[0]
 
-    # Check if this is a "Loot Drop" OR "Collection Log" message
+    # Check for Loot Drop or Collection Log
     if embed.title and ("Loot Drop" in embed.title or "Collection Log" in embed.title):
         drop_data = parse_drop_embed(embed, message)
 
@@ -167,10 +216,27 @@ async def on_message(message):
             # Send to bingo board
             if drop_data['player'] and drop_data['items']:
                 for item in drop_data['items']:
-                    send_to_bingo_api(drop_data['player'], item['name'])
+                    send_to_bingo_api(
+                        drop_data['player'],
+                        item['name'],
+                        drop_type=drop_data['drop_type'],
+                        source=drop_data.get('source'),
+                        timestamp=drop_data['timestamp']
+                    )
 
-            # Optional: Save to file
             save_drop_to_file(drop_data)
+
+    # Check for Player Death
+    elif embed.title and "Player Death" in embed.title:
+        death_data = parse_death_embed(embed, message)
+
+        if death_data:
+            print(f"\n{'=' * 50}")
+            print(f"💀 PLAYER DEATH DETECTED!")
+            print(f"Player: {death_data['player']}")
+            print(f"{'=' * 50}\n")
+
+            send_death_to_api(death_data['player'], death_data['timestamp'])
 
     await bot.process_commands(message)
 
@@ -185,50 +251,39 @@ def parse_drop_embed(embed, message):
         'kill_count': None,
         'total_value': None,
         'rarity': None,
-        'drop_type': None  # 'loot' or 'collection_log'
+        'drop_type': None
     }
 
-    # Determine drop type
     if embed.title:
         if "Loot Drop" in embed.title:
             drop_info['drop_type'] = 'loot'
         elif "Collection Log" in embed.title:
             drop_info['drop_type'] = 'collection_log'
 
-    # Extract player name from description
-    # Loot Drop format: "PlayerName has looted:"
-    # Collection Log format: "PlayerName has added [Item] to their collection"
     if embed.description:
-        # Try loot drop format first
         player_match = re.search(r'(.+?)\s+has looted:', embed.description)
         if player_match:
             drop_info['player'] = player_match.group(1).strip()
         else:
-            # Try collection log format
             player_match = re.search(r'(.+?)\s+has added', embed.description)
             if player_match:
                 drop_info['player'] = player_match.group(1).strip()
 
-    # Parse embed fields
     for field in embed.fields:
         field_name = field.name.strip() if field.name else ""
         field_value = field.value.strip() if field.value else ""
 
-        # Extract items (look for 'x' pattern but avoid parsing as value if it contains http)
         if 'x' in field_value and ('(' in field_value or '[' in field_value):
             item = parse_item_line(field_value)
             if item:
                 drop_info['items'].append(item)
 
-        # Extract source "From: Brande the Fire Queen" or "Source: Tombs of Amascut"
         if field_value.startswith('From:') or field_name == 'Source':
             source_text = field_value.replace('From:', '').replace('Source:', '').strip()
             drop_info['source'] = source_text
 
-        # Extract stats
         if 'Kill Count' in field_name or 'Completion Count' in field_name:
             try:
-                # Handle formats like "24" or "351/1692 (20.7%)"
                 count_match = re.search(r'(\d+)', field_value)
                 if count_match:
                     drop_info['kill_count'] = int(count_match.group(1))
@@ -236,7 +291,6 @@ def parse_drop_embed(embed, message):
                 pass
 
         if 'Total Value' in field_name:
-            # Only parse if it's not a URL
             if not field_value.startswith('http'):
                 drop_info['total_value'] = field_value
                 drop_info['total_value_numeric'] = parse_value(field_value)
@@ -244,9 +298,7 @@ def parse_drop_embed(embed, message):
         if 'Item Rarity' in field_name or 'Rank' in field_name:
             drop_info['rarity'] = field_value
 
-    # Sometimes item info is in the description (especially for collection log)
     if not drop_info['items'] and embed.description:
-        # Try to extract item from collection log format: "PlayerName has added [Item Name] to their collection"
         item_match = re.search(r'has added \[(.+?)\] to their collection', embed.description)
         if item_match:
             item_name = item_match.group(1).strip()
@@ -257,7 +309,6 @@ def parse_drop_embed(embed, message):
                 'value_numeric': 0
             })
         else:
-            # Check lines for item format
             lines = embed.description.split('\n')
             for line in lines:
                 if ('x' in line and '(' in line) or ('x' in line and '[' in line):
@@ -266,6 +317,22 @@ def parse_drop_embed(embed, message):
                         drop_info['items'].append(item)
 
     return drop_info if drop_info['player'] else None
+
+
+def parse_death_embed(embed, message):
+    """Extract player name from death notification"""
+    death_info = {
+        'timestamp': message.created_at.isoformat(),
+        'player': None
+    }
+
+    if embed.description:
+        # Format: "PlayerName has died..."
+        player_match = re.search(r'(.+?)\s+has died', embed.description)
+        if player_match:
+            death_info['player'] = player_match.group(1).strip()
+
+    return death_info if death_info['player'] else None
 
 
 def print_drop_info(drop_data):
@@ -296,17 +363,14 @@ def print_drop_info(drop_data):
 def save_drop_to_file(drop_data):
     """Save drop data to a JSON file"""
     try:
-        # Read existing data
         try:
             with open('drops_log.json', 'r') as f:
                 all_drops = json.load(f)
         except FileNotFoundError:
             all_drops = []
 
-        # Append new drop
         all_drops.append(drop_data)
 
-        # Save back to file
         with open('drops_log.json', 'w') as f:
             json.dump(all_drops, f, indent=2)
 
@@ -341,6 +405,143 @@ async def stats(ctx, player_name: str = None):
     await ctx.send(msg)
 
 
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def import_history(ctx, channel_id: str = None, limit: int = 1000):
+    """
+    Import historical drops (saves to history only, does NOT complete tiles)
+
+    Usage:
+      !import_history                - Import from current channel (last 1000 messages)
+      !import_history 123456789      - Import from specific channel ID
+      !import_history 123456789 5000 - Import last 5000 messages
+    """
+
+    if channel_id:
+        try:
+            target_channel = bot.get_channel(int(channel_id))
+            if not target_channel:
+                await ctx.send(f"❌ Could not find channel with ID: {channel_id}")
+                return
+        except ValueError:
+            await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+    else:
+        target_channel = ctx.channel
+
+    await ctx.send(f"🔍 Importing drop history from {target_channel.mention} (last {limit} messages)...\n"
+                   f"⚠️ **History only** - tiles will NOT be marked as complete.\n"
+                   f"This may take a while!")
+
+    imported_count = 0
+    duplicates = 0
+
+    try:
+        async for message in target_channel.history(limit=limit):
+            if message.webhook_id and message.embeds:
+                embed = message.embeds[0]
+
+                if embed.title and ("Loot Drop" in embed.title or "Collection Log" in embed.title):
+                    drop_data = parse_drop_embed(embed, message)
+
+                    if drop_data:
+                        drop_data['timestamp'] = message.created_at.isoformat()
+
+                        if drop_data['player'] and drop_data['items']:
+                            for item in drop_data['items']:
+                                success, is_dup = send_to_history_only(
+                                    drop_data['player'],
+                                    item['name'],
+                                    drop_type=drop_data['drop_type'],
+                                    source=drop_data.get('source'),
+                                    timestamp=drop_data['timestamp']
+                                )
+
+                                if success:
+                                    imported_count += 1
+                                elif is_dup:
+                                    duplicates += 1
+
+                            await asyncio.sleep(0.1)
+
+        summary = f"✅ **History Import Complete!**\n"
+        summary += f"📥 Imported: {imported_count} drops\n"
+        if duplicates > 0:
+            summary += f"🔁 Deduplicated: {duplicates} (Loot Drop + Collection Log pairs)\n"
+        summary += f"\n✅ History populated! Check Analytics → View History"
+
+        await ctx.send(summary)
+        print(f"📊 History import complete: {imported_count} drops imported, {duplicates} deduplicated")
+
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to read message history!")
+    except Exception as e:
+        await ctx.send(f"❌ Error during import: {str(e)}")
+        print(f"Import error: {e}")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
+    """
+    Import historical player deaths
+
+    Usage:
+      !import_deaths                - Import from current channel (last 5000 messages)
+      !import_deaths 123456789      - Import from specific channel ID
+      !import_deaths 123456789 10000 - Import last 10000 messages
+    """
+
+    if channel_id:
+        try:
+            target_channel = bot.get_channel(int(channel_id))
+            if not target_channel:
+                await ctx.send(f"❌ Could not find channel with ID: {channel_id}")
+                return
+        except ValueError:
+            await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+    else:
+        target_channel = ctx.channel
+
+    await ctx.send(f"💀 Importing death history from {target_channel.mention} (last {limit} messages)...\n"
+                   f"This may take a while!")
+
+    imported_count = 0
+
+    try:
+        async for message in target_channel.history(limit=limit):
+            if message.webhook_id and message.embeds:
+                embed = message.embeds[0]
+
+                if embed.title and "Player Death" in embed.title:
+                    death_data = parse_death_embed(embed, message)
+
+                    if death_data and death_data['player']:
+                        success = send_death_to_api(
+                            death_data['player'],
+                            timestamp=death_data['timestamp']
+                        )
+
+                        if success:
+                            imported_count += 1
+
+                        await asyncio.sleep(0.05)
+
+        summary = f"✅ **Death Import Complete!**\n"
+        summary += f"💀 Imported: {imported_count} deaths\n"
+        summary += f"\n Check your bingo board → 💀 Deaths button"
+
+        await ctx.send(summary)
+        print(f"💀 Death import complete: {imported_count} deaths imported")
+
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to read message history!")
+    except Exception as e:
+        await ctx.send(f"❌ Error during import: {str(e)}")
+        print(f"Death import error: {e}")
+
+
 # Run the bot
 if __name__ == "__main__":
     TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
@@ -350,10 +551,10 @@ if __name__ == "__main__":
         exit(1)
 
     print("=" * 50)
-    print("🤖 OSRS Bingo Drop Tracker Bot")
+    print("🤖 OSRS Bingo Drop Tracker Bot + Death Tracker")
     print("=" * 50)
     print(f"Bingo API: {BINGO_API_URL}")
-    print("Tracking: Loot Drops + Collection Log updates")
+    print("Tracking: Loot Drops, Collection Log, Deaths")
     print("=" * 50)
 
     bot.run(TOKEN)
