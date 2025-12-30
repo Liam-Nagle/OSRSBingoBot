@@ -16,14 +16,18 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 drops_data = []
 
 # Bingo API Configuration
-BINGO_API_URL = os.environ.get('BINGO_API_URL', 'http://localhost:5000')
+BINGO_API_BASE = os.environ.get('BINGO_API_URL', 'http://localhost:5000')
+# Remove /drop from end if present (for legacy compatibility)
+if BINGO_API_BASE.endswith('/drop'):
+    BINGO_API_BASE = BINGO_API_BASE[:-5]
+
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
 
 def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, timestamp=None):
     """Send drop to bingo board API"""
     try:
-        response = requests.post(f"{BINGO_API_URL}/drop",
+        response = requests.post(f"{BINGO_API_BASE}/drop",
                                  headers={
                                      'Content-Type': 'application/json',
                                      'X-API-Key': DROP_API_KEY
@@ -58,7 +62,7 @@ def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, tim
 def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None):
     """Send drop to history-only endpoint (no tile checking)"""
     try:
-        response = requests.post(f"{BINGO_API_URL}/history-only",
+        response = requests.post(f"{BINGO_API_BASE}/history-only",
                                  headers={
                                      'Content-Type': 'application/json',
                                      'X-API-Key': DROP_API_KEY
@@ -84,7 +88,7 @@ def send_to_history_only(player_name, item_name, drop_type='loot', source=None, 
 def send_death_to_api(player_name, timestamp=None):
     """Send death to bingo board API"""
     try:
-        response = requests.post(f"{BINGO_API_URL}/death",
+        response = requests.post(f"{BINGO_API_BASE}/death",
                                  headers={
                                      'Content-Type': 'application/json',
                                      'X-API-Key': DROP_API_KEY
@@ -551,7 +555,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print("🤖 OSRS Bingo Drop Tracker Bot + Death Tracker")
     print("=" * 50)
-    print(f"Bingo API: {BINGO_API_URL}")
+    print(f"Bingo API: {BINGO_API_BASE}")
     print("Tracking: Loot Drops, Collection Log, Deaths")
     print("=" * 50)
 
