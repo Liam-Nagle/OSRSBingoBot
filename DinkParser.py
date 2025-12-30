@@ -198,13 +198,14 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # Check if this is a webhook message
+    # Always process commands first (for !import_history, !stats, etc.)
+    await bot.process_commands(message)
+
+    # Only process webhook messages (Dink notifications)
     if message.webhook_id is None:
-        await bot.process_commands(message)
         return
 
     if not message.embeds:
-        await bot.process_commands(message)
         return
 
     embed = message.embeds[0]
@@ -241,8 +242,6 @@ async def on_message(message):
             print(f"{'=' * 50}\n")
 
             send_death_to_api(death_data['player'], death_data['timestamp'])
-
-    await bot.process_commands(message)
 
 
 def parse_drop_embed(embed, message):
