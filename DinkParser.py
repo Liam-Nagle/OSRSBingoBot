@@ -406,7 +406,6 @@ async def stats(ctx, player_name: str = None):
 
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def import_history(ctx, channel_id: str = None, limit: int = 1000):
     """
     Import historical drops (saves to history only, does NOT complete tiles)
@@ -481,7 +480,6 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
 
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
     """
     Import historical player deaths
