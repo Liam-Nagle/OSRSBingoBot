@@ -366,54 +366,6 @@ def record_death():
     else:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-
-@app.route('/deaths', methods=['GET'])
-def get_deaths():
-    """Get death statistics"""
-    if not USE_MONGODB:
-        return jsonify({'error': 'MongoDB not available'}), 503
-
-    try:
-        # Aggregate deaths by player
-        pipeline = [
-            {
-                '$group': {
-                    '_id': '$player',
-                    'deaths': {'$sum': 1},
-                    'last_death': {'$max': '$timestamp'},
-                    'last_npc': {'$last': '$npc'}
-                }
-            },
-            {
-                '$sort': {'deaths': -1}
-            }
-        ]
-
-        results = list(deaths_collection.aggregate(pipeline))
-
-        # Format results
-        death_stats = []
-        total_deaths = 0
-
-        for result in results:
-            deaths = result['deaths']
-            total_deaths += deaths
-            death_stats.append({
-                'player': result['_id'],
-                'deaths': deaths,
-                'last_death': result['last_death'].isoformat() if result['last_death'] else None,
-                'last_npc': result.get('last_npc')
-            })
-
-        return jsonify({
-            'total_deaths': total_deaths,
-            'player_stats': death_stats
-        })
-
-    except Exception as e:
-        return jsonify({'error': f'Failed to get deaths: {str(e)}'}), 500
-
-
 @app.route('/deaths', methods=['GET'])
 def get_deaths():
     """Get death statistics"""
