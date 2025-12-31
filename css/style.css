@@ -899,3 +899,186 @@
             border-left-color: #CD7F32;
             background: linear-gradient(135deg, rgba(205, 127, 50, 0.2) 0%, rgba(205, 127, 50, 0.05) 100%);
         }
+
+        /* Close Button (X) - Top Right of Modals */
+        .modal-close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #666;
+            cursor: pointer;
+            padding: 5px 10px;
+            line-height: 1;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+
+        .modal-close-btn:hover {
+            color: #8b1a1a;
+            transform: scale(1.1);
+        }
+
+        /* Tile Info Modal Specific Styles */
+        .tile-info-modal .modal-content {
+            max-width: 500px;
+        }
+
+        .tile-info-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .tile-info-icon {
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+
+        .tile-info-title {
+            flex: 1;
+        }
+
+        .tile-info-title h2 {
+            margin: 0 0 5px 0;
+            color: #2c1810;
+        }
+
+        .tile-info-subtitle {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .tile-info-section {
+            margin: 20px 0;
+        }
+
+        .tile-info-section h3 {
+            font-size: 16px;
+            color: #2c1810;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tile-info-list {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #4a5c3a;
+        }
+
+        .tile-info-list li {
+            margin: 8px 0;
+            color: #333;
+        }
+
+        .tile-completions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .completion-badge {
+            background: linear-gradient(135deg, #4a5c3a 0%, #5d7248 100%);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .wiki-link-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #4a5c3a 0%, #5d7248 100%);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .wiki-link-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 92, 58, 0.3);
+        }
+
+        /* Changelog Modal Styles */
+        .changelog-entry {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #4a5c3a;
+        }
+
+        .changelog-date {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .changelog-version {
+            display: inline-block;
+            background: #4a5c3a;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 10px;
+            font-weight: bold;
+        }
+
+        .changelog-title {
+            font-size: 18px;
+            color: #2c1810;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .changelog-changes {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .changelog-changes li {
+            padding: 5px 0;
+            color: #333;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .changelog-changes li:before {
+            content: "•";
+            color: #4a5c3a;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .changelog-type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .badge-feature { background: #4CAF50; color: white; }
+        .badge-fix { background: #FF9800; color: white; }
+        .badge-improvement { background: #2196F3; color: white; }
+        .badge-breaking { background: #f44336; color: white; }

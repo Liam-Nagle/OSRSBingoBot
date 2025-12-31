@@ -474,6 +474,7 @@
             renderBoard();
             updatePlayerStats();
             setInterval(refreshFromAPI, 5000);
+            addCloseButtonsToModals();
             console.log('✅ Board initialized, auto-refresh every 5 seconds');
         }
 
@@ -676,13 +677,8 @@
             if (editMode && isAdmin) {
                 openEditModal(index);
             } else {
-                const tile = bingoData.tiles[index];
-                const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'None');
-                const allItems = tile.items.length > 0
-                    ? `\n\nItems that trigger this tile:\n• ${tile.items.join('\n• ')}`
-                    : '\n\nNo items set';
-
-                alert(`Tile ${index + 1}\n\nTitle: ${displayName}${allItems}\n\nValue: ${tile.value} points\nCompleted by: ${tile.completedBy.join(', ') || 'Nobody yet'}`);
+                // Use the new modal instead of alert()
+                openTileInfoModal(index);
             }
         }
 
@@ -1925,8 +1921,6 @@
             document.getElementById('deathsModal').classList.remove('active');
         }
 
-                // REPLACE your loadDeathStats() function in app.js with this updated version
-
         async function loadDeathStats() {
             const loadingDiv = document.getElementById('deathsLoading');
             const contentDiv = document.getElementById('deathsContent');
@@ -2125,6 +2119,258 @@
                 `;
             }
         }
+
+        function openTileInfoModal(index) {
+            const tile = bingoData.tiles[index];
+            const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
+
+            // Build items list HTML
+            let itemsHtml = '<ul class="tile-info-list">';
+            if (tile.items.length === 0) {
+                itemsHtml += '<li style="color: #999;">No items configured</li>';
+            } else {
+                tile.items.forEach((item, idx) => {
+                    if (idx === 0) {
+                        itemsHtml += `<li><strong>${item}</strong> (Display item)</li>`;
+                    } else {
+                        itemsHtml += `<li>${item}</li>`;
+                    }
+                });
+            }
+            itemsHtml += '</ul>';
+
+            // Build completions HTML
+            let completionsHtml = '';
+            if (tile.completedBy.length > 0) {
+                completionsHtml = '<div class="tile-completions">';
+                tile.completedBy.forEach(player => {
+                    completionsHtml += `<span class="completion-badge">✓ ${player}</span>`;
+                });
+                completionsHtml += '</div>';
+            } else {
+                completionsHtml = '<p style="color: #999; font-style: italic;">Nobody has completed this tile yet!</p>';
+            }
+
+            // Generate wiki link (using first item)
+            let wikiLinkHtml = '';
+            if (tile.items.length > 0) {
+                const wikiItemName = tile.items[0].trim().replace(/\s+/g, '_');
+                const wikiUrl = `https://oldschool.runescape.wiki/w/${encodeURIComponent(wikiItemName)}`;
+                wikiLinkHtml = `
+                    <a href="${wikiUrl}" target="_blank" class="wiki-link-btn">
+                        📖 View on OSRS Wiki
+                    </a>
+                `;
+            }
+
+            // Build icon HTML
+            let iconHtml = '';
+            if (tile.items.length > 0) {
+                iconHtml = `<img src="https://oldschool.runescape.wiki/images/${encodeURIComponent(tile.items[0].trim().replace(/\s+/g, '_'))}_detail.png"
+                                 class="tile-info-icon"
+                                 onerror="this.style.display='none'">`;
+            }
+
+            // Create modal HTML
+            const modalHtml = `
+                <div class="modal tile-info-modal" id="tileInfoModal">
+                    <div class="modal-content">
+                        <button class="modal-close-btn" onclick="closeTileInfoModal()">×</button>
+
+                        <div class="tile-info-header">
+                            ${iconHtml}
+                            <div class="tile-info-title">
+                                <h2>${displayName}</h2>
+                                <div class="tile-info-subtitle">Tile #${index + 1} • ${tile.value} points</div>
+                            </div>
+                        </div>
+
+                        <div class="tile-info-section">
+                            <h3>📋 Items</h3>
+                            ${itemsHtml}
+                            ${tile.items.length > 1 ? '<p style="font-size: 12px; color: #666; margin-top: 10px;"><em>Any of these items will complete this tile</em></p>' : ''}
+                            ${wikiLinkHtml}
+                        </div>
+
+                        <div class="tile-info-section">
+                            <h3>✓ Completed By</h3>
+                            ${completionsHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if present
+            const existingModal = document.getElementById('tileInfoModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+            // Show modal
+            document.getElementById('tileInfoModal').classList.add('active');
+        }
+
+        function closeTileInfoModal() {
+            const modal = document.getElementById('tileInfoModal');
+            if (modal) {
+                modal.classList.remove('active');
+                setTimeout(() => modal.remove(), 300);
+            }
+        }
+
+        // ============================================
+        // CHANGELOG MODAL
+        // ============================================
+
+        // Changelog data (update this manually or load from JSON file)
+        const changelogData = [
+            {
+                version: "v1.4.0",
+                date: "2024-12-31",
+                title: "Death Tracking & UI Improvements",
+                changes: [
+                    { type: "feature", text: "Updated death tracking with player rankings" },
+                    { type: "feature", text: "Deadliest bosses leaderboard with last victim tracking" },
+                    { type: "feature", text: "Exact nemesis death counts" },
+                    { type: "improvement", text: "Moved close buttons to top right with X icon" },
+                    { type: "improvement", text: "Replaced alert popups with themed tile info modals" },
+                    { type: "feature", text: "Added wiki links for items in tile info" },
+                    { type: "feature", text: "Added changelog to track all updates" }
+                ]
+            },
+            {
+                version: "v1.3.0",
+                date: "2024-12-30",
+                title: "MongoDB Integration & History Import",
+                changes: [
+                    { type: "feature", text: "Discord history import with automatic deduplication" },
+                    { type: "feature", text: "Analytics dashboard with drop trends" },
+                    { type: "feature", text: "Collection Log support" },
+                    { type: "feature", text: "Personalized player views with favorites" },
+                    { type: "fix", text: "Fixed Collection Log item detection" }
+                ]
+            },
+            {
+                version: "v1.2.0",
+                date: "2024-12-30",
+                title: "Line Bonuses & Multi-Item Tiles",
+                changes: [
+                    { type: "feature", text: "Configurable line bonuses (rows, columns, diagonals)" },
+                    { type: "feature", text: "Multi-item tile support (any item can complete tile)" },
+                    { type: "feature", text: "Bonus overlay toggle to visualize completed lines" },
+                    { type: "improvement", text: "Leaderboard now shows line completion bonuses" }
+                ]
+            },
+            {
+                version: "v1.1.0",
+                date: "2024-12-30",
+                title: "Initial Release",
+                changes: [
+                    { type: "feature", text: "Core bingo board functionality" },
+                    { type: "feature", text: "Discord bot integration with Dink plugin" },
+                    { type: "feature", text: "Admin panel for board configuration" },
+                    { type: "feature", text: "Real-time drop tracking" },
+                    { type: "feature", text: "Leaderboard with player scores" }
+                ]
+            }
+        ];
+
+        function openChangelogModal() {
+            const changelogHtml = changelogData.map(entry => {
+                const changesHtml = entry.changes.map(change => {
+                    const badgeClass = `badge-${change.type}`;
+                    const typeLabel = change.type.charAt(0).toUpperCase() + change.type.slice(1);
+                    return `<li><span class="changelog-type-badge ${badgeClass}">${typeLabel}</span>${change.text}</li>`;
+                }).join('');
+
+                return `
+                    <div class="changelog-entry">
+                        <div class="changelog-date">
+                            📅 ${entry.date}
+                            <span class="changelog-version">${entry.version}</span>
+                        </div>
+                        <div class="changelog-title">${entry.title}</div>
+                        <ul class="changelog-changes">
+                            ${changesHtml}
+                        </ul>
+                    </div>
+                `;
+            }).join('');
+
+            const modalHtml = `
+                <div class="modal" id="changelogModal">
+                    <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                        <button class="modal-close-btn" onclick="closeChangelogModal()">×</button>
+                        <h2>📜 Changelog</h2>
+                        <p style="color: #666; margin-bottom: 20px;">Recent updates and improvements to the OSRS Bingo Board</p>
+                        ${changelogHtml}
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if present
+            const existingModal = document.getElementById('changelogModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+            // Show modal
+            document.getElementById('changelogModal').classList.add('active');
+        }
+
+        function closeChangelogModal() {
+            const modal = document.getElementById('changelogModal');
+            if (modal) {
+                modal.classList.remove('active');
+                setTimeout(() => modal.remove(), 300);
+            }
+        }
+
+        function addCloseButtonsToModals() {
+            const modals = [
+                { id: 'loginModal', closeFunc: 'closeLoginModal()' },
+                { id: 'manualOverrideModal', closeFunc: 'closeManualOverrideModal()' },
+                { id: 'boardSizeModal', closeFunc: 'closeBoardSizeModal()' },
+                { id: 'editModal', closeFunc: 'closeModal()' },
+                { id: 'bonusModal', closeFunc: 'closeBonusModal()' },
+                { id: 'historyModal', closeFunc: 'closeHistoryModal()' },
+                { id: 'analyticsModal', closeFunc: 'closeAnalyticsModal()' },
+                { id: 'deathsModal', closeFunc: 'closeDeathsModal()' },
+                { id: 'apiModal', closeFunc: 'closeApiModal()' }
+            ];
+
+            modals.forEach(modal => {
+                const modalEl = document.getElementById(modal.id);
+                if (modalEl) {
+                    const modalContent = modalEl.querySelector('.modal-content');
+                    if (modalContent) {
+                        // Check if close button already exists
+                        if (!modalContent.querySelector('.modal-close-btn')) {
+                            const closeBtn = document.createElement('button');
+                            closeBtn.className = 'modal-close-btn';
+                            closeBtn.innerHTML = '×';
+                            closeBtn.setAttribute('onclick', modal.closeFunc);
+                            modalContent.insertBefore(closeBtn, modalContent.firstChild);
+                        }
+                    }
+                }
+            });
+        }
+
+        // Run this when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            addCloseButtonsToModals();
+        });
+
+        // Also run it in initBoard() to make sure it catches dynamically created modals
+        // Add this line at the end of your initBoard() function:
+        // addCloseButtonsToModals();
 
         (async () => {
             await initBoard();
