@@ -421,11 +421,11 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
-    <!-- Deaths Modal -->
+    <!-- Enhanced Deaths Modal with Deadliest Bosses Section -->
     <div class="modal" id="deathsModal">
-        <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-content" style="max-width: 1100px;">
             <h2>💀 Death Statistics</h2>
-            <p style="color: #666; margin-bottom: 20px;">Total deaths tracked across all players</p>
+            <p style="color: #666; margin-bottom: 20px;">Comprehensive death tracking and boss statistics</p>
 
             <!-- Loading State -->
             <div id="deathsLoading" style="text-align: center; padding: 60px;">
@@ -443,10 +443,21 @@ Dragon warhammer"></textarea>
                     <div style="font-size: 18px; color: rgba(255,255,255,0.9); margin-top: 5px;">Total Deaths</div>
                 </div>
 
-                <!-- Player Death Stats -->
-                <div style="background: rgba(255,255,255,0.9); border: 2px solid #8B6914; border-radius: 8px; padding: 20px;">
-                    <h3 style="color: #2c1810; margin-bottom: 20px; text-align: center;">💀 Death Rankings</h3>
-                    <div id="deathPlayerStats"></div>
+                <!-- Two Column Layout: Player Stats & Deadliest Bosses -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+
+                    <!-- Player Death Rankings -->
+                    <div style="background: rgba(255,255,255,0.9); border: 2px solid #8B6914; border-radius: 8px; padding: 20px;">
+                        <h3 style="color: #2c1810; margin-bottom: 20px; text-align: center;">💀 Death Rankings</h3>
+                        <div id="deathPlayerStats"></div>
+                    </div>
+
+                    <!-- Deadliest Bosses -->
+                    <div style="background: rgba(255,255,255,0.9); border: 2px solid #8B0000; border-radius: 8px; padding: 20px;">
+                        <h3 style="color: #2c1810; margin-bottom: 20px; text-align: center;">☠️ Deadliest Bosses</h3>
+                        <div id="deadliestBosses"></div>
+                    </div>
+
                 </div>
 
             </div>

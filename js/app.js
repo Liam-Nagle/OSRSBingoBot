@@ -1913,7 +1913,7 @@
         }
 
         // ===========================
-        // DEATH TRACKING
+        // ENHANCED DEATH TRACKING
         // ===========================
 
         function openDeathsModal() {
@@ -1933,26 +1933,31 @@
             contentDiv.style.display = 'none';
 
             try {
-                const response = await fetch(`${API_URL}/deaths`);
+                // Fetch both player deaths and NPC deaths
+                const [playerResponse, npcResponse] = await Promise.all([
+                    fetch(`${API_URL}/deaths`),
+                    fetch(`${API_URL}/deaths/by-npc`)
+                ]);
 
-                if (!response.ok) {
+                if (!playerResponse.ok) {
                     throw new Error('Failed to fetch death statistics');
                 }
 
-                const data = await response.json();
+                const playerData = await playerResponse.json();
+                const npcData = npcResponse.ok ? await npcResponse.json() : { npc_stats: [] };
 
                 // Update total deaths
-                document.getElementById('totalDeathsCount').textContent = data.total_deaths.toLocaleString();
+                document.getElementById('totalDeathsCount').textContent = playerData.total_deaths.toLocaleString();
 
                 // Build player stats HTML
                 const playerStatsDiv = document.getElementById('deathPlayerStats');
 
-                if (data.player_stats.length === 0) {
+                if (playerData.player_stats.length === 0) {
                     playerStatsDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">No deaths recorded yet!</div>';
                 } else {
                     let html = '<div style="display: grid; gap: 15px;">';
 
-                    data.player_stats.forEach((player, index) => {
+                    playerData.player_stats.forEach((player, index) => {
                         const rank = index + 1;
                         const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
                         const rankClass = rank <= 3 ? `rank-${rank}` : '';
@@ -1976,6 +1981,36 @@
                             }
                         }
 
+                        // Get player's most deadly NPC (nemesis)
+                        let nemesisHtml = '';
+                        if (npcData.npc_stats && npcData.npc_stats.length > 0) {
+                            // Find NPCs this player died to
+                            const playerNpcs = npcData.npc_stats
+                                .filter(npc => npc.players.includes(player.player))
+                                .sort((a, b) => b.deaths - a.deaths);
+
+                            if (playerNpcs.length > 0) {
+                                const nemesis = playerNpcs[0];
+                                // Rough estimate of this player's deaths to their nemesis
+                                const nemesisDeaths = Math.floor(nemesis.deaths / nemesis.unique_players);
+                                nemesisHtml = `<div style="font-size: 12px; color: #8B0000; margin-top: 3px;">
+                                    💀 Nemesis: ${nemesis.npc} (~${nemesisDeaths}+ deaths)
+                                </div>`;
+                            }
+                        }
+
+                        // Last death NPC
+                        let lastNpcHtml = '';
+                        if (player.last_npc) {
+                            lastNpcHtml = `<div style="font-size: 12px; color: #666; margin-top: 3px;">
+                                ⚔️ Last death: ${player.last_npc}${lastDeathText ? ` (${lastDeathText})` : ''}
+                            </div>`;
+                        } else if (lastDeathText) {
+                            lastNpcHtml = `<div style="font-size: 12px; color: #666; margin-top: 3px;">
+                                ⏱️ Last death: ${lastDeathText}
+                            </div>`;
+                        }
+
                         html += `
                             <div style="background: ${rankClass ? 'linear-gradient(135deg, rgba(139,0,0,0.1) 0%, rgba(107,0,0,0.05) 100%)' : 'rgba(0,0,0,0.03)'};
                                         padding: 20px;
@@ -1992,7 +2027,8 @@
                                     <div style="font-weight: bold; font-size: 18px; color: #2c1810; margin-bottom: 5px;">
                                         #${rank} ${player.player}
                                     </div>
-                                    ${lastDeathText ? `<div style="font-size: 12px; color: #666;">Last death: ${lastDeathText}</div>` : ''}
+                                    ${nemesisHtml}
+                                    ${lastNpcHtml}
                                 </div>
 
                                 <div style="text-align: right;">
@@ -2011,6 +2047,48 @@
                     playerStatsDiv.innerHTML = html;
                 }
 
+                // Build deadliest bosses section
+                const deadliestBossesDiv = document.getElementById('deadliestBosses');
+
+                if (!npcData.npc_stats || npcData.npc_stats.length === 0) {
+                    deadliestBossesDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">No NPC death data available!</div>';
+                } else {
+                    let bossHtml = '<div style="display: grid; gap: 12px;">';
+
+                    // Show top 10 deadliest NPCs
+                    npcData.npc_stats.slice(0, 10).forEach((npc, index) => {
+                        const rank = index + 1;
+                        const medal = rank === 1 ? '👑' : rank === 2 ? '💀' : rank === 3 ? '⚔️' : `${rank}.`;
+                        const barWidth = Math.max(10, (npc.deaths / npcData.npc_stats[0].deaths) * 100);
+
+                        bossHtml += `
+                            <div style="background: rgba(139,0,0,0.05); padding: 15px; border-radius: 8px; border-left: 4px solid #8B0000;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                                        <div style="font-size: 20px; min-width: 30px;">${medal}</div>
+                                        <div>
+                                            <div style="font-weight: bold; font-size: 16px; color: #2c1810;">${npc.npc}</div>
+                                            <div style="font-size: 11px; color: #666; margin-top: 2px;">
+                                                ${npc.unique_players} player${npc.unique_players !== 1 ? 's' : ''} killed
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 24px; font-weight: bold; color: #8B0000;">${npc.deaths}</div>
+                                        <div style="font-size: 11px; color: #666;">kills</div>
+                                    </div>
+                                </div>
+                                <div style="background: rgba(139,0,0,0.1); height: 8px; border-radius: 4px; overflow: hidden;">
+                                    <div style="background: linear-gradient(90deg, #8B0000 0%, #CD5C5C 100%); height: 100%; width: ${barWidth}%; transition: width 0.5s;"></div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    bossHtml += '</div>';
+                    deadliestBossesDiv.innerHTML = bossHtml;
+                }
+
                 loadingDiv.style.display = 'none';
                 contentDiv.style.display = 'block';
 
@@ -2025,7 +2103,6 @@
                 `;
             }
         }
-
 
         (async () => {
             await initBoard();
