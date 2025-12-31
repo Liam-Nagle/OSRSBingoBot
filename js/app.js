@@ -588,7 +588,7 @@
                 }
 
                 const itemCountHtml = tile.items && tile.items.length > 1
-                    ? `<div style="font-size: 11px; color: ${isCompleted ? 'rgba(255,255,255,0.7)' : '#8B6914'}; margin-top: 5px;">(${tile.items.length} items can complete)</div>`
+                    ? `<div style="font-size: 11px; color: ${tile.completedBy.length > 0 ? 'rgba(255,255,255,0.7)' : '#999'}; margin-top: 5px;">(${tile.items.length} item${tile.items.length !== 1 ? 's' : ''} ${tile.requireAllItems ? 'to complete' : 'can complete'})</div>`
                     : '';
 
                 tileEl.innerHTML = `
@@ -2188,7 +2188,7 @@
                         <div class="tile-info-section">
                             <h3>📋 Items</h3>
                             ${itemsHtml}
-                            ${tile.items.length > 1 ? '<p style="font-size: 12px; color: #666; margin-top: 10px;"><em>Any of these items will complete this tile</em></p>' : ''}
+                            ${tile.items.length > 1 ? `<p style="font-size: 12px; color: #666; margin-top: 10px;"><em>${tile.requireAllItems ? 'All of these items are required to complete this tile' : 'Any of these items will complete this tile'}</em></p>` : ''}
                             ${wikiLinkHtml}
                         </div>
 
@@ -2227,6 +2227,16 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v1.4.3",
+                date: "2024-12-31",
+                title: "Require-All Items Clarity Update",
+                changes: [
+                    { type: "improvement", text: "Updated board display: tiles requiring all items now show '3 items to complete' instead of '3 items can complete'" },
+                    { type: "improvement", text: "Updated tile info modal: clearly indicates if all items are required vs. any item" },
+                    { type: "improvement", text: "Improved user clarity for multi-item tile requirements" }
+                ]
+            },
             {
                 version: "v1.4.2",
                 date: "2024-12-31",
