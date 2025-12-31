@@ -1925,6 +1925,8 @@
             document.getElementById('deathsModal').classList.remove('active');
         }
 
+                // REPLACE your loadDeathStats() function in app.js with this updated version
+
         async function loadDeathStats() {
             const loadingDiv = document.getElementById('deathsLoading');
             const contentDiv = document.getElementById('deathsContent');
@@ -1933,10 +1935,11 @@
             contentDiv.style.display = 'none';
 
             try {
-                // Fetch both player deaths and NPC deaths
-                const [playerResponse, npcResponse] = await Promise.all([
+                // Fetch player deaths, NPC deaths, AND player-NPC breakdown
+                const [playerResponse, npcResponse, playerNpcResponse] = await Promise.all([
                     fetch(`${API_URL}/deaths`),
-                    fetch(`${API_URL}/deaths/by-npc`)
+                    fetch(`${API_URL}/deaths/by-npc`),
+                    fetch(`${API_URL}/deaths/by-player-npc`)  // ⭐ NEW ENDPOINT
                 ]);
 
                 if (!playerResponse.ok) {
@@ -1945,6 +1948,7 @@
 
                 const playerData = await playerResponse.json();
                 const npcData = npcResponse.ok ? await npcResponse.json() : { npc_stats: [] };
+                const playerNpcData = playerNpcResponse.ok ? await playerNpcResponse.json() : { player_npc_deaths: {} };  // ⭐ NEW DATA
 
                 // Update total deaths
                 document.getElementById('totalDeathsCount').textContent = playerData.total_deaths.toLocaleString();
@@ -1981,20 +1985,17 @@
                             }
                         }
 
-                        // Get player's most deadly NPC (nemesis)
+                        // ⭐ UPDATED: Get player's nemesis with EXACT death count
                         let nemesisHtml = '';
-                        if (npcData.npc_stats && npcData.npc_stats.length > 0) {
-                            // Find NPCs this player died to
-                            const playerNpcs = npcData.npc_stats
-                                .filter(npc => npc.players.includes(player.player))
-                                .sort((a, b) => b.deaths - a.deaths);
+                        if (playerNpcData.player_npc_deaths && playerNpcData.player_npc_deaths[player.player]) {
+                            // Get all NPCs this player died to, sorted by death count
+                            const playerNpcs = Object.entries(playerNpcData.player_npc_deaths[player.player])
+                                .sort((a, b) => b[1] - a[1]);  // Sort by death count descending
 
                             if (playerNpcs.length > 0) {
-                                const nemesis = playerNpcs[0];
-                                // Rough estimate of this player's deaths to their nemesis
-                                const nemesisDeaths = Math.floor(nemesis.deaths / nemesis.unique_players);
+                                const [nemesisNpc, nemesisDeaths] = playerNpcs[0];  // Get #1 deadliest
                                 nemesisHtml = `<div style="font-size: 12px; color: #8B0000; margin-top: 3px;">
-                                    💀 Nemesis: ${nemesis.npc} (~${nemesisDeaths}+ deaths)
+                                    💀 Nemesis: ${nemesisNpc} (${nemesisDeaths} death${nemesisDeaths !== 1 ? 's' : ''})
                                 </div>`;
                             }
                         }
@@ -2047,7 +2048,7 @@
                     playerStatsDiv.innerHTML = html;
                 }
 
-                // Build deadliest bosses section
+                // Build deadliest bosses section (UNCHANGED)
                 const deadliestBossesDiv = document.getElementById('deadliestBosses');
 
                 if (!npcData.npc_stats || npcData.npc_stats.length === 0) {
@@ -2055,7 +2056,6 @@
                 } else {
                     let bossHtml = '<div style="display: grid; gap: 12px;">';
 
-                    // Show top 10 deadliest NPCs
                     npcData.npc_stats.slice(0, 10).forEach((npc, index) => {
                         const rank = index + 1;
                         const medal = rank === 1 ? '👑' : rank === 2 ? '💀' : rank === 3 ? '⚔️' : `${rank}.`;
