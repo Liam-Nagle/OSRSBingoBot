@@ -773,10 +773,12 @@
             if (requireAll && items.length > 1) {
                 bingoData.tiles[currentTileIndex].requiredItems = items;
                 bingoData.tiles[currentTileIndex].itemProgress = bingoData.tiles[currentTileIndex].itemProgress || {};
+                bingoData.tiles[currentTileIndex].requireAllItems = true;
             } else {
                 // Regular tile - remove multi-item fields if they exist
                 delete bingoData.tiles[currentTileIndex].requiredItems;
                 delete bingoData.tiles[currentTileIndex].itemProgress;
+                delete bingoData.tiles[currentTileIndex].requireAllItems;  // ← ADD THIS LINE
             }
 
             closeModal();
@@ -2227,6 +2229,15 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                    {
+                version: "v1.4.4",
+                date: "2024-12-31",
+                title: "Require-All Items Clarity Update",
+                changes: [
+                    { type: "fix", text: "Bugfix to fix the previous changelog" },
+                    { type: "improvement", text: "Changed Deadliest Bosses to Deadliest NPCs" },
+                ]
+            },
             {
                 version: "v1.4.3",
                 date: "2024-12-31",
