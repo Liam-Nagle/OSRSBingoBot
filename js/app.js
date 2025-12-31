@@ -2228,6 +2228,14 @@
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v1.5.0",
+                date: "2024-12-31",
+                title: "Death Tracking & UI Improvements",
+                changes: [
+                    { type: "fix", text: "Modal close button now actually inside the modal" },
+                ]
+            },
+            {
                 version: "v1.4.0",
                 date: "2024-12-31",
                 title: "Death Tracking & UI Improvements",
