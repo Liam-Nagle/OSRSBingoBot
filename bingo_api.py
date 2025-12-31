@@ -414,60 +414,54 @@ def get_deaths():
         return jsonify({'error': f'Failed to get deaths: {str(e)}'}), 500
 
 
-@app.route('/deaths/by-npc', methods=['GET'])
-def get_deaths_by_npc():
-    """Get death statistics grouped by NPC/location"""
+@app.route('/deaths', methods=['GET'])
+def get_deaths():
+    """Get death statistics"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
     try:
-        # Aggregate deaths by NPC
+        # ⭐ FIX: Sort by timestamp BEFORE grouping
         pipeline = [
             {
-                '$match': {'npc': {'$ne': None}}  # Only include deaths with NPC
-            },
-            {
-                '$sort': {'timestamp': -1}  # ⭐ SORT BY NEWEST FIRST
+                '$sort': {'timestamp': -1}  # ← Sort newest first
             },
             {
                 '$group': {
-                    '_id': '$npc',
+                    '_id': '$player',
                     'deaths': {'$sum': 1},
-                    'players': {'$addToSet': '$player'},
-                    'last_victim': {'$first': '$player'},  # ⭐ GET MOST RECENT VICTIM
-                    'last_death_time': {'$first': '$timestamp'}  # ⭐ GET MOST RECENT TIME
+                    'last_death': {'$first': '$timestamp'},  # ← First = most recent
+                    'last_npc': {'$first': '$npc'}  # ← Get NPC from most recent death
                 }
             },
             {
-                '$sort': {'deaths': -1}
-            },
-            {
-                '$limit': 50  # Top 50 most deadly NPCs
+                '$sort': {'deaths': -1}  # Sort by death count
             }
         ]
 
         results = list(deaths_collection.aggregate(pipeline))
 
         # Format results
-        npc_stats = []
+        death_stats = []
+        total_deaths = 0
+
         for result in results:
-            npc_stats.append({
-                'npc': result['_id'],
-                'deaths': result['deaths'],
-                'unique_players': len(result['players']),
-                'players': result['players'],
-                'last_victim': result.get('last_victim'),  # ⭐ ADD THIS
-                'last_death_time': result['last_death_time'].isoformat() if result.get('last_death_time') else None
-                # ⭐ ADD THIS
+            deaths = result['deaths']
+            total_deaths += deaths
+            death_stats.append({
+                'player': result['_id'],
+                'deaths': deaths,
+                'last_death': result['last_death'].isoformat() if result.get('last_death') else None,
+                'last_npc': result.get('last_npc')
             })
 
         return jsonify({
-            'npc_stats': npc_stats,
-            'count': len(npc_stats)
+            'total_deaths': total_deaths,
+            'player_stats': death_stats
         })
 
     except Exception as e:
-        return jsonify({'error': f'Failed to get NPC deaths: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to get deaths: {str(e)}'}), 500
 
 
 @app.route('/history', methods=['GET'])
@@ -518,6 +512,54 @@ def update_board():
     data = request.json
     save_bingo_data(data)
     return jsonify({'success': True})
+
+
+@app.route('/deaths/by-player-npc', methods=['GET'])
+def get_deaths_by_player_npc():
+    """Get detailed death statistics: how many times each player died to each NPC"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Aggregate to get death counts per player per NPC
+        pipeline = [
+            {
+                '$match': {'npc': {'$ne': None}}  # Only deaths with NPC
+            },
+            {
+                '$group': {
+                    '_id': {
+                        'player': '$player',
+                        'npc': '$npc'
+                    },
+                    'deaths': {'$sum': 1}
+                }
+            },
+            {
+                '$sort': {'deaths': -1}
+            }
+        ]
+
+        results = list(deaths_collection.aggregate(pipeline))
+
+        # Format as: {player: {npc: death_count}}
+        player_npc_deaths = {}
+        for result in results:
+            player = result['_id']['player']
+            npc = result['_id']['npc']
+            deaths = result['deaths']
+
+            if player not in player_npc_deaths:
+                player_npc_deaths[player] = {}
+
+            player_npc_deaths[player][npc] = deaths
+
+        return jsonify({
+            'player_npc_deaths': player_npc_deaths
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get player-NPC deaths: {str(e)}'}), 500
 
 
 @app.route('/manual-override', methods=['POST'])
