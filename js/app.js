@@ -2061,6 +2061,27 @@
                         const medal = rank === 1 ? '👑' : rank === 2 ? '💀' : rank === 3 ? '⚔️' : `${rank}.`;
                         const barWidth = Math.max(10, (npc.deaths / npcData.npc_stats[0].deaths) * 100);
 
+                        let lastVictimHtml = '';
+                        if (npc.last_victim) {
+                            let timeAgo = '';
+                            if (npc.last_death_time) {
+                                const date = new Date(npc.last_death_time);
+                                const now = new Date();
+                                const diffMs = now - date;
+                                const diffMins = Math.floor(diffMs / 60000);
+                                const diffHours = Math.floor(diffMs / 3600000);
+                                const diffDays = Math.floor(diffMs / 86400000);
+                                if (diffMins < 60) {
+                                    timeAgo = `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+                                } else if (diffHours < 24) {
+                                    timeAgo = `${diffHours} hr${diffHours !== 1 ? 's' : ''} ago`;
+                                } else {
+                                    timeAgo = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+                                }
+                            }
+                            lastVictimHtml = `<div style="font-size: 11px; color: #8B0000; margin-top: 2px;">🎯 Last killed: ${npc.last_victim}${timeAgo ? ` (${timeAgo})` : ''}</div>`;
+                        }
+
                         bossHtml += `
                             <div style="background: rgba(139,0,0,0.05); padding: 15px; border-radius: 8px; border-left: 4px solid #8B0000;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -2071,6 +2092,7 @@
                                             <div style="font-size: 11px; color: #666; margin-top: 2px;">
                                                 ${npc.unique_players} player${npc.unique_players !== 1 ? 's' : ''} killed
                                             </div>
+                                            ${lastVictimHtml}
                                         </div>
                                     </div>
                                     <div style="text-align: right;">
