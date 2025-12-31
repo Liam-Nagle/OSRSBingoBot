@@ -416,6 +416,61 @@ def get_deaths():
         return jsonify({'error': f'Failed to get deaths: {str(e)}'}), 500
 
 
+@app.route('/deaths/by-npc', methods=['GET'])
+def get_deaths_by_npc():
+    """Get death statistics grouped by NPC/location"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Aggregate deaths by NPC
+        pipeline = [
+            {
+                '$match': {'npc': {'$ne': None}}  # Only include deaths with NPC
+            },
+            {
+                '$sort': {'timestamp': -1}  # Sort by timestamp descending (newest first)
+            },
+            {
+                '$group': {
+                    '_id': '$npc',
+                    'deaths': {'$sum': 1},
+                    'players': {'$addToSet': '$player'},
+                    'last_victim': {'$first': '$player'},  # First player (most recent)
+                    'last_death_time': {'$first': '$timestamp'}  # First timestamp (most recent)
+                }
+            },
+            {
+                '$sort': {'deaths': -1}
+            },
+            {
+                '$limit': 50  # Top 50 most deadly NPCs
+            }
+        ]
+        
+        results = list(deaths_collection.aggregate(pipeline))
+        
+        # Format results
+        npc_stats = []
+        for result in results:
+            npc_stats.append({
+                'npc': result['_id'],
+                'deaths': result['deaths'],
+                'unique_players': len(result['players']),
+                'players': result['players'],
+                'last_victim': result.get('last_victim'),
+                'last_death_time': result['last_death_time'].isoformat() if result.get('last_death_time') else None
+            })
+        
+        return jsonify({
+            'npc_stats': npc_stats,
+            'count': len(npc_stats)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to get NPC deaths: {str(e)}'}), 500
+
+
 @app.route('/history', methods=['GET'])
 def get_history():
     """Get drop history with optional filters"""
