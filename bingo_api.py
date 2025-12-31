@@ -427,10 +427,15 @@ def get_deaths_by_npc():
                 '$match': {'npc': {'$ne': None}}  # Only include deaths with NPC
             },
             {
+                '$sort': {'timestamp': -1}  # ⭐ SORT BY NEWEST FIRST
+            },
+            {
                 '$group': {
                     '_id': '$npc',
                     'deaths': {'$sum': 1},
-                    'players': {'$addToSet': '$player'}
+                    'players': {'$addToSet': '$player'},
+                    'last_victim': {'$first': '$player'},  # ⭐ GET MOST RECENT VICTIM
+                    'last_death_time': {'$first': '$timestamp'}  # ⭐ GET MOST RECENT TIME
                 }
             },
             {
@@ -450,7 +455,10 @@ def get_deaths_by_npc():
                 'npc': result['_id'],
                 'deaths': result['deaths'],
                 'unique_players': len(result['players']),
-                'players': result['players']
+                'players': result['players'],
+                'last_victim': result.get('last_victim'),  # ⭐ ADD THIS
+                'last_death_time': result['last_death_time'].isoformat() if result.get('last_death_time') else None
+                # ⭐ ADD THIS
             })
 
         return jsonify({
