@@ -161,6 +161,8 @@ def record_drop():
     item_name = data.get('item')
     drop_type = data.get('drop_type', 'loot')  # 'loot' or 'collection_log'
     source = data.get('source')
+    value = data.get('value', 0)  #Get value from bot
+    value_string = data.get('value_string', '')  #Original value text (e.g., "2.95M")
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
     print(f"\n{'=' * 60}")
@@ -168,6 +170,7 @@ def record_drop():
     print(f"   Player: {player_name}")
     print(f"   Item: {item_name}")
     print(f"   Type: {drop_type}")
+    print(f"   Value: {value_string} ({value:,.0f} gp)")  #Show value
     print(f"{'=' * 60}")
 
     if not player_name or not item_name:
@@ -187,6 +190,8 @@ def record_drop():
                     'item': item_name,
                     'drop_type': drop_type,
                     'source': source,
+                    'value': value,  # Store numeric value
+                    'value_string': value_string,  # Store original text
                     'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
                                                                                                         str) else timestamp
                 })

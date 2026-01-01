@@ -249,12 +249,45 @@ Dragon warhammer"></textarea>
             <!-- Filter Controls -->
             <div style="background: rgba(255,255,255,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #8B6914;">
                 <!-- Player Filter -->
-                <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap;">
-                    <label style="font-weight: bold; color: #2c1810;">Player:</label>
-                    <select id="historyPlayerFilter" onchange="loadHistory()" style="padding: 8px; border: 2px solid #8B6914; border-radius: 5px; background: white; color: #2c1810; font-weight: bold; min-width: 150px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                <div>
+                    <label style="font-size: 12px; color: #2c1810; display: block; margin-bottom: 3px;">Player:</label>
+                    <select id="historyPlayerFilter" onchange="filterHistory()" style="padding: 5px; border: 1px solid #8B6914; border-radius: 3px;">
                         <option value="">All Players</option>
                     </select>
                 </div>
+
+                <div>
+                    <label style="font-size: 12px; color: #666;">Drop Type:</label>
+                    <select id="historyTypeFilter" onchange="filterHistory()">
+                        <option value="">All Types</option>
+                        <option value="loot">Loot Drop</option>
+                        <option value="collection_log">Collection Log</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label style="font-size: 12px; color: #2c1810; display: block; margin-bottom: 3px;">Value Filter:</label>
+                    <input type="text"
+                           id="historyValueFilter"
+                           placeholder="e.g., >100k, <1m, 50k-500k"
+                           style="width: 180px; padding: 5px; border: 1px solid #8B6914; border-radius: 3px;"
+                           onkeyup="filterHistory()">
+                </div>
+
+                <div>
+                    <label style="font-size: 12px; color: #2c1810; display: block; margin-bottom: 3px;">Search Items:</label>
+                    <input type="text"
+                           id="historySearchFilter"
+                           placeholder="Search items..."
+                           style="width: 150px; padding: 5px; border: 1px solid #8B6914; border-radius: 3px;"
+                           onkeyup="filterHistory()">
+                </div>
+            </div>
+
+            <div style="font-size: 10px; color: #666; margin-bottom: 15px; margin-top: -15px;">
+                💡 Value filter examples: >100k, <1m, =500k, 100k-1m
+            </div>
 
                 <!-- Date Quick Filters -->
                 <div style="margin-bottom: 15px;">

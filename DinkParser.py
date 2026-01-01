@@ -24,22 +24,23 @@ if BINGO_API_BASE.endswith('/drop'):
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
 
-def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, timestamp=None):
-    """Send drop to bingo board API"""
+def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, value=0, value_string=''):
+    """Send drop to bingo board API with value information"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/drop",
-                                 headers={
-                                     'Content-Type': 'application/json',
-                                     'X-API-Key': DROP_API_KEY
-                                 },
-                                 json={
-                                     'player': player_name,
-                                     'item': item_name,
-                                     'drop_type': drop_type,
-                                     'source': source,
-                                     'timestamp': timestamp or datetime.utcnow().isoformat()
-                                 },
-                                 timeout=5)
+            headers={
+                'Content-Type': 'application/json',
+                'X-API-Key': DROP_API_KEY
+            },
+            json={
+                'player': player_name,
+                'item': item_name,
+                'drop_type': drop_type,
+                'source': source,
+                'value': value,  # ← NEW: Send numeric value
+                'value_string': value_string  # ← NEW: Send original text (e.g., "2.95M")
+            },
+            timeout=5)
 
         if response.status_code == 200:
             result = response.json()
@@ -224,11 +225,12 @@ async def on_message(message):
             if drop_data['player'] and drop_data['items']:
                 for item in drop_data['items']:
                     send_to_bingo_api(
-                        drop_data['player'],
-                        item['name'],
-                        drop_type=drop_data['drop_type'],
+                        player_name=drop_data['player'],
+                        item_name=item['name'],
+                        drop_type='loot',
                         source=drop_data.get('source'),
-                        timestamp=drop_data['timestamp']
+                        value=item.get('value_numeric', 0),  # Send numeric value
+                        value_string=item.get('value', '')  # Send value text
                     )
 
             save_drop_to_file(drop_data)

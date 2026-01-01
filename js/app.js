@@ -922,6 +922,99 @@
             updatePlayerStats();
         }
 
+        function parseValueFilter(filterText) {
+            /**
+             * Parse value filter strings like:
+             * - ">100k" → { operator: '>', value: 100000 }
+             * - "<1m" → { operator: '<', value: 1000000 }
+             * - "=500k" → { operator: '=', value: 500000 }
+             * - "100k-1m" → { operator: 'range', min: 100000, max: 1000000 }
+             */
+
+            if (!filterText || filterText.trim() === '') {
+                return null;
+            }
+
+            filterText = filterText.trim().toLowerCase();
+
+            // Check for range (e.g., "100k-1m")
+            const rangeMatch = filterText.match(/^(\d+\.?\d*[km]?)\s*-\s*(\d+\.?\d*[km]?)$/);
+            if (rangeMatch) {
+                return {
+                    operator: 'range',
+                    min: parseValueShorthand(rangeMatch[1]),
+                    max: parseValueShorthand(rangeMatch[2])
+                };
+            }
+
+            // Check for operator (>, <, =, >=, <=)
+            const operatorMatch = filterText.match(/^([><=]+)(\d+\.?\d*[km]?)$/);
+            if (operatorMatch) {
+                return {
+                    operator: operatorMatch[1],
+                    value: parseValueShorthand(operatorMatch[2])
+                };
+            }
+
+            // Just a number (treat as exact match)
+            const exactMatch = filterText.match(/^(\d+\.?\d*[km]?)$/);
+            if (exactMatch) {
+                return {
+                    operator: '=',
+                    value: parseValueShorthand(exactMatch[1])
+                };
+            }
+
+            return null;
+        }
+
+        function parseValueShorthand(str) {
+            /**
+             * Convert shorthand to number:
+             * - "100k" → 100000
+             * - "2.5m" → 2500000
+             * - "500" → 500
+             */
+
+            str = str.toLowerCase().trim();
+
+            if (str.endsWith('m')) {
+                return parseFloat(str.replace('m', '')) * 1000000;
+            } else if (str.endsWith('k')) {
+                return parseFloat(str.replace('k', '')) * 1000;
+            } else {
+                return parseFloat(str);
+            }
+        }
+
+        function checkValueFilter(dropValue, filter) {
+            /**
+             * Check if a drop value matches the filter criteria
+             */
+
+            if (!filter) return true;
+
+            const value = dropValue || 0;
+
+            switch (filter.operator) {
+                case '>':
+                    return value > filter.value;
+                case '>=':
+                    return value >= filter.value;
+                case '<':
+                    return value < filter.value;
+                case '<=':
+                    return value <= filter.value;
+                case '=':
+                    // Allow 10% tolerance for exact matches
+                    return Math.abs(value - filter.value) < (filter.value * 0.1);
+                case 'range':
+                    return value >= filter.min && value <= filter.max;
+                default:
+                    return true;
+            }
+        }
+
         function clearBoard() {
             if (confirm('Clear all tiles and player progress?')) {
                 const currentSize = bingoData.boardSize;
@@ -1266,6 +1359,9 @@
             if (currentValue && sortedPlayers.includes(currentValue)) {
                 select.value = currentValue;
             }
+            if (document.getElementById('historyModal').classList.contains('active')) {
+                filterHistory();
+            }
         }
 
         async function loadHistory() {
@@ -1319,13 +1415,24 @@
                     const dateStr = timestamp.toLocaleDateString();
                     const timeStr = timestamp.toLocaleTimeString();
 
+                    //Format value for display
+                    let valueDisplay = '';
+                    if (record.value && record.value > 0) {
+                        if (record.value >= 1000000) {
+                            valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${(record.value / 1000000).toFixed(2)}M gp)</span>`;
+                        } else if (record.value >= 1000) {
+                            valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${(record.value / 1000).toFixed(0)}K gp)</span>`;
+                        } else {
+                            valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${record.value.toLocaleString()} gp)</span>`;
+                        }
+                    }
+
                     const tileInfo = record.tileCompleted && record.tilesInfo && record.tilesInfo.length > 0
                         ? `<div style="margin-top: 5px; padding: 5px; background: rgba(76,175,80,0.2); border-radius: 3px; font-size: 11px;">
                              ✅ Completed Tile ${record.tilesInfo[0].tile}: ${record.tilesInfo[0].items.join(', ')} (+${record.tilesInfo[0].value} points)
                            </div>`
                         : '<div style="margin-top: 5px; font-size: 11px; color: #999;">No tile completed</div>';
 
-                    // Delete button (only for admins)
                     const deleteBtn = isAdmin
                         ? `<button onclick="deleteHistoryEntry('${record.player}', '${record.item}', '${record.timestamp}')"
                                    style="padding: 4px 8px; background: linear-gradient(135deg, #8b1a1a 0%, #660000 100%); color: white; border: 1px solid #4d0000; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: bold; margin-left: 10px;">
@@ -1333,13 +1440,19 @@
                            </button>`
                         : '';
 
+                    //Add data attributes for filtering
                     html += `
-                        <div style="background: white; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};">
+                        <div style="background: white; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};"
+                             data-player="${record.player}"
+                             data-type="${record.drop_type || 'loot'}"
+                             data-item="${record.item}"
+                             data-value="${record.value || 0}">
                             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
                                 <div style="flex: 1;">
                                     <strong style="color: #ffcc33; background: #2c1810; padding: 2px 8px; border-radius: 3px; font-size: 13px;">${record.player}</strong>
                                     <span style="color: #2c1810; margin-left: 10px; font-weight: bold;">received</span>
                                     <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
+                                    ${valueDisplay}
                                     ${deleteBtn}
                                 </div>
                                 <div style="text-align: right; font-size: 11px; color: #666;">
@@ -1359,6 +1472,55 @@
                 contentDiv.innerHTML = '<div style="text-align: center; color: #8b1a1a; padding: 40px;">❌ Failed to load history. Make sure the API is running.</div>';
                 countSpan.textContent = '';
             }
+        }
+
+        function filterHistory() {
+            const playerFilter = document.getElementById('historyPlayerFilter').value;
+            const searchFilter = document.getElementById('historySearchFilter').value.toLowerCase();
+            const valueFilterText = document.getElementById('historyValueFilter').value;
+
+            // Parse value filter
+            const valueFilter = parseValueFilter(valueFilterText);
+
+            const allRecords = document.querySelectorAll('#historyContent > div');
+            let visibleCount = 0;
+
+            allRecords.forEach(record => {
+                const player = record.dataset.player || '';
+                const item = record.dataset.item || '';
+                const value = parseFloat(record.dataset.value) || 0;
+
+                let show = true;
+
+                // Player filter
+                if (playerFilter && player !== playerFilter) {
+                    show = false;
+                }
+
+                // Search filter
+                if (searchFilter && !item.toLowerCase().includes(searchFilter)) {
+                    show = false;
+                }
+
+                // Value filter
+                if (!checkValueFilter(value, valueFilter)) {
+                    show = false;
+                }
+
+                record.style.display = show ? '' : 'none';
+                if (show) visibleCount++;
+            });
+
+            // Update count
+            const totalCount = allRecords.length;
+            document.getElementById('historyCount').textContent = `(${visibleCount} of ${totalCount} drop${totalCount !== 1 ? 's' : ''})`;
+        }
+
+        function clearAllFilters() {
+            document.getElementById('historyPlayerFilter').value = '';
+            document.getElementById('historyValueFilter').value = '';
+            document.getElementById('historySearchFilter').value = '';
+            filterHistory();
         }
 
         function getTimeAgo(date) {
@@ -2229,6 +2391,19 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                    {
+                version: "v1.5.0",
+                date: "2025-01-01",
+                title: "Drop Value Tracking & Advanced History Filters",
+                changes: [
+                    { type: "feature", text: "Added drop value tracking - all loot drops now record their GP value" },
+                    { type: "feature", text: "Advanced value filters in history modal (>100k, <1m, ranges, etc.)" },
+                    { type: "feature", text: "Formatted value display in history (2.95M gp, 150K gp, etc.)" },
+                    { type: "feature", text: "Item name search filter for history" },
+                    { type: "improvement", text: "Discord bot now sends item values when recording drops" },
+                    { type: "improvement", text: "History reimport now includes values from Dink messages" }
+                ]
+            },
                     {
                 version: "v1.4.4",
                 date: "2024-12-31",
