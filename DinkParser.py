@@ -293,9 +293,12 @@ def parse_drop_embed(embed, message):
         field_value = field.value.strip() if field.value else ""
 
         if 'x' in field_value and ('(' in field_value or '[' in field_value):
+            print(f"DEBUG: Parsing field value: {field_value}")
             item = parse_item_line(field_value)
             if item:
+                print(f"DEBUG: Parsed item: {item}")
                 drop_info['items'].append(item)
+                print(f"DEBUG: Failed to parse!")
 
         if field_value.startswith('From:') or field_name == 'Source':
             source_text = field_value.replace('From:', '').replace('Source:', '').strip()
