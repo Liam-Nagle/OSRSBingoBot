@@ -1440,6 +1440,10 @@
                            </button>`
                         : '';
 
+                    const collectionLogBadge = record.drop_type === 'collection_log'
+                        ? '<span style="background: #4CAF50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 8px; font-weight: bold;">📖 COLLECTION LOG</span>'
+                        : '';
+
                     //Add data attributes for filtering
                     html += `
                         <div style="background: white; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};"
@@ -1452,6 +1456,8 @@
                                     <strong style="color: #ffcc33; background: #2c1810; padding: 2px 8px; border-radius: 3px; font-size: 13px;">${record.player}</strong>
                                     <span style="color: #2c1810; margin-left: 10px; font-weight: bold;">received</span>
                                     <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
+                                    <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
+                                    ${collectionLogBadge}
                                     ${valueDisplay}
                                     ${deleteBtn}
                                 </div>
@@ -2391,6 +2397,15 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                    {
+                version: "v2.2.1",
+                date: "2025-01-01",
+                title: "Collection Log Detection Fix",
+                changes: [
+                    { type: "fix", text: "Fixed Collection Log drops now properly detected and labeled" },
+                    { type: "improvement", text: "Added Collection Log badge in history for easy identification" },
+                ]
+            },
                     {
                 version: "v1.5.0",
                 date: "2025-01-01",

@@ -213,11 +213,19 @@ async def on_message(message):
 
     embed = message.embeds[0]
 
-    # Check for Loot Drop or Collection Log
-    if embed.title and ("Loot Drop" in embed.title or "Collection Log" in embed.title):
+    # Check if this is a "Loot Drop" or "Collection Log" message
+    drop_type = None
+    if embed.title:
+        if "Loot Drop" in embed.title:
+            drop_type = 'loot'
+        elif "Collection log" in embed.title:  # Note: Dink uses lowercase 'log'
+            drop_type = 'collection_log'
+
+    if drop_type:
         drop_data = parse_drop_embed(embed, message)
 
         if drop_data:
+            drop_data['drop_type'] = drop_type  # Add drop type to data
             drops_data.append(drop_data)
             print_drop_info(drop_data)
 
@@ -227,10 +235,10 @@ async def on_message(message):
                     send_to_bingo_api(
                         player_name=drop_data['player'],
                         item_name=item['name'],
-                        drop_type='loot',
+                        drop_type=drop_type,  # ← PASS THE DROP TYPE
                         source=drop_data.get('source'),
-                        value=item.get('value_numeric', 0),  # Send numeric value
-                        value_string=item.get('value', '')  # Send value text
+                        value=item.get('value_numeric', 0),
+                        value_string=item.get('value', '')
                     )
 
             save_drop_to_file(drop_data)
