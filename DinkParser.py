@@ -142,37 +142,51 @@ def parse_value(value_str):
 
 
 def parse_item_line(item_text):
-    """Parse '1 x [Item Name] (wiki URL)' or '1 x Item Name (2.95M)' """
-    pattern_brackets = r'(\d+)\s*x\s*\[(.+?)\]\s*\((.+?)\)'
-    match = re.search(pattern_brackets, item_text)
+    """Parse Dink item formats:
+    - '60 x [Dragonstone](wiki_url) (668K)' - Link with value
+    - '60 x [Dragonstone](wiki_url)' - Link without value
+    - '60 x Dragonstone (668K)' - No link with value
+    """
 
+    # Pattern 1: [Item Name](wiki_url) (value) - Link with value
+    # Example: 60 x [Dragonstone](https://wiki...) (668K)
+    pattern_link_value = r'(\d+)\s*x\s*\[(.+?)\]\(https?://[^\)]+\)\s*\((.+?)\)'
+    match = re.search(pattern_link_value, item_text)
     if match:
         quantity = int(match.group(1))
         item_name = match.group(2).strip()
-        third_group = match.group(3).strip()
+        value = match.group(3).strip()
+        return {
+            'quantity': quantity,
+            'name': item_name,
+            'value': value,
+            'value_numeric': parse_value(value)
+        }
 
-        if third_group.startswith('http'):
-            return {
-                'quantity': quantity,
-                'name': item_name,
-                'value': 'Unknown',
-                'value_numeric': 0
-            }
-        else:
-            return {
-                'quantity': quantity,
-                'name': item_name,
-                'value': third_group,
-                'value_numeric': parse_value(third_group)
-            }
+    # Pattern 2: [Item Name](wiki_url) - Link without value (collection log)
+    # Example: 1 x [Dragonstone](https://wiki...)
+    pattern_link_only = r'(\d+)\s*x\s*\[(.+?)\]\(https?://[^\)]+\)'
+    match = re.search(pattern_link_only, item_text)
+    if match:
+        quantity = int(match.group(1))
+        item_name = match.group(2).strip()
+        return {
+            'quantity': quantity,
+            'name': item_name,
+            'value': 'Unknown',
+            'value_numeric': 0
+        }
 
-    pattern_old = r'(\d+)\s*x\s*(.+?)\s*\((.+?)\)'
-    match = re.search(pattern_old, item_text)
+    # Pattern 3: Item Name (value) - No link, with value (old format)
+    # Example: 60 x Dragonstone (668K)
+    pattern_no_link = r'(\d+)\s*x\s*(.+?)\s*\((.+?)\)'
+    match = re.search(pattern_no_link, item_text)
     if match:
         quantity = int(match.group(1))
         item_name = match.group(2).strip()
         value = match.group(3).strip()
 
+        # Skip if it's a URL (shouldn't happen but just in case)
         if value.startswith('http'):
             return {
                 'quantity': quantity,
@@ -188,6 +202,7 @@ def parse_item_line(item_text):
             'value_numeric': parse_value(value)
         }
 
+    # No pattern matched
     return None
 
 

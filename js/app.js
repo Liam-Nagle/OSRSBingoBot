@@ -2403,7 +2403,15 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
-                            {
+                      {
+                version: "v1.6.2",
+                date: "2025-01-01",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "fix", text: "Fixed background import logic for item values" }
+                ]
+            },
+                     {
                 version: "v1.6.1",
                 date: "2025-01-01",
                 title: "Track Collection Log and Loot Drop Separately",
