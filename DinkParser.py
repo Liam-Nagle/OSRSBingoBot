@@ -298,6 +298,7 @@ def parse_drop_embed(embed, message):
             if item:
                 print(f"DEBUG: Parsed item: {item}")
                 drop_info['items'].append(item)
+            else:
                 print(f"DEBUG: Failed to parse!")
 
         if field_value.startswith('From:') or field_name == 'Source':
@@ -320,10 +321,9 @@ def parse_drop_embed(embed, message):
         if 'Item Rarity' in field_name or 'Rank' in field_name:
             drop_info['rarity'] = field_value
 
-    if not drop_info['items'] and embed.description:
-        # Collection Log format can be either:
-        # - "PlayerName has added [Item Name] to their collection"
-        # - "PlayerName has added [Item Name](wiki_url) to their collection"
+    # Always check description for items (especially loot drops with values)
+    if embed.description:
+        # Collection Log format
         item_match = re.search(r'has added \[(.+?)\](?:\(.+?\))? to their collection', embed.description)
         if item_match:
             item_name = item_match.group(1).strip()
@@ -335,12 +335,19 @@ def parse_drop_embed(embed, message):
             })
             print(f"   ✅ Extracted Collection Log item: {item_name}")
         else:
+            # Loot Drop format - parse lines for items with values
             lines = embed.description.split('\n')
             for line in lines:
                 if ('x' in line and '(' in line) or ('x' in line and '[' in line):
                     item = parse_item_line(line)
                     if item:
-                        drop_info['items'].append(item)
+                        # Only add if not already in items, or if this one has a value
+                        existing = next((i for i in drop_info['items'] if i['name'] == item['name']), None)
+                        if not existing or (item.get('value_numeric', 0) > 0 and existing.get('value_numeric', 0) == 0):
+                            if existing:
+                                drop_info['items'].remove(existing)
+                            drop_info['items'].append(item)
+                            print(f"   ✅ Extracted item: {item['name']} = {item.get('value', 'no value')}")
 
     return drop_info if drop_info['player'] else None
 
