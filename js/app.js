@@ -1456,7 +1456,6 @@
                                     <strong style="color: #ffcc33; background: #2c1810; padding: 2px 8px; border-radius: 3px; font-size: 13px;">${record.player}</strong>
                                     <span style="color: #2c1810; margin-left: 10px; font-weight: bold;">received</span>
                                     <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
-                                    <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
                                     ${collectionLogBadge}
                                     ${valueDisplay}
                                     ${deleteBtn}
@@ -1482,6 +1481,7 @@
 
         function filterHistory() {
             const playerFilter = document.getElementById('historyPlayerFilter').value;
+            const typeFilter = document.getElementById('historyTypeFilter').value;  // ← ADD THIS
             const searchFilter = document.getElementById('historySearchFilter').value.toLowerCase();
             const valueFilterText = document.getElementById('historyValueFilter').value;
 
@@ -1493,6 +1493,7 @@
 
             allRecords.forEach(record => {
                 const player = record.dataset.player || '';
+                const type = record.dataset.type || '';  // ← ADD THIS
                 const item = record.dataset.item || '';
                 const value = parseFloat(record.dataset.value) || 0;
 
@@ -1500,6 +1501,11 @@
 
                 // Player filter
                 if (playerFilter && player !== playerFilter) {
+                    show = false;
+                }
+
+                // Type filter  ← ADD THIS SECTION
+                if (typeFilter && type !== typeFilter) {
                     show = false;
                 }
 
@@ -2398,7 +2404,16 @@
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
                     {
-                version: "v2.2.1",
+                version: "v1.5c.2",
+                date: "2025-01-01",
+                title: "History Display & Filter Fixes",
+                changes: [
+                    { type: "fix", text: "Fixed item names appearing twice in drop history" },
+                    { type: "fix", text: "Fixed drop type filter not working (now properly filters Loot vs Collection Log)" }
+                ]
+            },
+                    {
+                version: "v1.5.1",
                 date: "2025-01-01",
                 title: "Collection Log Detection Fix",
                 changes: [
