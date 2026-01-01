@@ -277,7 +277,7 @@ def record_drop():
             'success': True,
             'message': f'{player_name} completed {len(completed_tiles)} tile(s)!',
             'completedTiles': completed_tiles,
-            'duplicate': is_duplicate
+            'duplicate': False
         })
 
     print(f"❌ No matching tiles found or already completed")
@@ -285,7 +285,7 @@ def record_drop():
     return jsonify({
         'success': False,
         'message': 'No matching tiles found or already completed',
-        'duplicate': is_duplicate
+        'duplicate': False
     })
 
 
@@ -298,21 +298,13 @@ def record_history_only():
     drop_type = data.get('drop_type', 'loot')
     source = data.get('source')
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
+    value = data.get('value', 0)
+    value_string = data.get('value_string', '')
 
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
-    # Check for duplicates (within 5 seconds of the drop timestamp)
-    is_duplicate = check_duplicate_in_history(player_name, item_name, timestamp, seconds=5)
-
-    if is_duplicate:
-        return jsonify({
-            'success': False,
-            'message': 'Duplicate detected - skipped',
-            'duplicate': True
-        })
-
-    # Save to history
+    # Save to history (no deduplication - track both Collection Log and Loot Drop)
     if USE_MONGODB:
         try:
             history_collection.insert_one({
@@ -321,11 +313,13 @@ def record_history_only():
                 'drop_type': drop_type,
                 'source': source,
                 'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
-                                                                                                    str) else timestamp
+                                                                                                    str) else timestamp,
+                'value': value,
+                'value_string': value_string,
             })
             return jsonify({
                 'success': True,
-                'message': f'Saved {player_name} - {item_name} to history',
+                'message': f'Saved {player_name} - {item_name} to history (type: {drop_type})',
                 'duplicate': False
             })
         except Exception as e:

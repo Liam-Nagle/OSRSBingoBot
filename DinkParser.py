@@ -60,7 +60,7 @@ def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, val
         print(f"❌ Bingo API error: {e}")
 
 
-def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None):
+def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None, value=0, value_string=''):
     """Send drop to history-only endpoint (no tile checking)"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/history-only",
@@ -73,7 +73,9 @@ def send_to_history_only(player_name, item_name, drop_type='loot', source=None, 
                                      'item': item_name,
                                      'drop_type': drop_type,
                                      'source': source,
-                                     'timestamp': timestamp or datetime.utcnow().isoformat()
+                                     'timestamp': timestamp or datetime.utcnow().isoformat(),
+                                     'value': value,
+                                     'value_string': value_string
                                  },
                                  timeout=5)
 
@@ -482,7 +484,9 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                                     item['name'],
                                     drop_type=drop_data['drop_type'],
                                     source=drop_data.get('source'),
-                                    timestamp=drop_data['timestamp']
+                                    timestamp=drop_data['timestamp'],
+                                    value=item.get('value_numeric', 0),
+                                    value_string=item.get('value', '')
                                 )
 
                                 if success:

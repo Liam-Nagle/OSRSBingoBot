@@ -2403,6 +2403,14 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                            {
+                version: "v1.6.1",
+                date: "2025-01-01",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "improvement", text: "Fixed import history endpoint for duplicates. It will now add them both as a loot and collection log" }
+                ]
+            },
                     {
                 version: "v1.6.0",
                 date: "2025-01-01",
