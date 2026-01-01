@@ -2404,7 +2404,7 @@
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
                     {
-                version: "v1.5c.2",
+                version: "v1.5.2",
                 date: "2025-01-01",
                 title: "History Display & Filter Fixes",
                 changes: [
