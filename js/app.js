@@ -2404,6 +2404,16 @@
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
                     {
+                version: "v1.6.0",
+                date: "2025-01-01",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "feature", text: "Collection Log and Loot Drop entries now tracked separately" },
+                    { type: "feature", text: "Loot Drop values always saved - never lost!" },
+                    { type: "improvement", text: "Removed deduplication - simpler, more reliable code" }
+                ]
+            },
+                    {
                 version: "v1.5.2",
                 date: "2025-01-01",
                 title: "History Display & Filter Fixes",

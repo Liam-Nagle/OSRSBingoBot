@@ -176,28 +176,22 @@ def record_drop():
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
-    # Check for duplicates in history (within last 5 seconds of the drop timestamp)
-    is_duplicate = check_duplicate_in_history(player_name, item_name, timestamp, seconds=5)
-
-    if is_duplicate:
-        print(f"⚠️  Duplicate detected - skipping history save (likely Loot Drop + Collection Log)")
-    else:
-        # Save to history
-        if USE_MONGODB:
-            try:
-                history_collection.insert_one({
-                    'player': player_name,
-                    'item': item_name,
-                    'drop_type': drop_type,
-                    'source': source,
-                    'value': value,  # Store numeric value
-                    'value_string': value_string,  # Store original text
-                    'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
-                                                                                                        str) else timestamp
-                })
-                print(f"💾 Saved to history collection")
-            except Exception as e:
-                print(f"❌ Error saving to history: {e}")
+    # Save to history (no deduplication - track both separately)
+    if USE_MONGODB:
+        try:
+            history_collection.insert_one({
+                'player': player_name,
+                'item': item_name,
+                'drop_type': drop_type,
+                'source': source,
+                'value': value,
+                'value_string': value_string,
+                'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
+                                                                                                    str) else timestamp
+            })
+            print(f"💾 Saved to history collection (type: {drop_type})")
+        except Exception as e:
+            print(f"❌ Error saving to history: {e}")
 
     # Check tiles for completion
     bingo_data = load_bingo_data()
