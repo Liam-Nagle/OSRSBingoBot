@@ -235,9 +235,10 @@ async def on_message(message):
     # Check if this is a "Loot Drop" or "Collection Log" message
     drop_type = None
     if embed.title:
-        if "Loot Drop" in embed.title:
+        title_lower = embed.title.lower()  # Convert to lowercase for comparison
+        if "loot drop" in title_lower:
             drop_type = 'loot'
-        elif "Collection log" in embed.title:  # Note: Dink uses lowercase 'log'
+        elif "collection log" in title_lower:  # Now catches all variations
             drop_type = 'collection_log'
 
     if drop_type:
@@ -291,9 +292,10 @@ def parse_drop_embed(embed, message):
     }
 
     if embed.title:
-        if "Loot Drop" in embed.title:
+        title_lower = embed.title.lower()  # Convert to lowercase
+        if "loot drop" in title_lower:
             drop_info['drop_type'] = 'loot'
-        elif "Collection Log" in embed.title:
+        elif "collection log" in title_lower:
             drop_info['drop_type'] = 'collection_log'
 
     if embed.description:

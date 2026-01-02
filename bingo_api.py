@@ -204,17 +204,30 @@ def create_kc_snapshot():
     players = history_collection.distinct('player')
 
     results = []
+    print(f"\n{'=' * 60}")
+    print(f"🔍 Fetching KC for {len(players)} players: {players}")
+    print(f"{'=' * 60}")
+
     for player in players:
+        print(f"\n📥 Trying to fetch: {player}")
         kc_data = fetch_osrs_highscores(player)
+
         if kc_data:
-            kc_collection.insert_one({
-                'player': player,
-                'timestamp': datetime.utcnow(),
-                'snapshot_type': snapshot_type,
-                'bosses': kc_data
-            })
-            results.append({'player': player, 'success': True})
+            print(f"✅ Got {len(kc_data)} bosses")
+            try:
+                result = kc_collection.insert_one({
+                    'player': player,
+                    'timestamp': datetime.utcnow(),
+                    'snapshot_type': snapshot_type,
+                    'bosses': kc_data
+                })
+                print(f"💾 Saved! MongoDB ID: {result.inserted_id}")
+                results.append({'player': player, 'success': True})
+            except Exception as e:
+                print(f"❌ Save failed: {e}")
+                results.append({'player': player, 'success': False})
         else:
+            print(f"❌ No KC data (player might have 0 bosses or doesn't exist)")
             results.append({'player': player, 'success': False})
 
     return jsonify({
