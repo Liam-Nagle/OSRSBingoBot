@@ -1734,7 +1734,7 @@
         async function loadAnalytics() {
 
             // Fetch all history data
-            const response = await fetch(`${API_BASE}/history?limit=10000`);
+            const response = await fetch(`${API_URL}/history?limit=10000`);
             const data = await response.json();
 
             // Populate player filter
@@ -2361,7 +2361,7 @@
             if (searchFilter) params.append('search', searchFilter);
 
             try {
-                const response = await fetch(`${API_BASE}/history?${params}`);
+                const response = await fetch(`${API_URL}/history?${params}`);
                 const data = await response.json();
 
                 let filteredHistory = data.history || [];
@@ -2379,6 +2379,328 @@
             } catch (error) {
                 console.error('Failed to load analytics:', error);
             }
+        }
+
+        function updateDropsOverTimeChart(historyData, players, playerColors) {
+            const ctx = document.getElementById('dropsPerDayChart').getContext('2d');
+
+            // Get last 30 days
+            const last30Days = [];
+            const today = new Date();
+
+            for (let i = 29; i >= 0; i--) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+                const dateStr = date.toISOString().split('T')[0];
+                last30Days.push(dateStr);
+            }
+
+            const labels = last30Days.map(d => {
+                const date = new Date(d);
+                return `${date.getMonth() + 1}/${date.getDate()}`;
+            });
+
+            // Create datasets for each player
+            const datasets = players.map(player => {
+                const dayCounts = {};
+                last30Days.forEach(d => dayCounts[d] = 0);
+
+                historyData.forEach(drop => {
+                    if (drop.player === player) {
+                        const dateStr = drop.timestamp.toISOString().split('T')[0];
+                        if (dayCounts.hasOwnProperty(dateStr)) {
+                            dayCounts[dateStr]++;
+                        }
+                    }
+                });
+
+                const data = last30Days.map(d => dayCounts[d]);
+                const color = playerColors[player] || '#cd8b2d';
+
+                return {
+                    label: player,
+                    data: data,
+                    borderColor: color,
+                    backgroundColor: color + '33',
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                };
+            });
+
+            if (analyticsCharts.dropsPerDay) analyticsCharts.dropsPerDay.destroy();
+
+            analyticsCharts.dropsPerDay = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: players.length > 1,
+                            position: 'top',
+                            labels: {
+                                boxWidth: 12,
+                                font: { size: 10 }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Drops Over Time (Last 30 Days)',
+                            font: { size: 14, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateValueDistributionChart(historyData, players, playerColors) {
+            const ctx = document.getElementById('valueDistributionChart');
+            if (!ctx) return;
+
+            const ranges = [
+                { label: '0-100K', min: 0, max: 100000 },
+                { label: '100K-500K', min: 100000, max: 500000 },
+                { label: '500K-1M', min: 500000, max: 1000000 },
+                { label: '1M-5M', min: 1000000, max: 5000000 },
+                { label: '5M+', min: 5000000, max: Infinity }
+            ];
+
+            const datasets = players.map(player => {
+                const rangeCounts = ranges.map(() => 0);
+
+                historyData.forEach(drop => {
+                    if (drop.player === player && drop.value) {
+                        ranges.forEach((range, index) => {
+                            if (drop.value >= range.min && drop.value < range.max) {
+                                rangeCounts[index]++;
+                            }
+                        });
+                    }
+                });
+
+                const color = playerColors[player] || '#cd8b2d';
+
+                return {
+                    label: player,
+                    data: rangeCounts,
+                    backgroundColor: color + '99',
+                    borderColor: color,
+                    borderWidth: 1
+                };
+            });
+
+            if (analyticsCharts.valueDistribution) analyticsCharts.valueDistribution.destroy();
+
+            analyticsCharts.valueDistribution = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ranges.map(r => r.label),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: players.length > 1,
+                            position: 'top',
+                            labels: {
+                                boxWidth: 12,
+                                font: { size: 10 }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Drop Value Distribution',
+                            font: { size: 14, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTopItemsChart(historyData, players, playerColors) {
+            const ctx = document.getElementById('topItemsChart').getContext('2d');
+
+            if (players.length === 1) {
+                const itemCounts = {};
+                historyData.forEach(d => {
+                    if (d.player === players[0]) {
+                        itemCounts[d.item] = (itemCounts[d.item] || 0) + 1;
+                    }
+                });
+
+                const sortedItems = Object.entries(itemCounts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10);
+
+                if (analyticsCharts.topItems) analyticsCharts.topItems.destroy();
+
+                analyticsCharts.topItems = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: sortedItems.map(i => i[0]),
+                        datasets: [{
+                            data: sortedItems.map(i => i[1]),
+                            backgroundColor: [
+                                '#FFD700', '#C0C0C0', '#CD7F32', '#4CAF50', '#2196F3',
+                                '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#8BC34A'
+                            ],
+                            borderColor: '#8B6914',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    boxWidth: 15,
+                                    font: { size: 11 }
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: `Top Items - ${players[0]}`,
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        }
+                    }
+                });
+            } else {
+                const playerDropCounts = {};
+                players.forEach(player => {
+                    playerDropCounts[player] = historyData.filter(d => d.player === player).length;
+                });
+
+                const sortedPlayers = Object.entries(playerDropCounts)
+                    .sort((a, b) => b[1] - a[1]);
+
+                const colors = sortedPlayers.map(([player]) => playerColors[player] || '#cd8b2d');
+
+                if (analyticsCharts.topItems) analyticsCharts.topItems.destroy();
+
+                analyticsCharts.topItems = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: sortedPlayers.map(p => p[0]),
+                        datasets: [{
+                            data: sortedPlayers.map(p => p[1]),
+                            backgroundColor: colors,
+                            borderColor: '#8B6914',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    boxWidth: 15,
+                                    font: { size: 11 }
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Total Drops by Player',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateActivityHeatmapChart(historyData, players, playerColors) {
+            const ctx = document.getElementById('hourHeatmapChart');
+            if (!ctx) return;
+
+            const hours = Array.from({length: 24}, (_, i) => i);
+
+            const datasets = players.map(player => {
+                const hourCounts = Array(24).fill(0);
+
+                historyData.forEach(drop => {
+                    if (drop.player === player) {
+                        const hour = drop.timestamp.getHours();
+                        hourCounts[hour]++;
+                    }
+                });
+
+                const color = playerColors[player] || '#cd8b2d';
+
+                return {
+                    label: player,
+                    data: hourCounts,
+                    backgroundColor: color + '66',
+                    borderColor: color,
+                    borderWidth: 1
+                };
+            });
+
+            if (analyticsCharts.hourHeatmap) analyticsCharts.hourHeatmap.destroy();
+
+            analyticsCharts.hourHeatmap = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: hours.map(h => `${h}:00`),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: players.length > 1,
+                            position: 'top',
+                            labels: {
+                                boxWidth: 12,
+                                font: { size: 10 }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Activity by Hour of Day',
+                            font: { size: 14, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: { size: 9 }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         function updateAnalyticsCharts(historyData) {
