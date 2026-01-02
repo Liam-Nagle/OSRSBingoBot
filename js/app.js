@@ -1732,6 +1732,22 @@
         }
 
         async function loadAnalytics() {
+
+            // Fetch all history data
+            const response = await fetch(`${API_BASE}/history?limit=10000`);
+            const data = await response.json();
+
+            // Populate player filter
+            populateAnalyticsPlayerFilter(data.history || []);
+
+            // Initialize filters
+            analyticsSelectedPlayers = [];
+            updateAnalyticsPlayerButton();
+            renderAnalyticsFilterChips();
+
+            // Load charts with all data
+            updateAnalyticsCharts(data.history || []);
+
             const loadingDiv = document.getElementById('analyticsLoading');
             const contentDiv = document.getElementById('analyticsContent');
 
@@ -2099,6 +2115,302 @@
             });
         }
 
+        // Analytics Filter State
+        let analyticsSelectedPlayers = []; // Empty = All players
+
+        function toggleAnalyticsPlayerDropdown() {
+            const dropdown = document.getElementById('analyticsPlayerDropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('analyticsPlayerDropdown');
+            const button = document.getElementById('analyticsPlayerButton');
+            if (dropdown && button && !dropdown.contains(e.target) && !button.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        function populateAnalyticsPlayerFilter(historyData) {
+            const dropdown = document.getElementById('analyticsPlayerDropdown');
+            if (!dropdown) return;
+
+            // Get unique players from history
+            const allPlayers = new Set();
+            historyData.forEach(record => {
+                if (record.player) {
+                    allPlayers.add(record.player);
+                }
+            });
+
+            const sortedPlayers = Array.from(allPlayers).sort();
+
+            // Build checkbox list
+            let html = '';
+
+            // "All Players" checkbox
+            html += `
+                <label style="display: block; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
+                    <input type="checkbox"
+                           id="analyticsPlayerAll"
+                           onchange="toggleAllAnalyticsPlayers(this)"
+                           ${analyticsSelectedPlayers.length === 0 ? 'checked' : ''}
+                           style="margin-right: 8px;">
+                    <span style="color: #333; font-weight: bold;">All Players</span>
+                </label>
+            `;
+
+            // Individual players
+            sortedPlayers.forEach(player => {
+                const checked = analyticsSelectedPlayers.length === 0 || analyticsSelectedPlayers.includes(player);
+                html += `
+                    <label style="display: block; padding: 8px 12px; cursor: pointer; color: #333; hover: background: #f5f5f5;">
+                        <input type="checkbox"
+                               class="analyticsPlayerCheckbox"
+                               value="${player}"
+                               onchange="toggleAnalyticsPlayer('${player}')"
+                               ${checked ? 'checked' : ''}
+                               style="margin-right: 8px;">
+                        ${player}
+                    </label>
+                `;
+            });
+
+            dropdown.innerHTML = html;
+        }
+
+        function toggleAllAnalyticsPlayers(checkbox) {
+            if (checkbox.checked) {
+                // Select all
+                analyticsSelectedPlayers = [];
+                document.querySelectorAll('.analyticsPlayerCheckbox').forEach(cb => {
+                    cb.checked = true;
+                });
+            } else {
+                // Deselect all
+                analyticsSelectedPlayers = [];
+                document.querySelectorAll('.analyticsPlayerCheckbox').forEach(cb => {
+                    cb.checked = false;
+                });
+            }
+            updateAnalyticsPlayerButton();
+            applyAnalyticsFilters();
+        }
+
+        function toggleAnalyticsPlayer(player) {
+            const allCheckbox = document.getElementById('analyticsPlayerAll');
+
+            if (analyticsSelectedPlayers.length === 0) {
+                // Was "all", now deselecting one
+                const checkboxes = document.querySelectorAll('.analyticsPlayerCheckbox');
+                analyticsSelectedPlayers = [];
+                checkboxes.forEach(cb => {
+                    if (cb.value !== player) {
+                        analyticsSelectedPlayers.push(cb.value);
+                    }
+                });
+                allCheckbox.checked = false;
+            } else {
+                // Toggle individual player
+                const index = analyticsSelectedPlayers.indexOf(player);
+                if (index > -1) {
+                    analyticsSelectedPlayers.splice(index, 1);
+                } else {
+                    analyticsSelectedPlayers.push(player);
+                }
+
+                // Check if all are selected
+                const checkboxes = document.querySelectorAll('.analyticsPlayerCheckbox');
+                const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+                if (allSelected) {
+                    analyticsSelectedPlayers = [];
+                    allCheckbox.checked = true;
+                } else {
+                    allCheckbox.checked = false;
+                }
+            }
+
+            updateAnalyticsPlayerButton();
+            applyAnalyticsFilters();
+        }
+
+        function updateAnalyticsPlayerButton() {
+            const button = document.getElementById('analyticsPlayerButton');
+            if (!button) return;
+
+            if (analyticsSelectedPlayers.length === 0) {
+                button.textContent = 'All Players';
+            } else if (analyticsSelectedPlayers.length === 1) {
+                button.textContent = analyticsSelectedPlayers[0];
+            } else {
+                button.textContent = `${analyticsSelectedPlayers.length} Players Selected`;
+            }
+        }
+
+        function getAnalyticsFilterChips() {
+            const chips = [];
+
+            // Player chips
+            if (analyticsSelectedPlayers.length > 0) {
+                analyticsSelectedPlayers.forEach(player => {
+                    chips.push({
+                        type: 'player',
+                        label: player,
+                        value: player
+                    });
+                });
+            }
+
+            // Type filter
+            const typeFilter = document.getElementById('analyticsTypeFilter')?.value;
+            if (typeFilter) {
+                chips.push({
+                    type: 'type',
+                    label: typeFilter === 'loot' ? 'Loot Drop' : 'Collection Log',
+                    value: typeFilter
+                });
+            }
+
+            // Value filter
+            const valueFilter = document.getElementById('analyticsValueFilter')?.value;
+            if (valueFilter && valueFilter !== '0') {
+                const valueMil = parseInt(valueFilter) / 1000000;
+                chips.push({
+                    type: 'value',
+                    label: `${valueMil}M+ value`,
+                    value: valueFilter
+                });
+            }
+
+            // Search filter
+            const searchFilter = document.getElementById('analyticsSearchFilter')?.value;
+            if (searchFilter) {
+                chips.push({
+                    type: 'search',
+                    label: `"${searchFilter}"`,
+                    value: searchFilter
+                });
+            }
+
+            return chips;
+        }
+
+        function renderAnalyticsFilterChips() {
+            const container = document.getElementById('analyticsAppliedFilters');
+            if (!container) return;
+
+            const chips = getAnalyticsFilterChips();
+
+            if (chips.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '<div style="font-size: 12px; color: #999; margin-right: 10px;">Active filters:</div>';
+            chips.forEach(chip => {
+                html += `
+                    <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                        ${chip.label}
+                        <span onclick="removeAnalyticsFilter('${chip.type}', '${chip.value}')"
+                              style="cursor: pointer; opacity: 0.8; font-weight: bold;">✕</span>
+                    </span>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function removeAnalyticsFilter(type, value) {
+            switch (type) {
+                case 'player':
+                    toggleAnalyticsPlayer(value);
+                    break;
+                case 'type':
+                    document.getElementById('analyticsTypeFilter').value = '';
+                    break;
+                case 'value':
+                    document.getElementById('analyticsValueFilter').value = '0';
+                    break;
+                case 'search':
+                    document.getElementById('analyticsSearchFilter').value = '';
+                    break;
+            }
+            applyAnalyticsFilters();
+        }
+
+        function applyAnalyticsFilters() {
+            renderAnalyticsFilterChips();
+            // Reload analytics with filtered data
+            loadAnalyticsWithFilters();
+        }
+
+        async function loadAnalyticsWithFilters() {
+            // Get filter values
+            const typeFilter = document.getElementById('analyticsTypeFilter')?.value || '';
+            const valueFilter = parseInt(document.getElementById('analyticsValueFilter')?.value || '0');
+            const searchFilter = document.getElementById('analyticsSearchFilter')?.value.toLowerCase() || '';
+
+            // Build query parameters
+            const params = new URLSearchParams({
+                limit: 10000 // Get all for analytics
+            });
+
+            if (typeFilter) params.append('type', typeFilter);
+            if (valueFilter > 0) params.append('minValue', valueFilter);
+            if (searchFilter) params.append('search', searchFilter);
+
+            try {
+                const response = await fetch(`${API_BASE}/history?${params}`);
+                const data = await response.json();
+
+                let filteredHistory = data.history || [];
+
+                // Apply player filter (client-side for multi-select)
+                if (analyticsSelectedPlayers.length > 0) {
+                    filteredHistory = filteredHistory.filter(record =>
+                        analyticsSelectedPlayers.includes(record.player)
+                    );
+                }
+
+                // Update charts with filtered data
+                updateAnalyticsCharts(filteredHistory);
+
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+            }
+        }
+
+        function updateAnalyticsCharts(historyData) {
+            // Get player colors (assign colors to each player)
+            const players = analyticsSelectedPlayers.length > 0
+                ? analyticsSelectedPlayers
+                : [...new Set(historyData.map(r => r.player))];
+
+            const playerColors = assignPlayerColors(players);
+
+            // Update each chart with multi-player support
+            updateDropsOverTimeChart(historyData, players, playerColors);
+            updateValueDistributionChart(historyData, players, playerColors);
+            updateTopItemsChart(historyData, players, playerColors);
+            updateActivityHeatmapChart(historyData, players, playerColors);
+        }
+
+        function assignPlayerColors(players) {
+            const colors = [
+                '#667eea', '#764ba2', '#f093fb', '#4facfe',
+                '#43e97b', '#fa709a', '#fee140', '#30cfd0',
+                '#a8edea', '#fed6e3', '#c471f5', '#fa71cd'
+            ];
+
+            const colorMap = {};
+            players.forEach((player, index) => {
+                colorMap[player] = colors[index % colors.length];
+            });
+
+            return colorMap;
+        }
+
         // ===========================
         // ENHANCED DEATH TRACKING
         // ===========================
@@ -2418,6 +2730,16 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                        {
+                version: "v1.7.0",
+                date: "2025-01-01",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "feature", text: "Added new filters into the Analytics page. Similar to History" }
+                    { type: "feature", text: "Updated chart code to allow comparison between players with multi-colours" }
+                    { type: "feature", text: "Added a small legend to show chart colour assigned to players" }
+                ]
+            },
                        {
                 version: "v1.6.3",
                 date: "2025-01-01",
