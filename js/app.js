@@ -3104,7 +3104,7 @@ async function loadAnalyticsWithFilters() {
 
         async function loadKCData() {
             try {
-                const response = await fetch(`${API_BASE}/kc/all`);
+                const response = await fetch(`${API_URL}/kc/all`);
                 const data = await response.json();
 
                 renderKCOverview(data);
@@ -3121,7 +3121,7 @@ async function loadAnalyticsWithFilters() {
             }
 
             try {
-                const response = await fetch(`${API_BASE}/kc/snapshot`, {
+                const response = await fetch(`${API_URL}/kc/snapshot`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ type: 'current' })
@@ -3142,7 +3142,7 @@ async function loadAnalyticsWithFilters() {
             }
 
             try {
-                const response = await fetch(`${API_BASE}/kc/snapshot`, {
+                const response = await fetch(`${API_URL}/kc/snapshot`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ type: 'start' })
