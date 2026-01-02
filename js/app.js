@@ -2199,25 +2199,34 @@
             applyAnalyticsFilters();
         }
 
-        function toggleAnalyticsPlayer(player) {
+function toggleAnalyticsPlayer(player) {
             const allCheckbox = document.getElementById('analyticsPlayerAll');
+            const playerCheckbox = document.querySelector(`.analyticsPlayerCheckbox[value="${player}"]`);
 
             if (analyticsSelectedPlayers.length === 0) {
-                // Was "all", now deselecting one
-                const checkboxes = document.querySelectorAll('.analyticsPlayerCheckbox');
-                analyticsSelectedPlayers = [];
-                checkboxes.forEach(cb => {
-                    if (cb.value !== player) {
-                        analyticsSelectedPlayers.push(cb.value);
-                    }
-                });
+                // Was "all", now selecting just one player
+                if (playerCheckbox && playerCheckbox.checked) {
+                    // Player checkbox is checked - select ONLY this player
+                    analyticsSelectedPlayers = [player];
+                } else {
+                    // Player checkbox is unchecked - select everyone EXCEPT this player
+                    const checkboxes = document.querySelectorAll('.analyticsPlayerCheckbox');
+                    analyticsSelectedPlayers = [];
+                    checkboxes.forEach(cb => {
+                        if (cb.value !== player) {
+                            analyticsSelectedPlayers.push(cb.value);
+                        }
+                    });
+                }
                 allCheckbox.checked = false;
             } else {
                 // Toggle individual player
                 const index = analyticsSelectedPlayers.indexOf(player);
                 if (index > -1) {
+                    // Player is in list - remove them
                     analyticsSelectedPlayers.splice(index, 1);
                 } else {
+                    // Player not in list - add them
                     analyticsSelectedPlayers.push(player);
                 }
 
@@ -2346,7 +2355,7 @@
             loadAnalyticsWithFilters();
         }
 
-        async function loadAnalyticsWithFilters() {
+async function loadAnalyticsWithFilters() {
             // Get filter values
             const typeFilter = document.getElementById('analyticsTypeFilter')?.value || '';
             const valueFilter = parseInt(document.getElementById('analyticsValueFilter')?.value || '0');
@@ -2367,7 +2376,7 @@
 
                 let filteredHistory = data.history || [];
 
-                // Process data - convert timestamps to Date objects (CRITICAL!)
+                //Process data - convert timestamps to Date objects
                 filteredHistory = filteredHistory.map(d => ({
                     ...d,
                     timestamp: new Date(d.timestamp)
@@ -2392,7 +2401,7 @@
                 updateTopItemsChart(filteredHistory, players, playerColors);
                 updateActivityHeatmapChart(filteredHistory, players, playerColors);
 
-                // Update other charts (these don't have multi-player support yet)
+                // Update other charts
                 generateKeyStats(filteredHistory);
                 generateDayOfWeekChart(filteredHistory);
                 generatePlayerActivityChart(filteredHistory);
