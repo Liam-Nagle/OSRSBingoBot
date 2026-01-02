@@ -194,6 +194,7 @@ def fetch_player_kc(player_name):
 @app.route('/kc/snapshot', methods=['POST'])
 def create_kc_snapshot():
     """Create KC snapshot for all players"""
+    print("🚀 FUNCTION STARTED!")  # ADD THIS LINE
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
