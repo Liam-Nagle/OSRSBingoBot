@@ -194,27 +194,47 @@ def fetch_player_kc(player_name):
 @app.route('/kc/snapshot', methods=['POST'])
 def create_kc_snapshot():
     """Create KC snapshot for all players"""
-    print("🚀 FUNCTION STARTED!")  # ADD THIS LINE
+    print("\n" + "=" * 60)
+    print("🚀 /kc/snapshot ENDPOINT CALLED!")
+    print("=" * 60)
+
+    print(f"📊 USE_MONGODB = {USE_MONGODB}")
+
     if not USE_MONGODB:
+        print("❌ MongoDB not available")
         return jsonify({'error': 'MongoDB not available'}), 503
 
     data = request.json
-    snapshot_type = data.get('type', 'manual')  # 'start', 'current', 'manual'
+    snapshot_type = data.get('type', 'manual')
+    print(f"📝 Snapshot type: {snapshot_type}")
 
     # Get all unique players from history
-    players = history_collection.distinct('player')
+    print(f"🔍 Getting players from history_collection...")
+    try:
+        players = history_collection.distinct('player')
+        print(f"✅ Found {len(players)} players: {players}")
+    except Exception as e:
+        print(f"❌ Error getting players: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    if not players:
+        print("⚠️  No players found in history!")
+        return jsonify({
+            'success': False,
+            'message': 'No players found in drop history',
+            'snapshots': 0,
+            'results': []
+        })
 
     results = []
-    print(f"\n{'=' * 60}")
-    print(f"🔍 Fetching KC for {len(players)} players: {players}")
-    print(f"{'=' * 60}")
+    print(f"\n🔄 Starting KC fetch for {len(players)} players...")
 
     for player in players:
-        print(f"\n📥 Trying to fetch: {player}")
+        print(f"\n  📥 Fetching: {player}")
         kc_data = fetch_osrs_highscores(player)
 
         if kc_data:
-            print(f"✅ Got {len(kc_data)} bosses")
+            print(f"  ✅ Got {len(kc_data)} boss KCs")
             try:
                 result = kc_collection.insert_one({
                     'player': player,
@@ -222,14 +242,19 @@ def create_kc_snapshot():
                     'snapshot_type': snapshot_type,
                     'bosses': kc_data
                 })
-                print(f"💾 Saved! MongoDB ID: {result.inserted_id}")
+                print(f"  💾 SAVED to MongoDB! ID: {result.inserted_id}")
                 results.append({'player': player, 'success': True})
             except Exception as e:
-                print(f"❌ Save failed: {e}")
-                results.append({'player': player, 'success': False})
+                print(f"  ❌ MongoDB insert failed: {e}")
+                results.append({'player': player, 'success': False, 'error': str(e)})
         else:
-            print(f"❌ No KC data (player might have 0 bosses or doesn't exist)")
+            print(f"  ❌ No KC data (player has 0 KC or doesn't exist)")
             results.append({'player': player, 'success': False})
+
+    successful = sum(1 for r in results if r.get('success'))
+    print(f"\n{'=' * 60}")
+    print(f"📊 SUMMARY: {successful}/{len(results)} succeeded")
+    print(f"{'=' * 60}\n")
 
     return jsonify({
         'success': True,
