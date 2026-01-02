@@ -2354,7 +2354,7 @@
 
             // Build query parameters
             const params = new URLSearchParams({
-                limit: 10000 // Get all for analytics
+                limit: 10000
             });
 
             if (typeFilter) params.append('type', typeFilter);
@@ -2367,6 +2367,12 @@
 
                 let filteredHistory = data.history || [];
 
+                // Process data - convert timestamps to Date objects (CRITICAL!)
+                filteredHistory = filteredHistory.map(d => ({
+                    ...d,
+                    timestamp: new Date(d.timestamp)
+                }));
+
                 // Apply player filter (client-side for multi-select)
                 if (analyticsSelectedPlayers.length > 0) {
                     filteredHistory = filteredHistory.filter(record =>
@@ -2374,8 +2380,23 @@
                     );
                 }
 
-                // Update charts with filtered data
-                updateAnalyticsCharts(filteredHistory);
+                // Get player list and colors
+                const players = analyticsSelectedPlayers.length > 0
+                    ? analyticsSelectedPlayers
+                    : [...new Set(filteredHistory.map(r => r.player))];
+
+                const playerColors = assignPlayerColors(players);
+
+                // Update multi-player charts
+                updateDropsOverTimeChart(filteredHistory, players, playerColors);
+                updateTopItemsChart(filteredHistory, players, playerColors);
+                updateActivityHeatmapChart(filteredHistory, players, playerColors);
+
+                // Update other charts (these don't have multi-player support yet)
+                generateKeyStats(filteredHistory);
+                generateDayOfWeekChart(filteredHistory);
+                generatePlayerActivityChart(filteredHistory);
+                generateMonthComparisonChart(filteredHistory);
 
             } catch (error) {
                 console.error('Failed to load analytics:', error);
@@ -3053,6 +3074,14 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                                {
+                version: "v1.7.1",
+                date: "2025-01-01",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "fix", text: "Fixed filters on Analytics page" },
+                ]
+            },
                         {
                 version: "v1.7.0",
                 date: "2025-01-01",
