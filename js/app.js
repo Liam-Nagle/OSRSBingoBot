@@ -2735,8 +2735,8 @@
                 date: "2025-01-01",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
-                    { type: "feature", text: "Added new filters into the Analytics page. Similar to History" }
-                    { type: "feature", text: "Updated chart code to allow comparison between players with multi-colours" }
+                    { type: "feature", text: "Added new filters into the Analytics page. Similar to History" },
+                    { type: "feature", text: "Updated chart code to allow comparison between players with multi-colours" },
                     { type: "feature", text: "Added a small legend to show chart colour assigned to players" }
                 ]
             },
