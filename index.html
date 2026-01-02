@@ -512,6 +512,53 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
+    <!-- KC Tracking Modal -->
+    <div class="modal" id="kcModal">
+        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">📊 Boss Kill Counts</h2>
+                <button onclick="closeKCModal()" class="close-btn">✕</button>
+            </div>
+
+            <!-- Admin Controls -->
+            <div id="kcAdminControls" style="display: none; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="margin-top: 0;">Admin Actions</h3>
+                <button onclick="fetchAllPlayersKC()" class="btn-primary">
+                    🔄 Fetch All Players' KC
+                </button>
+                <button onclick="markBingoStart()" class="btn-secondary">
+                    🏁 Mark as Bingo Start
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid rgba(255,255,255,0.1);">
+                <button onclick="showKCTab('overview')" id="kcTabOverview" class="kc-tab active">
+                    Overview
+                </button>
+                <button onclick="showKCTab('leaderboards')" id="kcTabLeaderboards" class="kc-tab">
+                    Leaderboards
+                </button>
+                <button onclick="showKCTab('effort')" id="kcTabEffort" class="kc-tab">
+                    Effort
+                </button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div id="kcTabContentOverview" class="kc-tab-content">
+                <!-- Current KC for all players -->
+            </div>
+
+            <div id="kcTabContentLeaderboards" class="kc-tab-content" style="display: none;">
+                <!-- Boss leaderboards -->
+            </div>
+
+            <div id="kcTabContentEffort" class="kc-tab-content" style="display: none;">
+                <!-- KC gained during bingo -->
+            </div>
+        </div>
+    </div>
+
     <!-- Enhanced Deaths Modal with Deadliest Bosses Section -->
     <div class="modal" id="deathsModal">
         <div class="modal-content" style="max-width: 1100px;">

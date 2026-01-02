@@ -3077,15 +3077,108 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        async function openKCModal() {
+            document.getElementById('kcModal').classList.add('active');
+
+            // Show admin controls if admin
+            if (isAdmin) {
+                document.getElementById('kcAdminControls').style.display = 'block';
+            }
+
+            loadKCData();
+        }
+
+        function closeKCModal() {
+            document.getElementById('kcModal').classList.remove('active');
+        }
+
+        function showKCTab(tab) {
+            // Hide all tabs
+            document.querySelectorAll('.kc-tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.kc-tab').forEach(el => el.classList.remove('active'));
+
+            // Show selected tab
+            document.getElementById(`kcTabContent${tab.charAt(0).toUpperCase() + tab.slice(1)}`).style.display = 'block';
+            document.getElementById(`kcTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
+        }
+
+        async function loadKCData() {
+            try {
+                const response = await fetch(`${API_BASE}/kc/all`);
+                const data = await response.json();
+
+                renderKCOverview(data);
+                renderKCLeaderboards(data);
+                renderKCEffort(data);
+            } catch (error) {
+                console.error('Failed to load KC data:', error);
+            }
+        }
+
+        async function fetchAllPlayersKC() {
+            if (!confirm('Fetch current KC for all players? This may take a while.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/kc/snapshot`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ type: 'current' })
+                });
+
+                const result = await response.json();
+                alert(`✅ Fetched KC for ${result.snapshots} players`);
+                loadKCData();
+            } catch (error) {
+                alert('❌ Failed to fetch KC');
+                console.error(error);
+            }
+        }
+
+        async function markBingoStart() {
+            if (!confirm('Mark current KC as bingo start? This sets the baseline for effort tracking.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/kc/snapshot`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ type: 'start' })
+                });
+
+                const result = await response.json();
+                alert(`✅ Marked bingo start for ${result.snapshots} players`);
+                loadKCData();
+            } catch (error) {
+                alert('❌ Failed to mark bingo start');
+                console.error(error);
+            }
+        }
+
         // ============================================
         // CHANGELOG MODAL
         // ============================================
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
-                                {
+                         {
+                version: "v1.8.0",
+                date: "2025-01-02",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "feature", text: "Added new Boss Kill Counts section" },
+                    { type: "feature", text: "Tracks KC overtime (Start of Bingo -> Current)" },
+                    { type: "feature", text: "Calculate Effort (KC Gained)" },
+                    { type: "feature", text: "Added a Boss Leaderboard" },
+                    { type: "feature", text: "Added player KC comparison" },
+                    { type: "feature", text: "Added admin controls to fetch/snapshot KC" }
+                ]
+            },
+                        {
                 version: "v1.7.1",
-                date: "2025-01-01",
+                date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
                     { type: "fix", text: "Fixed filters on Analytics page" },
@@ -3093,7 +3186,7 @@ async function loadAnalyticsWithFilters() {
             },
                         {
                 version: "v1.7.0",
-                date: "2025-01-01",
+                date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
                     { type: "feature", text: "Added new filters into the Analytics page. Similar to History" },
@@ -3103,7 +3196,7 @@ async function loadAnalyticsWithFilters() {
             },
                        {
                 version: "v1.6.3",
-                date: "2025-01-01",
+                date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
                     { type: "fix", text: "Fixed player filters in History. Now filters based on History data and not tile completions" }
@@ -3111,7 +3204,7 @@ async function loadAnalyticsWithFilters() {
             },
                       {
                 version: "v1.6.2",
-                date: "2025-01-01",
+                date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
                     { type: "fix", text: "Fixed background import logic for item values" }
@@ -3119,7 +3212,7 @@ async function loadAnalyticsWithFilters() {
             },
                      {
                 version: "v1.6.1",
-                date: "2025-01-01",
+                date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
                     { type: "improvement", text: "Fixed import history endpoint for duplicates. It will now add them both as a loot and collection log" }
@@ -3127,7 +3220,7 @@ async function loadAnalyticsWithFilters() {
             },
                     {
                 version: "v1.6.0",
-                date: "2025-01-01",
+                date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
                 changes: [
                     { type: "feature", text: "Collection Log and Loot Drop entries now tracked separately" },

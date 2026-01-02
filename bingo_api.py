@@ -4,6 +4,8 @@ import json
 import os
 from datetime import datetime, timedelta
 from pymongo import MongoClient
+import requests
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
@@ -39,7 +41,235 @@ print(
     f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
 print()
 
+# OSRS Highscores fetcher
+def fetch_osrs_highscores(player_name):
+    """Fetch player's KC from OSRS highscores"""
+    try:
+        url = f"https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player={player_name}"
+        response = requests.get(url, timeout=10)
 
+        if response.status_code != 200:
+            return None
+
+        # Parse CSV response
+        lines = response.text.strip().split('\n')
+
+        # First 24 lines are skills, rest are bosses/activities
+        boss_data = {}
+
+        # Skip first 24 lines (skills)
+        for line in lines[24:]:
+            parts = line.split(',')
+            if len(parts) >= 2:
+                boss_name = parts[0]
+                try:
+                    kc = int(parts[2]) if len(parts) > 2 else -1
+                    if kc >= 0:  # -1 means no KC
+                        boss_data[boss_name] = kc
+                except:
+                    pass
+
+        return boss_data
+    except Exception as e:
+        print(f"Error fetching highscores for {player_name}: {e}")
+        return None
+
+
+@app.route('/kc/fetch/<player_name>', methods=['POST'])
+def fetch_player_kc(player_name):
+    """Fetch and store a player's current KC"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    # Fetch from OSRS
+    kc_data = fetch_osrs_highscores(player_name)
+
+    if not kc_data:
+        return jsonify({'error': f'Could not fetch KC for {player_name}'}), 404
+
+    # Store snapshot
+    try:
+        kc_collection.insert_one({
+            'player': player_name,
+            'timestamp': datetime.utcnow(),
+            'snapshot_type': 'current',
+            'bosses': kc_data
+        })
+
+        return jsonify({
+            'success': True,
+            'player': player_name,
+            'kc_count': len(kc_data),
+            'bosses': kc_data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/kc/snapshot', methods=['POST'])
+def create_kc_snapshot():
+    """Create KC snapshot for all players"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    data = request.json
+    snapshot_type = data.get('type', 'manual')  # 'start', 'current', 'manual'
+
+    # Get all unique players from history
+    players = history_collection.distinct('player')
+
+    results = []
+    for player in players:
+        kc_data = fetch_osrs_highscores(player)
+        if kc_data:
+            kc_collection.insert_one({
+                'player': player,
+                'timestamp': datetime.utcnow(),
+                'snapshot_type': snapshot_type,
+                'bosses': kc_data
+            })
+            results.append({'player': player, 'success': True})
+        else:
+            results.append({'player': player, 'success': False})
+
+    return jsonify({
+        'success': True,
+        'snapshots': len(results),
+        'results': results
+    })
+
+
+@app.route('/kc/player/<player_name>', methods=['GET'])
+def get_player_kc(player_name):
+    """Get a player's KC history"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get all snapshots for this player
+        snapshots = list(kc_collection.find(
+            {'player': player_name},
+            sort=[('timestamp', -1)]
+        ))
+
+        # Convert ObjectId to string
+        for snapshot in snapshots:
+            snapshot['_id'] = str(snapshot['_id'])
+            snapshot['timestamp'] = snapshot['timestamp'].isoformat()
+
+        # Get starting snapshot
+        start_snapshot = kc_collection.find_one(
+            {'player': player_name, 'snapshot_type': 'start'},
+            sort=[('timestamp', 1)]
+        )
+
+        # Get current snapshot
+        current_snapshot = kc_collection.find_one(
+            {'player': player_name},
+            sort=[('timestamp', -1)]
+        )
+
+        # Calculate effort (KC gained)
+        effort = {}
+        if start_snapshot and current_snapshot:
+            for boss, current_kc in current_snapshot['bosses'].items():
+                start_kc = start_snapshot['bosses'].get(boss, 0)
+                gained = current_kc - start_kc
+                if gained > 0:
+                    effort[boss] = {
+                        'start': start_kc,
+                        'current': current_kc,
+                        'gained': gained
+                    }
+
+        return jsonify({
+            'player': player_name,
+            'snapshots': snapshots,
+            'effort': effort,
+            'has_start': start_snapshot is not None
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/kc/leaderboard/<boss_name>', methods=['GET'])
+def get_boss_leaderboard(boss_name):
+    """Get KC leaderboard for a specific boss"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get latest snapshot for each player
+        pipeline = [
+            {'$sort': {'timestamp': -1}},
+            {'$group': {
+                '_id': '$player',
+                'latest_snapshot': {'$first': '$$ROOT'}
+            }},
+            {'$project': {
+                'player': '$_id',
+                'kc': f'$latest_snapshot.bosses.{boss_name}',
+                'timestamp': '$latest_snapshot.timestamp'
+            }},
+            {'$match': {'kc': {'$exists': True, '$ne': None}}},
+            {'$sort': {'kc': -1}}
+        ]
+
+        results = list(kc_collection.aggregate(pipeline))
+
+        # Convert to simple format
+        leaderboard = []
+        for result in results:
+            leaderboard.append({
+                'player': result['player'],
+                'kc': result['kc'],
+                'timestamp': result['timestamp'].isoformat()
+            })
+
+        return jsonify({
+            'boss': boss_name,
+            'leaderboard': leaderboard
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/kc/all', methods=['GET'])
+def get_all_kc():
+    """Get current KC for all players"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get latest snapshot for each player
+        pipeline = [
+            {'$sort': {'timestamp': -1}},
+            {'$group': {
+                '_id': '$player',
+                'latest_snapshot': {'$first': '$$ROOT'}
+            }}
+        ]
+
+        results = list(kc_collection.aggregate(pipeline))
+
+        all_kc = {}
+        for result in results:
+            player = result['_id']
+            snapshot = result['latest_snapshot']
+            all_kc[player] = {
+                'bosses': snapshot['bosses'],
+                'timestamp': snapshot['timestamp'].isoformat(),
+                'snapshot_type': snapshot['snapshot_type']
+            }
+
+        return jsonify(all_kc)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Initialize KC collection
+if USE_MONGODB:
+    kc_collection = db['kc_snapshots']
 def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
     """Check if this drop already exists in history (within N seconds of the message timestamp)"""
     if not USE_MONGODB:
