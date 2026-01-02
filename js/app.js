@@ -1732,22 +1732,6 @@
         }
 
         async function loadAnalytics() {
-
-            // Fetch all history data
-            const response = await fetch(`${API_URL}/history?limit=10000`);
-            const data = await response.json();
-
-            // Populate player filter
-            populateAnalyticsPlayerFilter(data.history || []);
-
-            // Initialize filters
-            analyticsSelectedPlayers = [];
-            updateAnalyticsPlayerButton();
-            renderAnalyticsFilterChips();
-
-            // Load charts with all data
-            updateAnalyticsCharts(data.history || []);
-
             const loadingDiv = document.getElementById('analyticsLoading');
             const contentDiv = document.getElementById('analyticsContent');
 
@@ -1766,20 +1750,37 @@
                     return;
                 }
 
-                // Process data
+                // Process data - convert timestamps to Date objects
                 const drops = data.history.map(d => ({
                     ...d,
                     timestamp: new Date(d.timestamp)
                 }));
 
-                // Generate all analytics
+                // Populate player filter (for filtering feature)
+                populateAnalyticsPlayerFilter(drops);
+
+                // Initialize filters
+                analyticsSelectedPlayers = [];
+                updateAnalyticsPlayerButton();
+                renderAnalyticsFilterChips();
+
+                // Generate all analytics with filtering support
+                const players = analyticsSelectedPlayers.length > 0
+                    ? analyticsSelectedPlayers
+                    : [...new Set(drops.map(r => r.player))];
+
+                const playerColors = assignPlayerColors(players);
+
+                // Use new chart update functions that support multi-player
+                updateDropsOverTimeChart(drops, players, playerColors);
+                updateTopItemsChart(drops, players, playerColors);
+                updateActivityHeatmapChart(drops, players, playerColors);
+
+                // Also generate the other charts
                 generateKeyStats(drops);
-                generateDropsPerDayChart(drops);
                 generateDayOfWeekChart(drops);
-                generateHourHeatmap(drops);
                 generatePlayerActivityChart(drops);
                 generateMonthComparisonChart(drops);
-                generateTopItemsChart(drops);
 
                 loadingDiv.style.display = 'none';
                 contentDiv.style.display = 'block';
