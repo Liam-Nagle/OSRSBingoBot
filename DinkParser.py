@@ -144,13 +144,15 @@ def parse_value(value_str):
 def parse_item_line(item_text):
     """Parse Dink item formats:
     - '60 x [Dragonstone](wiki_url) (668K)' - Link with value
+    - '1 x [Black mask (10)](wiki_url) (781K)' - Item name with parens + value
     - '60 x [Dragonstone](wiki_url)' - Link without value
     - '60 x Dragonstone (668K)' - No link with value
     """
 
     # Pattern 1: [Item Name](wiki_url) (value) - Link with value
-    # Example: 60 x [Dragonstone](https://wiki...) (668K)
-    pattern_link_value = r'(\d+)\s*x\s*\[(.+?)\]\(https?://[^\)]+\)\s*\((.+?)\)'
+    # Example: 1 x [Black mask (10)](https://wiki.../Black_mask_(10)) (781K)
+    # Use [^\s]+ to match URL (no spaces in URLs) instead of [^\)]+ (breaks on parens in URL)
+    pattern_link_value = r'(\d+)\s*x\s*\[([^\]]+)\]\(https?://[^\s]+\)\s*\(([^)]+)\)'
     match = re.search(pattern_link_value, item_text)
     if match:
         quantity = int(match.group(1))
@@ -165,7 +167,7 @@ def parse_item_line(item_text):
 
     # Pattern 2: [Item Name](wiki_url) - Link without value (collection log)
     # Example: 1 x [Dragonstone](https://wiki...)
-    pattern_link_only = r'(\d+)\s*x\s*\[(.+?)\]\(https?://[^\)]+\)'
+    pattern_link_only = r'(\d+)\s*x\s*\[([^\]]+)\]\(https?://[^\s]+\)'
     match = re.search(pattern_link_only, item_text)
     if match:
         quantity = int(match.group(1))
