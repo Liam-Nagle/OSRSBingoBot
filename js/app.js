@@ -1334,15 +1334,26 @@
             setDateFilter('all');
         }
 
-        function updateHistoryPlayerFilter() {
+        function updateHistoryPlayerFilter(historyData = null) {
             const select = document.getElementById('historyPlayerFilter');
             const currentValue = select.value;
 
-            // Get all unique players
+            // Get all unique players from history data (or fall back to tiles)
             const allPlayers = new Set();
-            bingoData.tiles.forEach(tile => {
-                tile.completedBy.forEach(player => allPlayers.add(player));
-            });
+
+            if (historyData && historyData.length > 0) {
+                // Use actual history data (better!)
+                historyData.forEach(record => {
+                    if (record.player) {
+                        allPlayers.add(record.player);
+                    }
+                });
+            } else {
+                // Fallback: use tile completions
+                bingoData.tiles.forEach(tile => {
+                    tile.completedBy.forEach(player => allPlayers.add(player));
+                });
+            }
 
             const sortedPlayers = Array.from(allPlayers).sort();
 
@@ -1359,6 +1370,7 @@
             if (currentValue && sortedPlayers.includes(currentValue)) {
                 select.value = currentValue;
             }
+
             if (document.getElementById('historyModal').classList.contains('active')) {
                 filterHistory();
             }
@@ -1471,6 +1483,9 @@
                 });
 
                 contentDiv.innerHTML = html;
+
+                // Update player filter with actual history data
+                updateHistoryPlayerFilter(data.history);
 
             } catch (error) {
                 console.error('Error loading history:', error);
@@ -2403,6 +2418,14 @@
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                       {
+                version: "v1.6.3",
+                date: "2025-01-01",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "fix", text: "Fixed player filters in History. Now filters based on History data and not tile completions" }
+                ]
+            },
                       {
                 version: "v1.6.2",
                 date: "2025-01-01",
