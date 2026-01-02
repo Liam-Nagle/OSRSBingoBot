@@ -49,27 +49,112 @@ def fetch_osrs_highscores(player_name):
         response = requests.get(url, timeout=10)
 
         if response.status_code != 200:
+            print(f"Failed to fetch highscores for {player_name}: HTTP {response.status_code}")
             return None
 
         # Parse CSV response
         lines = response.text.strip().split('\n')
 
-        # First 24 lines are skills, rest are bosses/activities
+        # Boss/Activity names in the order they appear in highscores (after skills)
+        # First 24 lines are skills, lines 24+ are bosses/activities
+        boss_names = [
+            "Bounty Hunter - Hunter",
+            "Bounty Hunter - Rogue",
+            "Bounty Hunter (Legacy) - Hunter",
+            "Bounty Hunter (Legacy) - Rogue",
+            "Clue Scrolls (all)",
+            "Clue Scrolls (beginner)",
+            "Clue Scrolls (easy)",
+            "Clue Scrolls (medium)",
+            "Clue Scrolls (hard)",
+            "Clue Scrolls (elite)",
+            "Clue Scrolls (master)",
+            "LMS - Rank",
+            "PvP Arena - Rank",
+            "Soul Wars Zeal",
+            "Rifts closed",
+            "Abyssal Sire",
+            "Alchemical Hydra",
+            "Artio",
+            "Barrows Chests",
+            "Bryophyta",
+            "Callisto",
+            "Cal'varion",
+            "Cerberus",
+            "Chambers of Xeric",
+            "Chambers of Xeric: Challenge Mode",
+            "Chaos Elemental",
+            "Chaos Fanatic",
+            "Commander Zilyana",
+            "Corporeal Beast",
+            "Crazy Archaeologist",
+            "Dagannoth Prime",
+            "Dagannoth Rex",
+            "Dagannoth Supreme",
+            "Deranged Archaeologist",
+            "Duke Sucellus",
+            "General Graardor",
+            "Giant Mole",
+            "Grotesque Guardians",
+            "Hespori",
+            "Kalphite Queen",
+            "King Black Dragon",
+            "Kraken",
+            "Kree'Arra",
+            "K'ril Tsutsaroth",
+            "Mimic",
+            "Nex",
+            "Nightmare",
+            "Phosani's Nightmare",
+            "Obor",
+            "Phantom Muspah",
+            "Sarachnis",
+            "Scorpia",
+            "Skotizo",
+            "Spindel",
+            "Tempoross",
+            "The Gauntlet",
+            "The Corrupted Gauntlet",
+            "The Leviathan",
+            "The Whisperer",
+            "Theatre of Blood",
+            "Theatre of Blood: Hard Mode",
+            "Thermonuclear Smoke Devil",
+            "Tombs of Amascut",
+            "Tombs of Amascut: Expert Mode",
+            "TzKal-Zuk",
+            "TzTok-Jad",
+            "Vardorvis",
+            "Venenatis",
+            "Vet'ion",
+            "Vorkath",
+            "Wintertodt",
+            "Zalcano",
+            "Zulrah"
+        ]
+
         boss_data = {}
 
-        # Skip first 24 lines (skills)
-        for line in lines[24:]:
+        # Skip first 24 lines (skills), then parse bosses
+        boss_lines = lines[24:]
+
+        for i, line in enumerate(boss_lines):
+            if i >= len(boss_names):
+                break
+
             parts = line.split(',')
             if len(parts) >= 2:
-                boss_name = parts[0]
                 try:
-                    kc = int(parts[2]) if len(parts) > 2 else -1
-                    if kc >= 0:  # -1 means no KC
-                        boss_data[boss_name] = kc
-                except:
+                    # parts[0] = rank, parts[1] = score (KC)
+                    kc = int(parts[1])
+                    if kc > 0:  # Only include bosses with KC
+                        boss_data[boss_names[i]] = kc
+                except (ValueError, IndexError):
                     pass
 
-        return boss_data
+        print(f"Fetched {len(boss_data)} boss KCs for {player_name}")
+        return boss_data if boss_data else None
+
     except Exception as e:
         print(f"Error fetching highscores for {player_name}: {e}")
         return None
@@ -705,6 +790,9 @@ def get_history():
         player = request.args.get('player')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
+        drop_type = request.args.get('type')  # NEW: 'loot' or 'collection_log'
+        min_value = request.args.get('minValue')  # NEW: minimum value filter
+        search = request.args.get('search')  # NEW: item name search
         limit = int(request.args.get('limit', 100))
 
         # Build query
@@ -717,6 +805,18 @@ def get_history():
                 query['timestamp']['$gte'] = datetime.fromisoformat(start_date)
             if end_date:
                 query['timestamp']['$lte'] = datetime.fromisoformat(end_date)
+
+        # NEW: Drop type filter
+        if drop_type:
+            query['drop_type'] = drop_type
+
+        # NEW: Minimum value filter
+        if min_value:
+            query['value'] = {'$gte': int(min_value)}
+
+        # NEW: Item search filter (case-insensitive)
+        if search:
+            query['item'] = {'$regex': search, '$options': 'i'}
 
         # Fetch history
         history = list(history_collection.find(query).sort('timestamp', -1).limit(limit))

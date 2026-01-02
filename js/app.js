@@ -3163,6 +3163,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                           {
+                version: "v1.8.1",
+                date: "2025-01-02",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "fix", text: "Fix filters on Analytics" },
+                    { type: "fix", text: "Fixed Boss KC Tracking page" },
+                ]
+            },
                          {
                 version: "v1.8.0",
                 date: "2025-01-02",
