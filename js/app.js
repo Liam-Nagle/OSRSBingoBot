@@ -3115,6 +3115,219 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        function renderKCOverview(data) {
+            const container = document.getElementById('kcTabContentOverview');
+            if (!container) {
+                console.error('KC Overview container not found');
+                return;
+            }
+
+            console.log('Rendering KC Overview with data:', data);
+
+            if (!data || Object.keys(data).length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No KC data yet! Click "Fetch All Players KC" to get started.</div>';
+                return;
+            }
+
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px;">';
+
+            for (const [player, playerData] of Object.entries(data)) {
+                const bosses = playerData.bosses || {};
+                const bossEntries = Object.entries(bosses).sort((a, b) => b[1] - a[1]);
+                const topBosses = bossEntries.slice(0, 5);
+
+                const lastUpdate = playerData.timestamp ? new Date(playerData.timestamp).toLocaleString() : 'Unknown';
+
+                html += `
+                    <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <h3 style="margin: 0 0 15px 0; color: #cd8b2d;">${player}</h3>
+                        <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 15px;">Last updated: ${lastUpdate}</div>
+                        <div style="font-size: 13px;">
+                `;
+
+                if (topBosses.length > 0) {
+                    topBosses.forEach(([boss, kc]) => {
+                        html += `<div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <span>${boss}</span>
+                            <span style="color: #4CAF50; font-weight: bold;">${kc.toLocaleString()} KC</span>
+                        </div>`;
+                    });
+                } else {
+                    html += '<div style="color: #666; font-style: italic;">No boss KC found</div>';
+                }
+
+                html += `
+                        </div>
+                        <button onclick="showPlayerKCDetail('${player}')" style="margin-top: 15px; padding: 8px 16px; background: #cd8b2d; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 13px;">
+                            View All Bosses
+                        </button>
+                    </div>
+                `;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+            console.log('KC Overview rendered successfully');
+        }
+
+        function renderKCLeaderboards(data) {
+            const container = document.getElementById('kcTabContentLeaderboards');
+            if (!container) {
+                console.error('KC Leaderboards container not found');
+                return;
+            }
+
+            console.log('Rendering KC Leaderboards with data:', data);
+
+            if (!data || Object.keys(data).length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No KC data available</div>';
+                return;
+            }
+
+            // Aggregate all bosses
+            const allBosses = new Set();
+            Object.values(data).forEach(playerData => {
+                if (playerData.bosses) {
+                    Object.keys(playerData.bosses).forEach(boss => allBosses.add(boss));
+                }
+            });
+
+            const sortedBosses = Array.from(allBosses).sort();
+
+            let html = `
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold;">Select Boss:</label>
+                    <select id="bossLeaderboardSelect" onchange="updateBossLeaderboard(this.value, ${JSON.stringify(data).replace(/"/g, '&quot;')})" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ddd; background: white; color: #333; font-size: 14px;">
+                        <option value="">-- Select a Boss --</option>
+            `;
+
+            sortedBosses.forEach(boss => {
+                html += `<option value="${boss}">${boss}</option>`;
+            });
+
+            html += `
+                    </select>
+                </div>
+                <div id="bossLeaderboardContent" style="margin-top: 20px;">
+                    <div style="text-align: center; color: #666; padding: 40px;">Please select a boss to view leaderboard</div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+            console.log('KC Leaderboards rendered successfully');
+        }
+
+        window.updateBossLeaderboard = function(boss, dataStr) {
+            const container = document.getElementById('bossLeaderboardContent');
+            if (!container) return;
+
+            if (!boss) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">Please select a boss</div>';
+                return;
+            }
+
+            // Parse data
+            let data;
+            try {
+                data = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr;
+            } catch (e) {
+                // If parsing fails, fetch fresh data
+                fetch(`${API_URL}/kc/all`)
+                    .then(r => r.json())
+                    .then(freshData => updateBossLeaderboardWithData(boss, freshData))
+                    .catch(err => {
+                        console.error('Failed to fetch KC data:', err);
+                        container.innerHTML = '<div style="text-align: center; color: #8b1a1a; padding: 40px;">❌ Failed to load leaderboard</div>';
+                    });
+                return;
+            }
+
+            updateBossLeaderboardWithData(boss, data);
+        };
+
+        function updateBossLeaderboardWithData(boss, data) {
+            const container = document.getElementById('bossLeaderboardContent');
+            if (!container) return;
+
+            const leaderboard = [];
+
+            Object.entries(data).forEach(([player, playerData]) => {
+                if (playerData.bosses && playerData.bosses[boss]) {
+                    leaderboard.push({
+                        player: player,
+                        kc: playerData.bosses[boss]
+                    });
+                }
+            });
+
+            leaderboard.sort((a, b) => b.kc - a.kc);
+
+            if (leaderboard.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #666; padding: 40px;">No one has KC for ${boss}</div>`;
+                return;
+            }
+
+            let html = '<div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px;">';
+            leaderboard.forEach((entry, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                html += `
+                    <div style="display: flex; justify-content: space-between; padding: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.03); border-radius: 4px;">
+                        <span style="font-size: 16px;">
+                            ${medal} #${index + 1} ${entry.player}
+                        </span>
+                        <span style="color: #4CAF50; font-weight: bold; font-size: 16px;">
+                            ${entry.kc.toLocaleString()} KC
+                        </span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderKCEffort(data) {
+            const container = document.getElementById('kcTabContentEffort');
+            if (!container) {
+                console.error('KC Effort container not found');
+                return;
+            }
+
+            console.log('Rendering KC Effort with data:', data);
+
+            container.innerHTML = `
+                <div style="text-align: center; color: #666; padding: 40px;">
+                    <h3 style="margin-bottom: 20px;">Effort Tracking</h3>
+                    <p>This feature requires a "Bingo Start" snapshot to track KC gained during the bingo period.</p>
+                    <p style="margin-top: 20px;">Use the "Mark as Bingo Start" button in admin controls to enable this feature.</p>
+                </div>
+            `;
+        }
+
+        function showPlayerKCDetail(player) {
+            fetch(`${API_URL}/kc/all`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data[player]) {
+                        alert(`No KC data found for ${player}`);
+                        return;
+                    }
+
+                    const bosses = data[player].bosses || {};
+                    const bossEntries = Object.entries(bosses).sort((a, b) => b[1] - a[1]);
+
+                    let message = `${player}'s Boss KC:\n\n`;
+                    bossEntries.forEach(([boss, kc]) => {
+                        message += `${boss}: ${kc.toLocaleString()} KC\n`;
+                    });
+
+                    alert(message);
+                })
+                .catch(err => {
+                    console.error('Failed to load player detail:', err);
+                    alert('Failed to load player details');
+                });
+        }
+
         async function fetchAllPlayersKC() {
             if (!confirm('Fetch current KC for all players? This may take a while.')) {
                 return;
@@ -3163,6 +3376,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                            {
+                version: "v1.8.2",
+                date: "2025-01-02",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "fix", text: "Added some missing functions for boss KC" },
+                ]
+            },
                            {
                 version: "v1.8.1",
                 date: "2025-01-02",
