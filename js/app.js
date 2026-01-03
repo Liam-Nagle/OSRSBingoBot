@@ -30,7 +30,7 @@
             }
         };
 
-        const API_URL = 'http://79.72.91.27:8080';
+        const API_URL = 'https://supercurious-agrological-voncile.ngrok-free.dev';
 
         function changePlayer() {
             currentPlayer = document.getElementById('playerSelect').value || null;
