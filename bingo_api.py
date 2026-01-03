@@ -46,7 +46,10 @@ def fetch_osrs_highscores(player_name):
     """Fetch player's KC from OSRS highscores"""
     try:
         url = f"https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player={player_name}"
-        response = requests.get(url, timeout=10)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
 
         if response.status_code != 200:
             print(f"Failed to fetch highscores for {player_name}: HTTP {response.status_code}")
