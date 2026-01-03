@@ -3412,7 +3412,6 @@ async function loadAnalyticsWithFilters() {
         }
 
         async function fetchPlayerKCFromBrowser(playerName) {
-            // Use CORS proxy to bypass CORS restrictions
             const corsProxy = 'https://corsproxy.io/?';
             const url = `${corsProxy}https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player=${playerName.replace(' ', '_')}`;
 
@@ -3434,6 +3433,17 @@ async function loadAnalyticsWithFilters() {
                 const text = await response.text();
                 const lines = text.trim().split('\n');
                 console.log(`  📄 Got ${lines.length} lines`);
+
+                // DEBUG: Show first 5 lines to see what we got
+                console.log(`  🔍 First 5 lines:`, lines.slice(0, 5));
+                console.log(`  🔍 Lines 24-26 (should be boss data):`, lines.slice(24, 27));
+
+                // Check if this looks like HTML instead of CSV
+                if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+                    console.log(`  ❌ Got HTML instead of CSV!`);
+                    console.log(`  First 200 chars:`, text.substring(0, 200));
+                    return null;
+                }
 
                 // Boss names in order
                 const bossNames = [
@@ -3461,6 +3471,8 @@ async function loadAnalyticsWithFilters() {
                 const bossData = {};
                 const bossLines = lines.slice(24); // Skip skills
 
+                console.log(`  🔍 Processing ${bossLines.length} boss lines...`);
+
                 for (let i = 0; i < bossLines.length && i < bossNames.length; i++) {
                     const parts = bossLines[i].split(',');
                     if (parts.length >= 2) {
@@ -3472,6 +3484,10 @@ async function loadAnalyticsWithFilters() {
                 }
 
                 console.log(`  ✅ Parsed ${Object.keys(bossData).length} bosses`);
+                if (Object.keys(bossData).length > 0) {
+                    console.log(`  Sample bosses:`, Object.entries(bossData).slice(0, 3));
+                }
+
                 return bossData;
             } catch (error) {
                 console.error(`  ❌ Fetch error:`, error);
