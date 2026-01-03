@@ -85,14 +85,23 @@ def fetch_osrs_highscores(player_name):
             return None, debug
 
         snapshot_data = data['latestSnapshot']['data']
-        debug.append(f"🔍 Snapshot data keys (first 10): {list(snapshot_data.keys())[:10]}")
+        debug.append(f"🔍 Snapshot data keys: {list(snapshot_data.keys())}")
+
+        # Boss data is inside the 'bosses' key!
+        if 'bosses' not in snapshot_data:
+            debug.append(f"⚠️ No 'bosses' key in snapshot data")
+            return None, debug
+
+        bosses_data = snapshot_data['bosses']
+        debug.append(f"🔍 Bosses data keys (first 10): {list(bosses_data.keys())[:10]}")
 
         # DEBUG: Check what one boss entry looks like
-        if 'zulrah' in snapshot_data:
-            debug.append(f"🔍 Sample (zulrah): {snapshot_data['zulrah']}")
-        elif len(snapshot_data) > 0:
-            first_key = list(snapshot_data.keys())[0]
-            debug.append(f"🔍 Sample ({first_key}): {snapshot_data[first_key]}")
+        if 'zulrah' in bosses_data:
+            debug.append(f"🔍 Sample (zulrah): {bosses_data['zulrah']}")
+        elif len(bosses_data) > 0:
+            first_key = list(bosses_data.keys())[0]
+            debug.append(f"🔍 Sample ({first_key}): {bosses_data[first_key]}")
+
         boss_data = {}
 
         # WiseOldMan uses different keys for bosses - map them to our format
@@ -159,8 +168,8 @@ def fetch_osrs_highscores(player_name):
 
         # Extract KC from snapshot
         for wom_key, display_name in boss_mapping.items():
-            if wom_key in snapshot_data:
-                kc = snapshot_data[wom_key].get('kills', 0)
+            if wom_key in bosses_data:
+                kc = bosses_data[wom_key].get('kills', 0)
                 if kc and kc > 0:
                     boss_data[display_name] = kc
 
