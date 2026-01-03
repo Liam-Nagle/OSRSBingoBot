@@ -70,12 +70,29 @@ def fetch_osrs_highscores(player_name):
         data = response.json()
         debug.append(f"✅ Got player data")
 
+        # DEBUG: Log what keys we actually got
+        debug.append(f"🔍 Response keys: {list(data.keys())[:10]}")
+
         # Extract boss KC from latestSnapshot
-        if 'latestSnapshot' not in data or 'data' not in data['latestSnapshot']:
-            debug.append(f"⚠️ No snapshot data available")
+        if 'latestSnapshot' not in data:
+            debug.append(f"⚠️ No 'latestSnapshot' key in response")
+            debug.append(f"Available keys: {list(data.keys())}")
+            return None, debug
+
+        if 'data' not in data['latestSnapshot']:
+            debug.append(f"⚠️ No 'data' key in latestSnapshot")
+            debug.append(f"latestSnapshot keys: {list(data['latestSnapshot'].keys())}")
             return None, debug
 
         snapshot_data = data['latestSnapshot']['data']
+        debug.append(f"🔍 Snapshot data keys (first 10): {list(snapshot_data.keys())[:10]}")
+
+        # DEBUG: Check what one boss entry looks like
+        if 'zulrah' in snapshot_data:
+            debug.append(f"🔍 Sample (zulrah): {snapshot_data['zulrah']}")
+        elif len(snapshot_data) > 0:
+            first_key = list(snapshot_data.keys())[0]
+            debug.append(f"🔍 Sample ({first_key}): {snapshot_data[first_key]}")
         boss_data = {}
 
         # WiseOldMan uses different keys for bosses - map them to our format
