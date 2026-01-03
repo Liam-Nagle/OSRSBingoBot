@@ -30,7 +30,7 @@
             }
         };
 
-        const API_URL = 'https://supercurious-agrological-voncile.ngrok-free.dev';
+        const API_URL = 'https://osrsbingo.duckdns.org';
 
         function changePlayer() {
             currentPlayer = document.getElementById('playerSelect').value || null;
