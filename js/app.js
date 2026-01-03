@@ -3329,58 +3329,145 @@ async function loadAnalyticsWithFilters() {
         }
 
         async function fetchAllPlayersKC() {
-            if (!confirm('Fetch current KC for all players? This may take a while.')) {
+            if (!confirm('Fetch current KC for all players? This will fetch data from your browser to bypass Cloudflare blocking.')) {
                 return;
             }
 
             console.log('='.repeat(60));
-            console.log('🚀 FETCHING KC FOR ALL PLAYERS');
+            console.log('🚀 FETCHING KC FROM BROWSER');
             console.log('='.repeat(60));
 
             try {
-                const response = await fetch(`${API_URL}/kc/snapshot`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ type: 'current' })
-                });
+                // Get list of players from API
+                const playersResponse = await fetch(`${API_URL}/players`);
+                const playersData = await playersResponse.json();
+                const players = playersData.players || [];
 
-                const result = await response.json();
-
-                // Log all debug info to console
-                console.log('\n📊 API RESPONSE:');
-                console.log(result);
-
-                if (result.debug) {
-                    console.log('\n🔍 DEBUG LOG:');
-                    result.debug.forEach(line => console.log(line));
+                if (players.length === 0) {
+                    alert('❌ No players found in history!');
+                    return;
                 }
 
-                if (result.results) {
-                    console.log('\n👥 PER-PLAYER RESULTS:');
-                    result.results.forEach(player => {
-                        console.log(`\n${player.player}:`);
-                        if (player.debug) {
-                            player.debug.forEach(line => console.log(`  ${line}`));
+                console.log(`📋 Found ${players.length} players:`, players);
+
+                const results = [];
+
+                for (const player of players) {
+                    console.log(`\n📥 Fetching KC for: ${player}`);
+
+                    try {
+                        // Fetch from browser (bypasses Cloudflare!)
+                        const kcData = await fetchPlayerKCFromBrowser(player);
+
+                        if (kcData && Object.keys(kcData).length > 0) {
+                            console.log(`✅ Got ${Object.keys(kcData).length} boss KCs`);
+
+                            // Send to API to save
+                            const saveResponse = await fetch(`${API_URL}/kc/save`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    player: player,
+                                    bosses: kcData,
+                                    snapshot_type: 'current'
+                                })
+                            });
+
+                            const saveResult = await saveResponse.json();
+                            if (saveResult.success) {
+                                console.log(`💾 Saved to MongoDB!`);
+                                results.push({player, success: true, kc_count: Object.keys(kcData).length});
+                            } else {
+                                console.log(`❌ Failed to save: ${saveResult.error}`);
+                                results.push({player, success: false, error: 'Save failed'});
+                            }
+                        } else {
+                            console.log(`⚠️ No KC data (player might have 0 KC or not exist)`);
+                            results.push({player, success: false, error: 'No KC data'});
                         }
-                    });
+                    } catch (error) {
+                        console.error(`❌ Error fetching ${player}:`, error);
+                        results.push({player, success: false, error: error.message});
+                    }
+
+                    // Small delay to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
-                console.log('\n' + '='.repeat(60));
-
-                const successful = result.successful || 0;
-                const total = result.snapshots || 0;
+                const successful = results.filter(r => r.success).length;
+                console.log(`\n📊 FINAL: ${successful}/${players.length} succeeded`);
+                console.log('='.repeat(60));
 
                 if (successful > 0) {
-                    alert(`✅ Fetched KC for ${successful}/${total} players!\n\nCheck browser console (F12) for details.`);
+                    alert(`✅ Fetched KC for ${successful}/${players.length} players!`);
                     loadKCData();
                 } else {
-                    alert(`❌ Failed to fetch KC for all ${total} players.\n\nCheck browser console (F12) for details.`);
+                    alert(`❌ Failed to fetch KC for all players.\n\nCheck console for details.`);
                 }
 
             } catch (error) {
-                console.error('❌ FETCH ERROR:', error);
-                alert('❌ Failed to fetch KC\n\nCheck browser console (F12) for details.');
+                console.error('❌ ERROR:', error);
+                alert('❌ Failed to fetch KC');
             }
+        }
+
+        async function fetchPlayerKCFromBrowser(playerName) {
+            const url = `https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player=${playerName.replace(' ', '_')}`;
+
+            console.log(`  🌐 Fetching: ${url}`);
+
+            const response = await fetch(url);
+            console.log(`  📡 HTTP ${response.status}`);
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.log(`  ⚠️ Player not found`);
+                }
+                return null;
+            }
+
+            const text = await response.text();
+            const lines = text.trim().split('\n');
+            console.log(`  📄 Got ${lines.length} lines`);
+
+            // Boss names in order
+            const bossNames = [
+                "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
+                "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
+                "Clue Scrolls (all)", "Clue Scrolls (beginner)", "Clue Scrolls (easy)",
+                "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
+                "Clue Scrolls (master)", "LMS - Rank", "PvP Arena - Rank",
+                "Soul Wars Zeal", "Rifts closed", "Abyssal Sire", "Alchemical Hydra",
+                "Artio", "Barrows Chests", "Bryophyta", "Callisto", "Cal'varion",
+                "Cerberus", "Chambers of Xeric", "Chambers of Xeric: Challenge Mode",
+                "Chaos Elemental", "Chaos Fanatic", "Commander Zilyana", "Corporeal Beast",
+                "Crazy Archaeologist", "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
+                "Deranged Archaeologist", "Duke Sucellus", "General Graardor", "Giant Mole",
+                "Grotesque Guardians", "Hespori", "Kalphite Queen", "King Black Dragon",
+                "Kraken", "Kree'Arra", "K'ril Tsutsaroth", "Mimic", "Nex", "Nightmare",
+                "Phosani's Nightmare", "Obor", "Phantom Muspah", "Sarachnis", "Scorpia",
+                "Skotizo", "Spindel", "Tempoross", "The Gauntlet", "The Corrupted Gauntlet",
+                "The Leviathan", "The Whisperer", "Theatre of Blood", "Theatre of Blood: Hard Mode",
+                "Thermonuclear Smoke Devil", "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
+                "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis", "Vet'ion", "Vorkath",
+                "Wintertodt", "Zalcano", "Zulrah"
+            ];
+
+            const bossData = {};
+            const bossLines = lines.slice(24); // Skip skills
+
+            for (let i = 0; i < bossLines.length && i < bossNames.length; i++) {
+                const parts = bossLines[i].split(',');
+                if (parts.length >= 2) {
+                    const kc = parseInt(parts[1]);
+                    if (kc > 0) {
+                        bossData[bossNames[i]] = kc;
+                    }
+                }
+            }
+
+            console.log(`  ✅ Parsed ${Object.keys(bossData).length} bosses`);
+            return bossData;
         }
 
         async function markBingoStart() {

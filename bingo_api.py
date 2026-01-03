@@ -387,6 +387,50 @@ def get_all_kc():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/players', methods=['GET'])
+def get_players():
+    """Get list of all players from history"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        players = history_collection.distinct('player')
+        return jsonify({'players': players})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/kc/save', methods=['POST'])
+def save_kc():
+    """Save KC data (called from browser)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    data = request.json
+    player = data.get('player')
+    bosses = data.get('bosses')
+    snapshot_type = data.get('snapshot_type', 'current')
+
+    if not player or not bosses:
+        return jsonify({'success': False, 'error': 'Missing player or bosses'}), 400
+
+    try:
+        result = kc_collection.insert_one({
+            'player': player,
+            'timestamp': datetime.utcnow(),
+            'snapshot_type': snapshot_type,
+            'bosses': bosses
+        })
+
+        return jsonify({
+            'success': True,
+            'id': str(result.inserted_id)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+
 # Initialize KC collection
 if USE_MONGODB:
     kc_collection = db['kc_snapshots']
