@@ -12,11 +12,18 @@ def run_api():
 
 
 def run_bot():
-    """Run Discord Bot"""
-    # Wait a bit for API to start
-    time.sleep(5)
-    print("🤖 Starting Discord Bot...")
-    subprocess.run([sys.executable, "DinkParser.py"])
+    """Run Discord Bot with retry logic"""
+    while True:
+        try:
+            time.sleep(5)  # Wait 5 seconds before starting bot
+            print("🤖 Starting Discord Bot...")
+            subprocess.run([sys.executable, "DinkParser.py"])
+        except Exception as e:
+            print(f"⚠️ Discord bot crashed: {e}")
+
+        # If bot exits/crashes, wait before retrying
+        print("⏳ Discord bot exited. Waiting 60 seconds before retry...")
+        time.sleep(60)  # Wait 1 minute before retrying
 
 
 if __name__ == "__main__":
@@ -28,5 +35,14 @@ if __name__ == "__main__":
     api_thread = Thread(target=run_api, daemon=True)
     api_thread.start()
 
-    # Run Discord bot in main thread (keeps process alive)
-    run_bot()
+    # Start Discord bot in background thread (with retry)
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    # Keep main thread alive
+    print("✅ Both services started. API will stay running even if bot fails.")
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        print("\n👋 Shutting down...")
