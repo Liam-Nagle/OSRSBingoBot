@@ -3333,6 +3333,10 @@ async function loadAnalyticsWithFilters() {
                 return;
             }
 
+            console.log('='.repeat(60));
+            console.log('🚀 FETCHING KC FOR ALL PLAYERS');
+            console.log('='.repeat(60));
+
             try {
                 const response = await fetch(`${API_URL}/kc/snapshot`, {
                     method: 'POST',
@@ -3341,11 +3345,41 @@ async function loadAnalyticsWithFilters() {
                 });
 
                 const result = await response.json();
-                alert(`✅ Fetched KC for ${result.snapshots} players`);
-                loadKCData();
+
+                // Log all debug info to console
+                console.log('\n📊 API RESPONSE:');
+                console.log(result);
+
+                if (result.debug) {
+                    console.log('\n🔍 DEBUG LOG:');
+                    result.debug.forEach(line => console.log(line));
+                }
+
+                if (result.results) {
+                    console.log('\n👥 PER-PLAYER RESULTS:');
+                    result.results.forEach(player => {
+                        console.log(`\n${player.player}:`);
+                        if (player.debug) {
+                            player.debug.forEach(line => console.log(`  ${line}`));
+                        }
+                    });
+                }
+
+                console.log('\n' + '='.repeat(60));
+
+                const successful = result.successful || 0;
+                const total = result.snapshots || 0;
+
+                if (successful > 0) {
+                    alert(`✅ Fetched KC for ${successful}/${total} players!\n\nCheck browser console (F12) for details.`);
+                    loadKCData();
+                } else {
+                    alert(`❌ Failed to fetch KC for all ${total} players.\n\nCheck browser console (F12) for details.`);
+                }
+
             } catch (error) {
-                alert('❌ Failed to fetch KC');
-                console.error(error);
+                console.error('❌ FETCH ERROR:', error);
+                alert('❌ Failed to fetch KC\n\nCheck browser console (F12) for details.');
             }
         }
 

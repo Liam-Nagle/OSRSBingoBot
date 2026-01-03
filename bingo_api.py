@@ -197,47 +197,54 @@ def fetch_player_kc(player_name):
 @app.route('/kc/snapshot', methods=['POST'])
 def create_kc_snapshot():
     """Create KC snapshot for all players"""
-    print("\n" + "=" * 60)
-    print("🚀 /kc/snapshot ENDPOINT CALLED!")
-    print("=" * 60)
-
-    print(f"📊 USE_MONGODB = {USE_MONGODB}")
+    debug_log = []
+    debug_log.append("🚀 KC Snapshot endpoint called")
 
     if not USE_MONGODB:
-        print("❌ MongoDB not available")
-        return jsonify({'error': 'MongoDB not available'}), 503
+        return jsonify({
+            'success': False,
+            'error': 'MongoDB not available',
+            'debug': debug_log
+        }), 503
 
     data = request.json
     snapshot_type = data.get('type', 'manual')
-    print(f"📝 Snapshot type: {snapshot_type}")
+    debug_log.append(f"📝 Snapshot type: {snapshot_type}")
 
     # Get all unique players from history
-    print(f"🔍 Getting players from history_collection...")
     try:
         players = history_collection.distinct('player')
-        print(f"✅ Found {len(players)} players: {players}")
+        debug_log.append(f"✅ Found {len(players)} players: {players}")
     except Exception as e:
-        print(f"❌ Error getting players: {e}")
-        return jsonify({'error': str(e)}), 500
+        debug_log.append(f"❌ Error getting players: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'debug': debug_log
+        }), 500
 
     if not players:
-        print("⚠️  No players found in history!")
+        debug_log.append("⚠️ No players in history!")
         return jsonify({
             'success': False,
             'message': 'No players found in drop history',
             'snapshots': 0,
-            'results': []
+            'results': [],
+            'debug': debug_log
         })
 
     results = []
-    print(f"\n🔄 Starting KC fetch for {len(players)} players...")
 
     for player in players:
-        print(f"\n  📥 Fetching: {player}")
+        player_debug = []
+        player_debug.append(f"📥 Fetching KC for: {player}")
+
         kc_data = fetch_osrs_highscores(player)
 
         if kc_data:
-            print(f"  ✅ Got {len(kc_data)} boss KCs")
+            player_debug.append(f"✅ Got {len(kc_data)} boss KCs")
+            player_debug.append(f"Sample bosses: {list(kc_data.items())[:3]}")
+
             try:
                 result = kc_collection.insert_one({
                     'player': player,
@@ -245,24 +252,41 @@ def create_kc_snapshot():
                     'snapshot_type': snapshot_type,
                     'bosses': kc_data
                 })
-                print(f"  💾 SAVED to MongoDB! ID: {result.inserted_id}")
-                results.append({'player': player, 'success': True})
+                player_debug.append(f"💾 SAVED to MongoDB! ID: {result.inserted_id}")
+                results.append({
+                    'player': player,
+                    'success': True,
+                    'kc_count': len(kc_data),
+                    'debug': player_debug
+                })
             except Exception as e:
-                print(f"  ❌ MongoDB insert failed: {e}")
-                results.append({'player': player, 'success': False, 'error': str(e)})
+                player_debug.append(f"❌ MongoDB save failed: {str(e)}")
+                results.append({
+                    'player': player,
+                    'success': False,
+                    'error': str(e),
+                    'debug': player_debug
+                })
         else:
-            print(f"  ❌ No KC data (player has 0 KC or doesn't exist)")
-            results.append({'player': player, 'success': False})
+            player_debug.append(f"❌ No KC data returned (HTTP error or 0 KC)")
+            results.append({
+                'player': player,
+                'success': False,
+                'error': 'No KC data',
+                'debug': player_debug
+            })
+
+        debug_log.extend(player_debug)
 
     successful = sum(1 for r in results if r.get('success'))
-    print(f"\n{'=' * 60}")
-    print(f"📊 SUMMARY: {successful}/{len(results)} succeeded")
-    print(f"{'=' * 60}\n")
+    debug_log.append(f"📊 FINAL: {successful}/{len(results)} succeeded")
 
     return jsonify({
         'success': True,
         'snapshots': len(results),
-        'results': results
+        'successful': successful,
+        'results': results,
+        'debug': debug_log
     })
 
 
