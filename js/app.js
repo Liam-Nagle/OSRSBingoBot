@@ -3412,21 +3412,17 @@ async function loadAnalyticsWithFilters() {
         }
 
         async function fetchPlayerKCFromBrowser(playerName) {
-            const corsProxy = 'https://corsproxy.io/?';
-            const url = `${corsProxy}https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player=${playerName.replace(' ', '_')}`;
+            // Try allorigins.win - different proxy that might work better
+            const url = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player=' + playerName.replace(' ', '_'))}`;
 
-            console.log(`  🌐 Fetching via CORS proxy...`);
+            console.log(`  🌐 Fetching via allorigins proxy...`);
 
             try {
                 const response = await fetch(url);
                 console.log(`  📡 HTTP ${response.status}`);
 
                 if (!response.ok) {
-                    if (response.status === 404) {
-                        console.log(`  ⚠️ Player not found`);
-                    } else {
-                        console.log(`  ❌ HTTP error ${response.status}`);
-                    }
+                    console.log(`  ❌ HTTP error ${response.status}`);
                     return null;
                 }
 
@@ -3434,18 +3430,27 @@ async function loadAnalyticsWithFilters() {
                 const lines = text.trim().split('\n');
                 console.log(`  📄 Got ${lines.length} lines`);
 
-                // DEBUG: Show first 5 lines to see what we got
+                // DEBUG: Show first 5 lines
                 console.log(`  🔍 First 5 lines:`, lines.slice(0, 5));
-                console.log(`  🔍 Lines 24-26 (should be boss data):`, lines.slice(24, 27));
 
                 // Check if this looks like HTML instead of CSV
                 if (text.includes('<!DOCTYPE') || text.includes('<html')) {
                     console.log(`  ❌ Got HTML instead of CSV!`);
-                    console.log(`  First 200 chars:`, text.substring(0, 200));
+                    console.log(`  Trying direct fetch without proxy...`);
+
+                    // Try one more time WITHOUT proxy (might work from some networks)
+                    try {
+                        const directUrl = `https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player=${playerName.replace(' ', '_')}`;
+                        const directResponse = await fetch(directUrl, { mode: 'no-cors' });
+                        console.log(`  ⚠️ Direct fetch attempted (no-cors mode)`);
+                    } catch (e) {
+                        console.log(`  ❌ Direct fetch also failed`);
+                    }
+
                     return null;
                 }
 
-                // Boss names in order
+                // Boss names
                 const bossNames = [
                     "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
                     "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
@@ -3469,9 +3474,7 @@ async function loadAnalyticsWithFilters() {
                 ];
 
                 const bossData = {};
-                const bossLines = lines.slice(24); // Skip skills
-
-                console.log(`  🔍 Processing ${bossLines.length} boss lines...`);
+                const bossLines = lines.slice(24);
 
                 for (let i = 0; i < bossLines.length && i < bossNames.length; i++) {
                     const parts = bossLines[i].split(',');
@@ -3485,12 +3488,12 @@ async function loadAnalyticsWithFilters() {
 
                 console.log(`  ✅ Parsed ${Object.keys(bossData).length} bosses`);
                 if (Object.keys(bossData).length > 0) {
-                    console.log(`  Sample bosses:`, Object.entries(bossData).slice(0, 3));
+                    console.log(`  Sample:`, Object.entries(bossData).slice(0, 3));
                 }
 
                 return bossData;
             } catch (error) {
-                console.error(`  ❌ Fetch error:`, error);
+                console.error(`  ❌ Error:`, error);
                 throw error;
             }
         }
