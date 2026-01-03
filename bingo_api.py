@@ -43,82 +43,109 @@ print()
 
 
 def fetch_osrs_highscores(player_name):
-    """Fetch player's KC from OSRS highscores - returns (kc_data, debug_log)"""
+    """Fetch player's KC from WiseOldMan API - returns (kc_data, debug_log)"""
     debug = []
 
     try:
-        # Format player name (replace spaces with underscores)
-        formatted_name = player_name.replace(' ', '_')
-
-        url = f"https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player={formatted_name}"
-        debug.append(f"🌐 URL: {url}")
+        # WiseOldMan API endpoint
+        url = f"https://api.wiseoldman.net/v2/players/{player_name.replace(' ', '_')}"
+        debug.append(f"🌐 Fetching from WiseOldMan: {url}")
 
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://secure.runescape.com/'
+            'User-Agent': 'OSRS-Bingo-Tracker/1.0'
         }
 
         response = requests.get(url, headers=headers, timeout=10)
         debug.append(f"📡 HTTP Status: {response.status_code}")
 
         if response.status_code == 404:
-            debug.append(f"⚠️ Player not found (too low level or doesn't exist)")
-            return None, debug
-
-        if response.status_code == 403:
-            debug.append(f"🚫 Access Forbidden - OSRS is blocking the request")
-            debug.append(f"Server: {response.headers.get('Server', 'Unknown')}")
-            debug.append(f"Response preview: {response.text[:100]}")
+            debug.append(f"⚠️ Player not tracked on WiseOldMan yet")
+            debug.append(f"💡 Players need to be added to WiseOldMan first")
             return None, debug
 
         if response.status_code != 200:
-            debug.append(f"❌ Unexpected status: {response.text[:100]}")
+            debug.append(f"❌ Error: {response.text[:200]}")
             return None, debug
 
-        # Parse CSV response
-        lines = response.text.strip().split('\n')
-        debug.append(f"📄 Received {len(lines)} lines")
+        data = response.json()
+        debug.append(f"✅ Got player data")
 
-        # Boss names in correct order
-        boss_names = [
-            "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
-            "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
-            "Clue Scrolls (all)", "Clue Scrolls (beginner)", "Clue Scrolls (easy)",
-            "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
-            "Clue Scrolls (master)", "LMS - Rank", "PvP Arena - Rank",
-            "Soul Wars Zeal", "Rifts closed", "Abyssal Sire", "Alchemical Hydra",
-            "Artio", "Barrows Chests", "Bryophyta", "Callisto", "Cal'varion",
-            "Cerberus", "Chambers of Xeric", "Chambers of Xeric: Challenge Mode",
-            "Chaos Elemental", "Chaos Fanatic", "Commander Zilyana", "Corporeal Beast",
-            "Crazy Archaeologist", "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
-            "Deranged Archaeologist", "Duke Sucellus", "General Graardor", "Giant Mole",
-            "Grotesque Guardians", "Hespori", "Kalphite Queen", "King Black Dragon",
-            "Kraken", "Kree'Arra", "K'ril Tsutsaroth", "Mimic", "Nex", "Nightmare",
-            "Phosani's Nightmare", "Obor", "Phantom Muspah", "Sarachnis", "Scorpia",
-            "Skotizo", "Spindel", "Tempoross", "The Gauntlet", "The Corrupted Gauntlet",
-            "The Leviathan", "The Whisperer", "Theatre of Blood", "Theatre of Blood: Hard Mode",
-            "Thermonuclear Smoke Devil", "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
-            "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis", "Vet'ion", "Vorkath",
-            "Wintertodt", "Zalcano", "Zulrah"
-        ]
+        # Extract boss KC from latestSnapshot
+        if 'latestSnapshot' not in data or 'data' not in data['latestSnapshot']:
+            debug.append(f"⚠️ No snapshot data available")
+            return None, debug
 
+        snapshot_data = data['latestSnapshot']['data']
         boss_data = {}
-        boss_lines = lines[24:]  # Skip first 24 lines (skills)
 
-        for i, line in enumerate(boss_lines):
-            if i >= len(boss_names):
-                break
+        # WiseOldMan uses different keys for bosses - map them to our format
+        boss_mapping = {
+            'abyssal_sire': 'Abyssal Sire',
+            'alchemical_hydra': 'Alchemical Hydra',
+            'artio': 'Artio',
+            'barrows_chests': 'Barrows Chests',
+            'bryophyta': 'Bryophyta',
+            'callisto': 'Callisto',
+            'calvarion': "Cal'varion",
+            'cerberus': 'Cerberus',
+            'chambers_of_xeric': 'Chambers of Xeric',
+            'chambers_of_xeric_challenge_mode': 'Chambers of Xeric: Challenge Mode',
+            'chaos_elemental': 'Chaos Elemental',
+            'chaos_fanatic': 'Chaos Fanatic',
+            'commander_zilyana': 'Commander Zilyana',
+            'corporeal_beast': 'Corporeal Beast',
+            'crazy_archaeologist': 'Crazy Archaeologist',
+            'dagannoth_prime': 'Dagannoth Prime',
+            'dagannoth_rex': 'Dagannoth Rex',
+            'dagannoth_supreme': 'Dagannoth Supreme',
+            'deranged_archaeologist': 'Deranged Archaeologist',
+            'duke_sucellus': 'Duke Sucellus',
+            'general_graardor': 'General Graardor',
+            'giant_mole': 'Giant Mole',
+            'grotesque_guardians': 'Grotesque Guardians',
+            'hespori': 'Hespori',
+            'kalphite_queen': 'Kalphite Queen',
+            'king_black_dragon': 'King Black Dragon',
+            'kraken': 'Kraken',
+            'kreearra': "Kree'Arra",
+            'kril_tsutsaroth': "K'ril Tsutsaroth",
+            'mimic': 'Mimic',
+            'nex': 'Nex',
+            'nightmare': 'Nightmare',
+            'phosanis_nightmare': "Phosani's Nightmare",
+            'obor': 'Obor',
+            'phantom_muspah': 'Phantom Muspah',
+            'sarachnis': 'Sarachnis',
+            'scorpia': 'Scorpia',
+            'skotizo': 'Skotizo',
+            'spindel': 'Spindel',
+            'tempoross': 'Tempoross',
+            'the_gauntlet': 'The Gauntlet',
+            'the_corrupted_gauntlet': 'The Corrupted Gauntlet',
+            'the_leviathan': 'The Leviathan',
+            'the_whisperer': 'The Whisperer',
+            'theatre_of_blood': 'Theatre of Blood',
+            'theatre_of_blood_hard_mode': 'Theatre of Blood: Hard Mode',
+            'thermonuclear_smoke_devil': 'Thermonuclear Smoke Devil',
+            'tombs_of_amascut': 'Tombs of Amascut',
+            'tombs_of_amascut_expert': 'Tombs of Amascut: Expert Mode',
+            'tzkal_zuk': 'TzKal-Zuk',
+            'tztok_jad': 'TzTok-Jad',
+            'vardorvis': 'Vardorvis',
+            'venenatis': 'Venenatis',
+            'vetion': "Vet'ion",
+            'vorkath': 'Vorkath',
+            'wintertodt': 'Wintertodt',
+            'zalcano': 'Zalcano',
+            'zulrah': 'Zulrah'
+        }
 
-            parts = line.split(',')
-            if len(parts) >= 2:
-                try:
-                    kc = int(parts[1])
-                    if kc > 0:
-                        boss_data[boss_names[i]] = kc
-                except (ValueError, IndexError):
-                    pass
+        # Extract KC from snapshot
+        for wom_key, display_name in boss_mapping.items():
+            if wom_key in snapshot_data:
+                kc = snapshot_data[wom_key].get('kills', 0)
+                if kc and kc > 0:
+                    boss_data[display_name] = kc
 
         debug.append(f"✅ Found {len(boss_data)} bosses with KC > 0")
         if boss_data:
