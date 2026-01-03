@@ -41,105 +41,71 @@ print(
     f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
 print()
 
-# OSRS Highscores fetcher
+
 def fetch_osrs_highscores(player_name):
-    """Fetch player's KC from OSRS highscores"""
+    """Fetch player's KC from OSRS highscores - returns (kc_data, debug_log)"""
+    debug = []
+
     try:
-        url = f"https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player={player_name}"
+        # Format player name (replace spaces with underscores)
+        formatted_name = player_name.replace(' ', '_')
+
+        url = f"https://secure.runescape.com/m=hiscore_oldschool/index_lite.php?player={formatted_name}"
+        debug.append(f"🌐 URL: {url}")
+
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://secure.runescape.com/'
         }
+
         response = requests.get(url, headers=headers, timeout=10)
+        debug.append(f"📡 HTTP Status: {response.status_code}")
+
+        if response.status_code == 404:
+            debug.append(f"⚠️ Player not found (too low level or doesn't exist)")
+            return None, debug
+
+        if response.status_code == 403:
+            debug.append(f"🚫 Access Forbidden - OSRS is blocking the request")
+            debug.append(f"Server: {response.headers.get('Server', 'Unknown')}")
+            debug.append(f"Response preview: {response.text[:100]}")
+            return None, debug
 
         if response.status_code != 200:
-            print(f"Failed to fetch highscores for {player_name}: HTTP {response.status_code}")
-            return None
+            debug.append(f"❌ Unexpected status: {response.text[:100]}")
+            return None, debug
 
         # Parse CSV response
         lines = response.text.strip().split('\n')
+        debug.append(f"📄 Received {len(lines)} lines")
 
-        # Boss/Activity names in the order they appear in highscores (after skills)
-        # First 24 lines are skills, lines 24+ are bosses/activities
+        # Boss names in correct order
         boss_names = [
-            "Bounty Hunter - Hunter",
-            "Bounty Hunter - Rogue",
-            "Bounty Hunter (Legacy) - Hunter",
-            "Bounty Hunter (Legacy) - Rogue",
-            "Clue Scrolls (all)",
-            "Clue Scrolls (beginner)",
-            "Clue Scrolls (easy)",
-            "Clue Scrolls (medium)",
-            "Clue Scrolls (hard)",
-            "Clue Scrolls (elite)",
-            "Clue Scrolls (master)",
-            "LMS - Rank",
-            "PvP Arena - Rank",
-            "Soul Wars Zeal",
-            "Rifts closed",
-            "Abyssal Sire",
-            "Alchemical Hydra",
-            "Artio",
-            "Barrows Chests",
-            "Bryophyta",
-            "Callisto",
-            "Cal'varion",
-            "Cerberus",
-            "Chambers of Xeric",
-            "Chambers of Xeric: Challenge Mode",
-            "Chaos Elemental",
-            "Chaos Fanatic",
-            "Commander Zilyana",
-            "Corporeal Beast",
-            "Crazy Archaeologist",
-            "Dagannoth Prime",
-            "Dagannoth Rex",
-            "Dagannoth Supreme",
-            "Deranged Archaeologist",
-            "Duke Sucellus",
-            "General Graardor",
-            "Giant Mole",
-            "Grotesque Guardians",
-            "Hespori",
-            "Kalphite Queen",
-            "King Black Dragon",
-            "Kraken",
-            "Kree'Arra",
-            "K'ril Tsutsaroth",
-            "Mimic",
-            "Nex",
-            "Nightmare",
-            "Phosani's Nightmare",
-            "Obor",
-            "Phantom Muspah",
-            "Sarachnis",
-            "Scorpia",
-            "Skotizo",
-            "Spindel",
-            "Tempoross",
-            "The Gauntlet",
-            "The Corrupted Gauntlet",
-            "The Leviathan",
-            "The Whisperer",
-            "Theatre of Blood",
-            "Theatre of Blood: Hard Mode",
-            "Thermonuclear Smoke Devil",
-            "Tombs of Amascut",
-            "Tombs of Amascut: Expert Mode",
-            "TzKal-Zuk",
-            "TzTok-Jad",
-            "Vardorvis",
-            "Venenatis",
-            "Vet'ion",
-            "Vorkath",
-            "Wintertodt",
-            "Zalcano",
-            "Zulrah"
+            "Bounty Hunter - Hunter", "Bounty Hunter - Rogue",
+            "Bounty Hunter (Legacy) - Hunter", "Bounty Hunter (Legacy) - Rogue",
+            "Clue Scrolls (all)", "Clue Scrolls (beginner)", "Clue Scrolls (easy)",
+            "Clue Scrolls (medium)", "Clue Scrolls (hard)", "Clue Scrolls (elite)",
+            "Clue Scrolls (master)", "LMS - Rank", "PvP Arena - Rank",
+            "Soul Wars Zeal", "Rifts closed", "Abyssal Sire", "Alchemical Hydra",
+            "Artio", "Barrows Chests", "Bryophyta", "Callisto", "Cal'varion",
+            "Cerberus", "Chambers of Xeric", "Chambers of Xeric: Challenge Mode",
+            "Chaos Elemental", "Chaos Fanatic", "Commander Zilyana", "Corporeal Beast",
+            "Crazy Archaeologist", "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
+            "Deranged Archaeologist", "Duke Sucellus", "General Graardor", "Giant Mole",
+            "Grotesque Guardians", "Hespori", "Kalphite Queen", "King Black Dragon",
+            "Kraken", "Kree'Arra", "K'ril Tsutsaroth", "Mimic", "Nex", "Nightmare",
+            "Phosani's Nightmare", "Obor", "Phantom Muspah", "Sarachnis", "Scorpia",
+            "Skotizo", "Spindel", "Tempoross", "The Gauntlet", "The Corrupted Gauntlet",
+            "The Leviathan", "The Whisperer", "Theatre of Blood", "Theatre of Blood: Hard Mode",
+            "Thermonuclear Smoke Devil", "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
+            "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis", "Vet'ion", "Vorkath",
+            "Wintertodt", "Zalcano", "Zulrah"
         ]
 
         boss_data = {}
-
-        # Skip first 24 lines (skills), then parse bosses
-        boss_lines = lines[24:]
+        boss_lines = lines[24:]  # Skip first 24 lines (skills)
 
         for i, line in enumerate(boss_lines):
             if i >= len(boss_names):
@@ -148,19 +114,22 @@ def fetch_osrs_highscores(player_name):
             parts = line.split(',')
             if len(parts) >= 2:
                 try:
-                    # parts[0] = rank, parts[1] = score (KC)
                     kc = int(parts[1])
-                    if kc > 0:  # Only include bosses with KC
+                    if kc > 0:
                         boss_data[boss_names[i]] = kc
                 except (ValueError, IndexError):
                     pass
 
-        print(f"Fetched {len(boss_data)} boss KCs for {player_name}")
-        return boss_data if boss_data else None
+        debug.append(f"✅ Found {len(boss_data)} bosses with KC > 0")
+        if boss_data:
+            sample = list(boss_data.items())[:3]
+            debug.append(f"Sample: {sample}")
+
+        return (boss_data if boss_data else None), debug
 
     except Exception as e:
-        print(f"Error fetching highscores for {player_name}: {e}")
-        return None
+        debug.append(f"💥 Exception: {type(e).__name__}: {str(e)}")
+        return None, debug
 
 
 @app.route('/kc/fetch/<player_name>', methods=['POST'])
@@ -239,11 +208,11 @@ def create_kc_snapshot():
         player_debug = []
         player_debug.append(f"📥 Fetching KC for: {player}")
 
-        kc_data = fetch_osrs_highscores(player)
+        kc_data, fetch_debug = fetch_osrs_highscores(player)  # Now returns tuple
+        player_debug.extend(fetch_debug)  # Add all fetch debug info
 
         if kc_data:
             player_debug.append(f"✅ Got {len(kc_data)} boss KCs")
-            player_debug.append(f"Sample bosses: {list(kc_data.items())[:3]}")
 
             try:
                 result = kc_collection.insert_one({
@@ -268,7 +237,7 @@ def create_kc_snapshot():
                     'debug': player_debug
                 })
         else:
-            player_debug.append(f"❌ No KC data returned (HTTP error or 0 KC)")
+            player_debug.append(f"❌ No KC data")
             results.append({
                 'player': player,
                 'success': False,
