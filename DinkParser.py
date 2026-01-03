@@ -389,7 +389,16 @@ def parse_death_embed(embed, message):
             # Try to extract NPC/location
             npc_match = re.search(r'has died.*?to\s+(.+?)(?:\.|$)', embed.description)
             if npc_match:
-                death_info['npc'] = npc_match.group(1).strip()
+                npc_text = npc_match.group(1).strip()
+
+                # Remove markdown links: [NPC Name](URL) -> NPC Name
+                npc_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', npc_text)
+
+                # Remove %NPC% placeholder if present
+                if npc_text == '%NPC%' or npc_text == '':
+                    npc_text = 'Unknown'
+
+                death_info['npc'] = npc_text
                 print(f"   💀 Death cause: {death_info['npc']}")
 
     return death_info if death_info['player'] else None

@@ -2853,8 +2853,16 @@ async function loadAnalyticsWithFilters() {
                         // Last death NPC
                         let lastNpcHtml = '';
                         if (player.last_npc) {
+                            // Clean up NPC display
+                            let npcDisplay = player.last_npc;
+
+                            // If it's Unknown or %NPC%, style it differently
+                            if (npcDisplay === 'Unknown' || npcDisplay === '%NPC%') {
+                                npcDisplay = '<span style="color: #999; font-style: italic;">Unknown cause</span>';
+                            }
+
                             lastNpcHtml = `<div style="font-size: 12px; color: #666; margin-top: 3px;">
-                                ⚔️ Last death: ${player.last_npc}${lastDeathText ? ` (${lastDeathText})` : ''}
+                                ⚔️ Last death: ${npcDisplay}${lastDeathText ? ` (${lastDeathText})` : ''}
                             </div>`;
                         } else if (lastDeathText) {
                             lastNpcHtml = `<div style="font-size: 12px; color: #666; margin-top: 3px;">
@@ -3425,7 +3433,18 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
-                            {
+                             {
+                version: "v1.9.0",
+                date: "2025-01-02",
+                title: "Track Collection Log and Loot Drop Separately",
+                changes: [
+                    { type: "fix", text: "Hopefully fixed weird discord bot rate limit issue" },
+                    { type: "fix", text: "Fixed death display with URLs" },
+                    { type: "fix", text: "Fixed death display incase no NPC" },
+                    { type: "fix", text: "Fixed tile finding logic. Shouldn't trigger on part names anymore.." },
+                ]
+            },
+                          {
                 version: "v1.8.2",
                 date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",
@@ -3433,7 +3452,7 @@ async function loadAnalyticsWithFilters() {
                     { type: "fix", text: "Added some missing functions for boss KC" },
                 ]
             },
-                           {
+                          {
                 version: "v1.8.1",
                 date: "2025-01-02",
                 title: "Track Collection Log and Loot Drop Separately",

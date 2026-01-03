@@ -702,7 +702,7 @@ def record_drop():
                 tile_item_clean = tile_item.strip().lower()
                 item_name_clean = item_name.strip().lower()
 
-                if tile_item_clean == item_name_clean or tile_item_clean in item_name_clean or item_name_clean in tile_item_clean:
+                if tile_item_clean == item_name_clean:
                     print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
 
                     if player_name not in tile['completedBy']:
