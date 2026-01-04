@@ -742,10 +742,18 @@ def record_drop():
 def manual_drop():
     """Manually add a drop to history ONLY (does NOT check tiles)"""
     data = request.json
-    player_name = data.get('player')
-    item_name = data.get('item')
+    password = data.get('password')
+
+    # Verify admin password
+    if password != ADMIN_PASSWORD:
+        print(f"❌ Unauthorized manual drop attempt")
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    player_name = data.get('playerName')  # Note: playerName, not player
+    item_name = data.get('itemName')  # Note: itemName, not item
 
     if not player_name or not item_name:
+        print(f"❌ Missing data. Received: {data}")
         return jsonify({'error': 'Missing player or item'}), 400
 
     print(f"\n{'=' * 60}")
