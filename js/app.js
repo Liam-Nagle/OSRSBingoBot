@@ -3433,10 +3433,18 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
-                             {
+                          {
+                version: "v1.9.1",
+                date: "2025-01-04",
+                title: "Changed Boss KC styling and added clan highscore widget",
+                changes: [
+                    { type: "feature", text: "Added a new clan highscore widget" },
+                    { type: "improvement", text: "Improved styling on the Boss KC modal" },
+                ]
+                          {
                 version: "v1.9.0",
                 date: "2025-01-02",
-                title: "Track Collection Log and Loot Drop Separately",
+                title: "Fixed bot hosting and tile finding logic",
                 changes: [
                     { type: "fix", text: "Hopefully fixed weird discord bot rate limit issue" },
                     { type: "fix", text: "Fixed death display with URLs" },
@@ -3727,6 +3735,54 @@ async function loadAnalyticsWithFilters() {
                 }
             });
         }
+
+
+        // ============================================
+        // CLAN HIGHSCORE
+        // ============================================
+
+        async function loadGroupHighscore() {
+            try {
+                const response = await fetch(`${API_URL}/clan-info`);
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch clan data');
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('groupName').textContent = data.clan_name || 'Unsociables';
+
+                    if (data.rank) {
+                        document.getElementById('groupRank').textContent = `Rank: #${data.rank.toLocaleString()}`;
+                    } else {
+                        document.getElementById('groupRank').textContent = 'Rank: --';
+                    }
+
+                    if (data.formatted_xp) {
+                        document.getElementById('groupXP').textContent = `Total XP: ${data.formatted_xp}`;
+                    } else {
+                        document.getElementById('groupXP').textContent = 'Total XP: --';
+                    }
+                } else {
+                    throw new Error(data.error || 'Unknown error');
+                }
+
+            } catch (error) {
+                console.error('Failed to load clan highscore:', error);
+                document.getElementById('groupName').textContent = 'Unsociables';
+                document.getElementById('groupRank').textContent = 'Rank: --';
+                document.getElementById('groupXP').textContent = 'Total XP: --';
+            }
+        }
+
+        // Load on page load
+        loadGroupHighscore();
+
+        // Refresh every 10 minutes
+        setInterval(loadGroupHighscore, 10 * 60 * 1000);
+
 
         // Run this when the page loads
         document.addEventListener('DOMContentLoaded', function() {

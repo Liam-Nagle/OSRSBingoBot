@@ -1096,25 +1096,156 @@
         .badge-improvement { background: #2196F3; color: white; }
         .badge-breaking { background: #f44336; color: white; }
 
-    .kc-tab {
-        background: transparent;
-        border: none;
-        padding: 10px 20px;
-        cursor: pointer;
-        color: white;
-        border-bottom: 3px solid transparent;
-        transition: all 0.3s;
-    }
+        .kc-tab {
+            background: transparent;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            color: white;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
 
-    .kc-tab.active {
-        border-bottom-color: #4CAF50;
-        font-weight: bold;
-    }
+        .kc-tab.active {
+            border-bottom-color: #4CAF50;
+            font-weight: bold;
+        }
 
-    .kc-tab:hover {
-        background: rgba(255,255,255,0.05);
-    }
+        .kc-tab:hover {
+            background: rgba(255,255,255,0.05);
+        }
 
-    .kc-tab-content {
-        padding: 20px 0;
-    }
+        .kc-tab-content {
+            padding: 20px 0;
+        }
+
+        .group-highscore {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            background: linear-gradient(135deg, #4a2c1a 0%, #2c1810 100%);
+            border: 3px solid #cd8b2d;
+            border-radius: 12px;
+            padding: 15px 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+            min-width: 250px;
+        }
+
+        .group-highscore-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .group-icon {
+            font-size: 48px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+
+        .group-info {
+            flex: 1;
+        }
+
+        .group-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: #cd8b2d;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 5px;
+        }
+
+        .group-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            font-size: 13px;
+            color: #f4e4c1;
+        }
+
+        .group-stats span {
+            opacity: 0.9;
+        }
+
+        @media (max-width: 768px) {
+            .group-highscore {
+                position: relative;
+                top: auto;
+                right: auto;
+                margin-bottom: 20px;
+            }
+        }
+
+        #kcModal .modal-content {
+        background: linear-gradient(135deg, #2c1810 0%, #4a2c1a 100%);
+        color: #f4e4c1;
+        }
+
+        #kcModal h2 {
+            color: #cd8b2d;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #kcModal h3 {
+            color: #cd8b2d;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .kc-tab {
+            background: rgba(205, 139, 45, 0.1);
+            border: 2px solid rgba(205, 139, 45, 0.3);
+            color: #f4e4c1;
+            padding: 12px 24px;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+            border-bottom: none;
+        }
+
+        .kc-tab:hover {
+            background: rgba(205, 139, 45, 0.2);
+            border-color: #cd8b2d;
+        }
+
+        .kc-tab.active {
+            background: rgba(205, 139, 45, 0.3);
+            border-color: #cd8b2d;
+            color: #cd8b2d;
+            box-shadow: 0 -2px 8px rgba(205, 139, 45, 0.3);
+        }
+
+        #kcAdminControls {
+            background: rgba(205, 139, 45, 0.1) !important;
+            border: 2px solid rgba(205, 139, 45, 0.3);
+        }
+
+        #kcModal .close-btn {
+            background: rgba(139, 0, 0, 0.8);
+            color: #f4e4c1;
+            border: 2px solid rgba(139, 0, 0, 0.6);
+            font-size: 24px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #kcModal .close-btn:hover {
+            background: rgba(139, 0, 0, 1);
+            transform: rotate(90deg);
+            box-shadow: 0 4px 12px rgba(139, 0, 0, 0.6);
+        }
+
+        #bossLeaderboardSelect {
+            background: rgba(205, 139, 45, 0.1) !important;
+            border: 2px solid rgba(205, 139, 45, 0.3) !important;
+            color: #f4e4c1 !important;
+            font-weight: bold;
+        }
+
+        #bossLeaderboardSelect option {
+            background: #2c1810;
+            color: #f4e4c1;
+        }

@@ -786,6 +786,62 @@ def manual_drop():
     else:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+
+@app.route('/clan-info', methods=['GET'])
+def get_clan_info():
+    """Fetch OSRS clan information from Temple OSRS"""
+    try:
+        clan_name = 'Unsociables'
+
+        # Temple OSRS Clan API
+        url = f'https://templeosrs.com/api/clan_info.php?id={clan_name.replace(" ", "+")}'
+
+        headers = {
+            'User-Agent': 'OSRS-Bingo-Tracker/1.0'
+        }
+
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            raise Exception(f'Failed to fetch clan data: {response.status_code}')
+
+        data = response.json()
+
+        # Temple OSRS returns clan info including rank and total XP
+        clan_rank = data.get('Rank')
+        total_xp = data.get('Total_Xp', 0)
+        member_count = data.get('Member_Count', 0)
+
+        # Format XP for display
+        def format_xp(xp):
+            if xp >= 1_000_000_000:
+                return f"{xp / 1_000_000_000:.2f}B"
+            elif xp >= 1_000_000:
+                return f"{xp / 1_000_000:.1f}M"
+            else:
+                return f"{xp:,}"
+
+        return jsonify({
+            'success': True,
+            'clan_name': clan_name,
+            'rank': clan_rank,
+            'total_xp': total_xp,
+            'formatted_xp': format_xp(total_xp) if total_xp else None,
+            'member_count': member_count
+        })
+
+    except Exception as e:
+        print(f"❌ Error fetching clan info: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'clan_name': 'Unsociables',
+            'rank': None,
+            'total_xp': None,
+            'formatted_xp': None,
+            'member_count': None
+        })
+
 @app.route('/history-only', methods=['POST'])
 def record_history_only():
     """Save drop to history ONLY (no tile checking) - for historical imports"""
