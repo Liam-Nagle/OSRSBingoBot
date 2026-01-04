@@ -738,6 +738,46 @@ def record_drop():
     })
 
 
+@app.route('/manual-drop', methods=['POST'])
+def manual_drop():
+    """Manually add a drop to history ONLY (does NOT check tiles)"""
+    data = request.json
+    player_name = data.get('player')
+    item_name = data.get('item')
+
+    if not player_name or not item_name:
+        return jsonify({'error': 'Missing player or item'}), 400
+
+    print(f"\n{'=' * 60}")
+    print(f"📥 Manual drop entry:")
+    print(f"   Player: {player_name}")
+    print(f"   Item: {item_name}")
+    print(f"{'=' * 60}")
+
+    # Save to history ONLY (no tile checking)
+    if USE_MONGODB:
+        try:
+            history_collection.insert_one({
+                'player': player_name,
+                'item': item_name,
+                'drop_type': 'loot',
+                'source': 'Manual Entry',
+                'value': 0,
+                'value_string': '',
+                'timestamp': datetime.utcnow()
+            })
+            print(f"💾 Saved to history collection")
+            print(f"{'=' * 60}\n")
+            return jsonify({
+                'success': True,
+                'message': f'Added {item_name} to {player_name}\'s history'
+            })
+        except Exception as e:
+            print(f"❌ Error saving to history: {e}")
+            return jsonify({'error': f'Failed to save: {str(e)}'}), 500
+    else:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
 @app.route('/history-only', methods=['POST'])
 def record_history_only():
     """Save drop to history ONLY (no tile checking) - for historical imports"""
