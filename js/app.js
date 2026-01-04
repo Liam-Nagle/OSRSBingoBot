@@ -30,7 +30,7 @@
             }
         };
 
-        const API_URL = 'https://osrsbingo.duckdns.org';
+        const API_URL = 'https://osrsbingobot.onrender.com';
 
         function changePlayer() {
             currentPlayer = document.getElementById('playerSelect').value || null;
