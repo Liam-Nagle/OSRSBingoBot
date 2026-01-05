@@ -1465,7 +1465,7 @@
             transform: translateY(-2px);
         }
 
-        * OSRS-Themed Button Classes for Boss KC Modal */
+        /* OSRS-Themed Button Classes for Boss KC Modal */
         .btn-primary {
             background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
             color: #2c1810;
