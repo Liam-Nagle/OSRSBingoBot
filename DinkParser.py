@@ -801,7 +801,14 @@ if __name__ == "__main__":
         await asyncio.sleep(300)
         print("✅ Will update GIM in 5 mins")
 
+    @bot.event
+    async def on_ready():
+        print(f'{bot.user} is now tracking Dink drops!')
+        print('Listening for loot drops...')
 
-    auto_update_gim.start()
+        # Start GIM auto-update task
+        if not auto_update_gim.is_running():
+            auto_update_gim.start()
+            print('🔄 Started GIM auto-update task')
 
     bot.run(TOKEN)
