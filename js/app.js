@@ -3145,7 +3145,7 @@ async function loadAnalyticsWithFilters() {
             console.log('Rendering KC Overview with data:', data);
 
             if (!data || Object.keys(data).length === 0) {
-                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No KC data yet! Click "Fetch All Players KC" to get started.</div>';
+                container.innerHTML = '<div class="loading-message" style="padding: 40px;">No KC data yet! Click "Fetch All Players KC" to get started.</div>';
                 return;
             }
 
@@ -3159,26 +3159,26 @@ async function loadAnalyticsWithFilters() {
                 const lastUpdate = playerData.timestamp ? new Date(playerData.timestamp).toLocaleString() : 'Unknown';
 
                 html += `
-                    <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-                        <h3 style="margin: 0 0 15px 0; color: #cd8b2d;">${player}</h3>
-                        <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 15px;">Last updated: ${lastUpdate}</div>
-                        <div style="font-size: 13px;">
+                    <div class="player-kc-card">
+                        <h3>${player}</h3>
+                        <div style="font-size: 11px; color: #8b7355; margin-bottom: 15px;">Last updated: ${lastUpdate}</div>
+                        <div>
                 `;
 
                 if (topBosses.length > 0) {
                     topBosses.forEach(([boss, kc]) => {
-                        html += `<div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        html += `<div class="boss-kc-item">
                             <span>${boss}</span>
-                            <span style="color: #4CAF50; font-weight: bold;">${kc.toLocaleString()} KC</span>
+                            <span class="kc-value">${kc.toLocaleString()} KC</span>
                         </div>`;
                     });
                 } else {
-                    html += '<div style="color: #666; font-style: italic;">No boss KC found</div>';
+                    html += '<div style="color: #8b7355; font-style: italic; text-align: center; padding: 20px;">No boss KC found</div>';
                 }
 
                 html += `
                         </div>
-                        <button onclick="showPlayerKCDetail('${player}')" style="margin-top: 15px; padding: 8px 16px; background: #cd8b2d; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 13px;">
+                        <button onclick="showPlayerKCDetail('${player}')" class="btn-primary" style="margin-top: 15px; width: 100%;">
                             View All Bosses
                         </button>
                     </div>
@@ -3532,7 +3532,7 @@ async function loadAnalyticsWithFilters() {
                 title: "Changed Boss KC styling and added clan highscore widget",
                 changes: [
                     { type: "improvement", text: "Updated some styling across the site" },
-                    { type: "Fix", text: "BossKC Modal wouldn't always load without switching tabs. Should be fixed" },
+                    { type: "fix", text: "BossKC Modal wouldn't always load without switching tabs. Should be fixed" },
                 ]
             },
                           {
