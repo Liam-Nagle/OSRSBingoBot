@@ -644,8 +644,20 @@ async def scrape_gim_highscore():
         print(f"🛡️ Scraping GIM Highscore for: {group_name}")
         print(f"{'=' * 60}")
 
+        # More realistic browser headers
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1'
         }
 
         base_url = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page='
@@ -655,7 +667,19 @@ async def scrape_gim_highscore():
         prestige_count = 0
         found = False
 
-        # Search through pages
+        # Start with a session for cookies
+        session = requests.Session()
+
+        # Try to get initial cookies by visiting the homepage first
+        print("🌐 Getting initial session...")
+        try:
+            session.get('https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/',
+                        headers=headers, timeout=15)
+            time.sleep(random.uniform(2.0, 4.0))
+        except:
+            pass
+
+        # Search through pages (max 150 pages)
         for page in range(1, 151):
             if found:
                 break
@@ -664,24 +688,38 @@ async def scrape_gim_highscore():
 
             try:
                 print(f"📄 Fetching page {page}...")
-                time.sleep(random.uniform(1.0, 3.0))
 
-                response = requests.get(url, headers=headers, timeout=15)
+                # Longer random delay (3-5 seconds) to look more human
+                time.sleep(random.uniform(3.0, 5.0))
+
+                response = session.get(url, headers=headers, timeout=15)
 
                 if response.status_code == 403:
-                    print(f"⚠️  Blocked (403) - stopping")
-                    break
+                    print(f"⚠️  Page {page} blocked (403) - trying with different approach...")
+                    # Wait longer and try again
+                    time.sleep(random.uniform(5.0, 8.0))
+                    response = session.get(url, headers=headers, timeout=15)
+
+                    if response.status_code == 403:
+                        print(f"❌ Still blocked - stopping search")
+                        break
 
                 if response.status_code != 200:
+                    print(f"⚠️  Page {page} returned status {response.status_code}")
                     continue
 
                 html = response.text
+
+                # Parse tbody
                 tbody_match = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.DOTALL)
                 if not tbody_match:
+                    print(f"⚠️  No tbody found on page {page}")
                     continue
 
                 tbody_content = tbody_match.group(1)
                 rows = re.findall(r'<tr[^>]*>(.*?)</tr>', tbody_content, re.DOTALL)
+
+                print(f"   Found {len(rows)} rows")
 
                 for row_html in rows:
                     cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
@@ -689,57 +727,76 @@ async def scrape_gim_highscore():
                     if len(cells) < 4:
                         continue
 
+                    # Cell 0: Rank
                     rank_text = re.sub(r'<.*?>', '', cells[0]).strip()
                     try:
                         rank = int(rank_text.replace(',', ''))
                     except:
                         continue
 
+                    # Cell 1: Group name
                     name_cell = cells[1]
-                    has_star = '<img' in name_cell and 'prestige' in name_cell.lower()
+                    has_star = '<img' in name_cell and ('prestige' in name_cell.lower() or 'star' in name_cell.lower())
                     clean_name = re.sub(r'<.*?>', '', name_cell).strip().lower()
 
+                    # Cell 3: XP
                     xp_text = re.sub(r'<.*?>', '', cells[3]).strip()
                     try:
                         xp = int(xp_text.replace(',', ''))
                     except:
                         xp = None
 
+                    # Check if this is our group
                     if group_name in clean_name:
-                        print(f"\n✅ FOUND at rank #{rank}")
+                        print(f"\n✅ FOUND: '{clean_name}' at rank #{rank}")
+
                         overall_rank = rank
                         total_xp = xp
                         found = True
 
+                        if total_xp:
+                            print(f"💎 Total XP: {total_xp:,}")
+
                         if has_star:
                             prestige_count += 1
-                            print(f"⭐ Has PRESTIGE!")
+                            print(f"⭐ Group has PRESTIGE status!")
+                        else:
+                            print(f"❌ Group does NOT have prestige")
 
                         break
 
+                    # Count prestige groups before us
                     if has_star and not found:
                         prestige_count += 1
 
-                if page % 10 == 0 and not found:
-                    print(f"   💤 Checked {prestige_count} prestige groups...")
+                # Progress update every 5 pages
+                if page % 5 == 0 and not found:
+                    print(f"   💤 Checked {prestige_count} prestige groups so far...")
 
             except Exception as e:
-                print(f"❌ Error page {page}: {e}")
+                print(f"❌ Error on page {page}: {e}")
+                # Wait longer on error
+                time.sleep(random.uniform(5.0, 8.0))
                 continue
 
         if not found:
+            print(f"❌ Group '{group_name}' not found")
             return False
 
+        # Calculate prestige rank
         prestige_rank = prestige_count if prestige_count > 0 else None
 
-        print(f"\n📊 RESULTS:")
-        print(f"   Overall: #{overall_rank:,}")
+        print(f"\n📊 FINAL RESULTS:")
+        print(f"   Overall Rank: #{overall_rank:,}")
         if prestige_rank:
-            print(f"   Prestige: #{prestige_rank:,} ⭐")
+            print(f"   Prestige Rank: #{prestige_rank:,} ⭐")
+        else:
+            print(f"   Prestige: LOST")
         if total_xp:
-            print(f"   XP: {total_xp:,}")
+            print(f"   Total XP: {total_xp:,}")
         print(f"{'=' * 60}\n")
 
+        # Save to MongoDB
         gim_data = {
             'group_name': 'Unsociables',
             'overall_rank': overall_rank,
@@ -760,6 +817,8 @@ async def scrape_gim_highscore():
 
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
