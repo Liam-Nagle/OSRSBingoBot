@@ -818,8 +818,8 @@ def get_clan_info():
         print(f"🔍 Searching for GIM group: {group_name}")
         print(f"{'=' * 60}")
 
-        # OSRS GIM Hiscores URL
-        base_url = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/overall?table=0&page='
+        # CORRECT OSRS GIM Hiscores URL
+        base_url = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page='
 
         overall_rank = None
         total_xp = None
@@ -834,7 +834,7 @@ def get_clan_info():
             url = f"{base_url}{page}"
 
             try:
-                print(f"📄 Fetching page {page}...")
+                print(f"📄 Fetching page {page}: {url}")
                 response = requests.get(url, headers=headers, timeout=15)
 
                 if response.status_code != 200:
@@ -843,48 +843,76 @@ def get_clan_info():
 
                 html = response.text
 
-                # Parse the table rows
-                rows = re.findall(r'<tr[^>]*>.*?</tr>', html, re.DOTALL)
+                # Debug: Save first page HTML for inspection
+                if page == 1:
+                    print(f"📝 First page HTML length: {len(html)} chars")
 
-                for row in rows:
-                    # Extract rank
-                    rank_match = re.search(r'<td[^>]*>(\d+)</td>', row)
-                    if not rank_match:
+                # Parse the table - OSRS uses <tbody> with rows
+                # Each row format: <tr><td>Rank</td><td>Name (possibly with star)</td><td>Level</td><td>XP</td></tr>
+
+                # Find all table rows in the main tbody
+                tbody_match = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.DOTALL)
+                if not tbody_match:
+                    print(f"⚠️  No tbody found on page {page}")
+                    continue
+
+                tbody_content = tbody_match.group(1)
+                rows = re.findall(r'<tr[^>]*>(.*?)</tr>', tbody_content, re.DOTALL)
+
+                print(f"   Found {len(rows)} rows on page {page}")
+
+                for row_html in rows:
+                    # Extract all <td> cells
+                    cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
+
+                    if len(cells) < 4:
                         continue
 
-                    rank = int(rank_match.group(1))
-
-                    # Extract group name (might contain star image)
-                    name_match = re.search(r'<td[^>]*class="[^"]*name[^"]*"[^>]*>(.*?)</td>', row, re.IGNORECASE)
-                    if not name_match:
+                    # Cell 0: Rank
+                    rank_text = re.sub(r'<.*?>', '', cells[0]).strip()
+                    try:
+                        rank = int(rank_text.replace(',', ''))
+                    except:
                         continue
 
-                    name_cell = name_match.group(1)
+                    # Cell 1: Group name (may contain star image)
+                    name_cell = cells[1]
 
-                    # Check if this row has a prestige star
-                    has_star = 'prestige' in name_cell.lower() or '⭐' in name_cell or 'star' in name_cell.lower()
+                    # Check for prestige star in name cell
+                    # Star appears as: <img src="..." class="prestige-icon" or similar
+                    has_star = '<img' in name_cell and ('prestige' in name_cell.lower() or 'star' in name_cell.lower())
 
-                    # Extract actual group name (remove HTML tags)
+                    # Extract clean group name
                     clean_name = re.sub(r'<.*?>', '', name_cell).strip().lower()
+
+                    # Cell 3: XP (last cell)
+                    xp_text = re.sub(r'<.*?>', '', cells[3]).strip()
+                    try:
+                        xp = int(xp_text.replace(',', ''))
+                    except:
+                        xp = None
+
+                    # Debug first few rows
+                    if page == 1 and rank <= 5:
+                        print(f"   Row {rank}: '{clean_name}' | Prestige: {has_star} | XP: {xp}")
 
                     # Check if this is our group
                     if group_name in clean_name:
-                        print(f"\n✅ FOUND: {clean_name} at rank #{rank}")
+                        print(f"\n✅ FOUND: '{clean_name}' at rank #{rank}")
 
                         overall_rank = rank
+                        total_xp = xp
                         found = True
 
-                        # Extract XP
-                        xp_match = re.search(r'<td[^>]*>([\d,]+)</td>\s*</tr>', row)
-                        if xp_match:
-                            xp_str = xp_match.group(1).replace(',', '')
-                            total_xp = int(xp_str)
+                        if total_xp:
                             print(f"💎 Total XP: {total_xp:,}")
 
                         # Check if our group has prestige
                         if has_star:
                             prestige_count += 1  # Include ourselves
                             print(f"⭐ Group has PRESTIGE status!")
+                        else:
+                            print(f"❌ Group does NOT have prestige")
 
                         break
 
@@ -894,6 +922,7 @@ def get_clan_info():
 
                 # Small delay to avoid rate limiting
                 if page % 10 == 0:
+                    print(f"   💤 Checked {prestige_count} prestige groups so far...")
                     import time
                     time.sleep(0.5)
 
@@ -902,7 +931,7 @@ def get_clan_info():
                 continue
 
         if not found:
-            raise Exception('Group not found in top 5000')
+            raise Exception(f'Group "{group_name}" not found in top 5000')
 
         # Calculate prestige rank (only if group has prestige)
         prestige_rank = prestige_count if prestige_count > 0 else None
@@ -912,12 +941,15 @@ def get_clan_info():
         if prestige_rank:
             print(f"   Prestige Rank: #{prestige_rank:,} ⭐")
         else:
-            print(f"   Prestige Rank: N/A (no prestige)")
-        print(f"   Total XP: {total_xp:,}")
+            print(f"   Prestige Status: LOST (no star)")
+        if total_xp:
+            print(f"   Total XP: {total_xp:,}")
         print(f"{'=' * 60}\n")
 
         # Format XP
         def format_xp(xp):
+            if not xp:
+                return None
             if xp >= 1_000_000_000:
                 return f"{xp / 1_000_000_000:.2f}B"
             elif xp >= 1_000_000:
@@ -932,7 +964,7 @@ def get_clan_info():
             'prestige_rank': prestige_rank,
             'has_prestige': prestige_rank is not None,
             'total_xp': total_xp,
-            'formatted_xp': format_xp(total_xp) if total_xp else None
+            'formatted_xp': format_xp(total_xp)
         }
 
         # Cache for 1 hour
@@ -962,6 +994,7 @@ def get_clan_info():
             'total_xp': None,
             'formatted_xp': None
         })
+
 
 @app.route('/history-only', methods=['POST'])
 def record_history_only():
