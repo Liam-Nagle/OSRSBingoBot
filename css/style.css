@@ -905,35 +905,6 @@
             background: linear-gradient(135deg, rgba(205, 127, 50, 0.2) 0%, rgba(205, 127, 50, 0.05) 100%);
         }
 
-        /* Close Button (X) - Top Right of Modals */
-        .modal-close-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(139, 26, 26, 0.1);  /* Light red background */
-            border: 2px solid #8b1a1a;
-            color: #8b1a1a;
-            font-size: 24px;
-            font-weight: bold;
-            cursor: pointer;
-            padding: 5px 12px;
-            line-height: 1;
-            border-radius: 5px;
-            transition: all 0.2s;
-            z-index: 10;
-            width: 36px;
-            height: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-close-btn:hover {
-        background: #8b1a1a;
-        color: white;
-        transform: scale(1.05);
-        }
-
         /* Tile Info Modal Specific Styles */
         .tile-info-modal .modal-content {
             max-width: 500px;
@@ -1216,7 +1187,7 @@
         }
 
         #kcModal h2 {
-            color: #8b6f47;
+            color: #6d5635;
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -1225,7 +1196,7 @@
         }
 
         #kcModal h3 {
-            color: #8b6f47;
+            color: #6d5635;
             margin-top: 20px;
             margin-bottom: 10px;
             font-size: 18px;
@@ -1270,7 +1241,7 @@
         }
 
         #kcAdminControls h3 {
-            color: #8b6f47;
+            color: #6d5635;
             margin-top: 0;
             margin-bottom: 15px;
         }
@@ -1305,7 +1276,7 @@
             background: rgba(205, 139, 45, 0.15);
             border: none;
             border-bottom: 3px solid transparent;
-            color: #8b6f47;
+            color: #6d5635;
             padding: 12px 24px;
             cursor: pointer;
             transition: all 0.3s;
@@ -1350,7 +1321,7 @@
         }
 
         .player-kc-card h3 {
-            color: #8b6f47;
+            color: #6d5635;
             margin: 0 0 10px 0;
             font-size: 18px;
         }
@@ -1435,7 +1406,7 @@
         .leaderboard-rank {
             font-size: 20px;
             font-weight: bold;
-            color: #8b6f47;
+            color: #6d5635;
             min-width: 40px;
         }
 
