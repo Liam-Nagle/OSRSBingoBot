@@ -3434,6 +3434,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
                           {
+                version: "v1.9.2",
+                date: "2025-01-04",
+                title: "Changed Boss KC styling and added clan highscore widget",
+                changes: [
+                    { type: "improvement", text: "Improved clan highscore widget" },
+                ]
+            },
+                          {
                 version: "v1.9.1",
                 date: "2025-01-04",
                 title: "Changed Boss KC styling and added clan highscore widget",
@@ -3441,6 +3449,7 @@ async function loadAnalyticsWithFilters() {
                     { type: "feature", text: "Added a new clan highscore widget" },
                     { type: "improvement", text: "Improved styling on the Boss KC modal" },
                 ]
+            },
                           {
                 version: "v1.9.0",
                 date: "2025-01-02",
@@ -3738,28 +3747,45 @@ async function loadAnalyticsWithFilters() {
 
 
         // ============================================
-        // CLAN HIGHSCORE
+        // GIM HIGHSCORE
         // ============================================
 
         async function loadGroupHighscore() {
             try {
+                // Show loading state
+                document.getElementById('groupName').textContent = 'Loading...';
+                document.getElementById('groupRank').textContent = 'Overall: ...';
+                document.getElementById('groupPrestige').textContent = 'Prestige: ...';
+                document.getElementById('groupXP').textContent = 'Total XP: ...';
+
                 const response = await fetch(`${API_URL}/clan-info`);
 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch clan data');
+                    throw new Error('Failed to fetch GIM data');
                 }
 
                 const data = await response.json();
 
                 if (data.success) {
-                    document.getElementById('groupName').textContent = data.clan_name || 'Unsociables';
+                    document.getElementById('groupName').textContent = data.group_name || 'Unsociables';
 
-                    if (data.rank) {
-                        document.getElementById('groupRank').textContent = `Rank: #${data.rank.toLocaleString()}`;
+                    // Overall GIM rank
+                    if (data.overall_rank) {
+                        document.getElementById('groupRank').textContent = `Overall: #${data.overall_rank.toLocaleString()}`;
                     } else {
-                        document.getElementById('groupRank').textContent = 'Rank: --';
+                        document.getElementById('groupRank').textContent = 'Overall: Not ranked';
                     }
 
+                    // Prestige rank
+                    if (data.prestige_rank) {
+                        document.getElementById('groupPrestige').textContent = `Prestige: #${data.prestige_rank.toLocaleString()} ⭐`;
+                    } else if (data.has_prestige === false) {
+                        document.getElementById('groupPrestige').textContent = 'Prestige: Lost';
+                    } else {
+                        document.getElementById('groupPrestige').textContent = 'Prestige: Not ranked';
+                    }
+
+                    // Total XP
                     if (data.formatted_xp) {
                         document.getElementById('groupXP').textContent = `Total XP: ${data.formatted_xp}`;
                     } else {
@@ -3770,9 +3796,10 @@ async function loadAnalyticsWithFilters() {
                 }
 
             } catch (error) {
-                console.error('Failed to load clan highscore:', error);
+                console.error('Failed to load GIM highscore:', error);
                 document.getElementById('groupName').textContent = 'Unsociables';
-                document.getElementById('groupRank').textContent = 'Rank: --';
+                document.getElementById('groupRank').textContent = 'Overall: Error';
+                document.getElementById('groupPrestige').textContent = 'Prestige: Error';
                 document.getElementById('groupXP').textContent = 'Total XP: --';
             }
         }
@@ -3780,8 +3807,8 @@ async function loadAnalyticsWithFilters() {
         // Load on page load
         loadGroupHighscore();
 
-        // Refresh every 10 minutes
-        setInterval(loadGroupHighscore, 10 * 60 * 1000);
+        // Refresh every 1 hour (cached on server anyway)
+        setInterval(loadGroupHighscore, 60 * 60 * 1000);
 
 
         // Run this when the page loads

@@ -6,6 +6,15 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 import requests
 from datetime import datetime
+from datetime import datetime, timedelta
+import re
+from html.parser import HTMLParser
+
+# Cache for GIM data (so we don't scrape every request)
+gim_cache = {
+    'data': None,
+    'expires': None
+}
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
@@ -789,30 +798,125 @@ def manual_drop():
 
 @app.route('/clan-info', methods=['GET'])
 def get_clan_info():
-    """Fetch OSRS clan information from Temple OSRS"""
-    try:
-        clan_name = 'Unsociables'
+    """Fetch GIM group information from OSRS hiscores with prestige rank calculation"""
+    global gim_cache
 
-        # Temple OSRS Clan API
-        url = f'https://templeosrs.com/api/clan_info.php?id={clan_name.replace(" ", "+")}'
+    # Check cache first (1 hour expiry)
+    now = datetime.utcnow()
+    if gim_cache['data'] and gim_cache['expires'] and now < gim_cache['expires']:
+        print(f"✅ Returning cached GIM data (expires in {(gim_cache['expires'] - now).seconds}s)")
+        return jsonify(gim_cache['data'])
+
+    try:
+        group_name = 'unsociables'
 
         headers = {
-            'User-Agent': 'OSRS-Bingo-Tracker/1.0'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
-        response = requests.get(url, headers=headers, timeout=10)
+        print(f"\n{'=' * 60}")
+        print(f"🔍 Searching for GIM group: {group_name}")
+        print(f"{'=' * 60}")
 
-        if response.status_code != 200:
-            raise Exception(f'Failed to fetch clan data: {response.status_code}')
+        # OSRS GIM Hiscores URL
+        base_url = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/overall?table=0&page='
 
-        data = response.json()
+        overall_rank = None
+        total_xp = None
+        prestige_count = 0
+        found = False
 
-        # Temple OSRS returns clan info including rank and total XP
-        clan_rank = data.get('Rank')
-        total_xp = data.get('Total_Xp', 0)
-        member_count = data.get('Member_Count', 0)
+        # Search through pages (max 250 pages = top 5000 groups)
+        for page in range(1, 251):
+            if found:
+                break
 
-        # Format XP for display
+            url = f"{base_url}{page}"
+
+            try:
+                print(f"📄 Fetching page {page}...")
+                response = requests.get(url, headers=headers, timeout=15)
+
+                if response.status_code != 200:
+                    print(f"⚠️  Page {page} returned status {response.status_code}")
+                    continue
+
+                html = response.text
+
+                # Parse the table rows
+                rows = re.findall(r'<tr[^>]*>.*?</tr>', html, re.DOTALL)
+
+                for row in rows:
+                    # Extract rank
+                    rank_match = re.search(r'<td[^>]*>(\d+)</td>', row)
+                    if not rank_match:
+                        continue
+
+                    rank = int(rank_match.group(1))
+
+                    # Extract group name (might contain star image)
+                    name_match = re.search(r'<td[^>]*class="[^"]*name[^"]*"[^>]*>(.*?)</td>', row, re.IGNORECASE)
+                    if not name_match:
+                        continue
+
+                    name_cell = name_match.group(1)
+
+                    # Check if this row has a prestige star
+                    has_star = 'prestige' in name_cell.lower() or '⭐' in name_cell or 'star' in name_cell.lower()
+
+                    # Extract actual group name (remove HTML tags)
+                    clean_name = re.sub(r'<.*?>', '', name_cell).strip().lower()
+
+                    # Check if this is our group
+                    if group_name in clean_name:
+                        print(f"\n✅ FOUND: {clean_name} at rank #{rank}")
+
+                        overall_rank = rank
+                        found = True
+
+                        # Extract XP
+                        xp_match = re.search(r'<td[^>]*>([\d,]+)</td>\s*</tr>', row)
+                        if xp_match:
+                            xp_str = xp_match.group(1).replace(',', '')
+                            total_xp = int(xp_str)
+                            print(f"💎 Total XP: {total_xp:,}")
+
+                        # Check if our group has prestige
+                        if has_star:
+                            prestige_count += 1  # Include ourselves
+                            print(f"⭐ Group has PRESTIGE status!")
+
+                        break
+
+                    # Count prestige groups before us
+                    if has_star and not found:
+                        prestige_count += 1
+
+                # Small delay to avoid rate limiting
+                if page % 10 == 0:
+                    import time
+                    time.sleep(0.5)
+
+            except Exception as e:
+                print(f"❌ Error fetching page {page}: {e}")
+                continue
+
+        if not found:
+            raise Exception('Group not found in top 5000')
+
+        # Calculate prestige rank (only if group has prestige)
+        prestige_rank = prestige_count if prestige_count > 0 else None
+
+        print(f"\n📊 RESULTS:")
+        print(f"   Overall Rank: #{overall_rank:,}")
+        if prestige_rank:
+            print(f"   Prestige Rank: #{prestige_rank:,} ⭐")
+        else:
+            print(f"   Prestige Rank: N/A (no prestige)")
+        print(f"   Total XP: {total_xp:,}")
+        print(f"{'=' * 60}\n")
+
+        # Format XP
         def format_xp(xp):
             if xp >= 1_000_000_000:
                 return f"{xp / 1_000_000_000:.2f}B"
@@ -821,25 +925,42 @@ def get_clan_info():
             else:
                 return f"{xp:,}"
 
-        return jsonify({
+        result = {
             'success': True,
-            'clan_name': clan_name,
-            'rank': clan_rank,
+            'group_name': 'Unsociables',
+            'overall_rank': overall_rank,
+            'prestige_rank': prestige_rank,
+            'has_prestige': prestige_rank is not None,
             'total_xp': total_xp,
-            'formatted_xp': format_xp(total_xp) if total_xp else None,
-            'member_count': member_count
-        })
+            'formatted_xp': format_xp(total_xp) if total_xp else None
+        }
+
+        # Cache for 1 hour
+        gim_cache['data'] = result
+        gim_cache['expires'] = now + timedelta(hours=1)
+        print(f"💾 Cached GIM data for 1 hour")
+
+        return jsonify(result)
 
     except Exception as e:
-        print(f"❌ Error fetching clan info: {e}")
+        print(f"❌ Error fetching GIM info: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Return cached data if available, even if expired
+        if gim_cache['data']:
+            print("⚠️  Returning stale cached data due to error")
+            return jsonify(gim_cache['data'])
+
         return jsonify({
             'success': False,
             'error': str(e),
-            'clan_name': 'Unsociables',
-            'rank': None,
+            'group_name': 'Unsociables',
+            'overall_rank': None,
+            'prestige_rank': None,
+            'has_prestige': False,
             'total_xp': None,
-            'formatted_xp': None,
-            'member_count': None
+            'formatted_xp': None
         })
 
 @app.route('/history-only', methods=['POST'])

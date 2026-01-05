@@ -1119,6 +1119,10 @@
             padding: 20px 0;
         }
 
+        /* ============================================
+           GIM HIGHSCORE WIDGET
+           ============================================ */
+
         .group-highscore {
             position: fixed;
             top: 20px;
