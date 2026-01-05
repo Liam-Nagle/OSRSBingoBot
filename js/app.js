@@ -3106,6 +3106,8 @@ async function loadAnalyticsWithFilters() {
 
             // Load data
             await loadKCData();
+
+            showKCTab('overview');
         }
 
         function closeKCModal() {
@@ -3416,17 +3418,39 @@ async function loadAnalyticsWithFilters() {
                     const bosses = data[player].bosses || {};
                     const bossEntries = Object.entries(bosses).sort((a, b) => b[1] - a[1]);
 
-                    let message = `${player}'s Boss KC:\n\n`;
-                    bossEntries.forEach(([boss, kc]) => {
-                        message += `${boss}: ${kc.toLocaleString()} KC\n`;
-                    });
+                    // Set title
+                    document.getElementById('playerKCDetailTitle').textContent = `📊 ${player}'s Boss Kill Counts`;
 
-                    alert(message);
+                    // Generate boss list HTML
+                    let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+
+                    if (bossEntries.length === 0) {
+                        html += '<div style="text-align: center; color: #8b7355; padding: 40px; font-style: italic;">No boss KC found</div>';
+                    } else {
+                        bossEntries.forEach(([boss, kc]) => {
+                            html += `
+                                <div class="boss-kc-item">
+                                    <span>${boss}</span>
+                                    <span class="kc-value">${kc.toLocaleString()} KC</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    html += '</div>';
+
+                    // Populate and show modal
+                    document.getElementById('playerKCDetailContent').innerHTML = html;
+                    document.getElementById('playerKCDetailModal').classList.add('active');
                 })
                 .catch(err => {
                     console.error('Failed to load player detail:', err);
                     alert('Failed to load player details');
                 });
+        }
+
+        function closePlayerKCDetailModal() {
+            document.getElementById('playerKCDetailModal').classList.remove('active');
         }
 
         async function fetchAllPlayersKC() {
@@ -3526,6 +3550,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                           {
+                version: "v2.0.2",
+                date: "2025-01-05",
+                title: "Changed Boss KC styling and added clan highscore widget",
+                changes: [
+                    { type: "improvement", text: "Updated view all BossKC modal. No longer an alert." },
+                ]
+            },
                            {
                 version: "v2.0.1",
                 date: "2025-01-05",

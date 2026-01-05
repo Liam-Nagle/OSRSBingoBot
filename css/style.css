@@ -1562,3 +1562,38 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Player KC Detail Modal Enhancements */
+        #playerKCDetailModal .modal-content {
+            background: linear-gradient(135deg, #f5e6d3 0%, #e8d4bc 100%);
+        }
+
+        #playerKCDetailTitle {
+            color: #6d5635;
+            margin-bottom: 10px;
+            font-size: 22px;
+        }
+
+        #playerKCDetailContent {
+            padding: 15px;
+            background: rgba(205, 139, 45, 0.05);
+            border-radius: 8px;
+            border: 2px solid #cd8b2d;
+        }
+
+        #playerKCDetailContent .boss-kc-item {
+            padding: 12px 8px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            border-bottom: none;
+            transition: background 0.2s;
+        }
+
+        #playerKCDetailContent .boss-kc-item:hover {
+            background: rgba(205, 139, 45, 0.15);
+        }
+
+        #playerKCDetailContent .boss-kc-item:last-child {
+            margin-bottom: 0;
+        }

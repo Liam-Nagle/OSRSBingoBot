@@ -630,6 +630,17 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
+    <!-- Player KC Detail Modal -->
+    <div class="modal" id="playerKCDetailModal">
+        <div class="modal-content" style="max-width: 600px; max-height: 80vh;">
+            <button onclick="closePlayerKCDetailModal()" class="close-btn">✕</button>
+            <h2 id="playerKCDetailTitle">📊 Boss Kill Counts</h2>
+            <div id="playerKCDetailContent" style="max-height: 60vh; overflow-y: auto; margin-top: 20px;">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
 
     <!-- Chart.js Library (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
