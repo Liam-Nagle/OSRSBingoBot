@@ -1202,9 +1202,12 @@
             font-size: 18px;
         }
 
-        /* Close Button - Consistent across all modals */
-        .modal-content .close-btn,
-        #kcModal .close-btn {
+        /* Apply the rotating X button to ALL modals */
+        .modal .close-btn,
+        #dropHistoryModal .close-btn,
+        #analyticsModal .close-btn,
+        #kcModal .close-btn,
+        .modal-content .close-btn {
             position: absolute;
             top: 15px;
             right: 15px;
@@ -1222,14 +1225,19 @@
             justify-content: center;
             line-height: 1;
             padding: 0;
+            font-weight: bold;
         }
 
-        .modal-content .close-btn:hover,
-        #kcModal .close-btn:hover {
+        .modal .close-btn:hover,
+        #dropHistoryModal .close-btn:hover,
+        #analyticsModal .close-btn:hover,
+        #kcModal .close-btn:hover,
+        .modal-content .close-btn:hover {
             background: rgba(139, 0, 0, 1);
             transform: rotate(90deg);
             box-shadow: 0 4px 12px rgba(139, 0, 0, 0.6);
         }
+
 
         /* Admin Controls Section */
         #kcAdminControls {
