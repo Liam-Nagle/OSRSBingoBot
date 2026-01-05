@@ -634,7 +634,7 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
 async def scrape_gim_highscore():
     """Scrape OSRS GIM hiscores for Unsociables group"""
     try:
-        if not gim_collection:
+        if gim_collection is None:
             print("❌ MongoDB not available - cannot save GIM data")
             return False
 
