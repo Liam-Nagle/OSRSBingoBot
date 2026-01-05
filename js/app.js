@@ -3093,7 +3093,19 @@ async function loadAnalyticsWithFilters() {
                 document.getElementById('kcAdminControls').style.display = 'block';
             }
 
-            loadKCData();
+            // Show loading state in Overview tab
+            const overviewContainer = document.getElementById('kcTabContentOverview');
+            if (overviewContainer) {
+                overviewContainer.innerHTML = `
+                    <div class="loading-message">
+                        <div class="loading-spinner"></div>
+                        <p>Loading Boss Kill Counts...</p>
+                    </div>
+                `;
+            }
+
+            // Load data
+            await loadKCData();
         }
 
         function closeKCModal() {
@@ -3514,6 +3526,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                           {
+                version: "v2.0.1",
+                date: "2025-01-05",
+                title: "Changed Boss KC styling and added clan highscore widget",
+                changes: [
+                    { type: "improvement", text: "Updated some styling across the site" },
+                    { type: "Fix", text: "BossKC Modal wouldn't always load without switching tabs. Should be fixed" },
+                ]
+            },
                           {
                 version: "v2.0.0",
                 date: "2025-01-05",

@@ -1464,3 +1464,101 @@
             background: #b8771f;
             transform: translateY(-2px);
         }
+
+        * OSRS-Themed Button Classes for Boss KC Modal */
+        .btn-primary {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 1px rgba(255,255,255,0.3);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 12px rgba(0,0,0,0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #8B6914 0%, #6d5411 100%);
+            color: #f4e4c1;
+            border: 2px solid #5c4610;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.3);
+        }
+
+        .btn-secondary:hover {
+            background: linear-gradient(135deg, #9d7a1a 0%, #7e5f15 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 12px rgba(0,0,0,0.4);
+        }
+
+        /* Player KC Card Styling */
+        .player-kc-card {
+            background: linear-gradient(135deg, rgba(205, 139, 45, 0.15) 0%, rgba(205, 139, 45, 0.05) 100%);
+            border: 2px solid #cd8b2d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .player-kc-card h3 {
+            color: #cd8b2d;
+            margin-bottom: 10px;
+            font-size: 18px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .boss-kc-item {
+            color: #6d5635;
+            padding: 5px 0;
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(139, 111, 71, 0.2);
+        }
+
+        .boss-kc-item:last-child {
+            border-bottom: none;
+        }
+
+        .kc-value {
+            color: #cd8b2d;
+            font-weight: bold;
+        }
+
+        /* Loading State */
+        .loading-message {
+            text-align: center;
+            color: #cd8b2d;
+            padding: 40px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .loading-spinner {
+            border: 3px solid rgba(205, 139, 45, 0.3);
+            border-top: 3px solid #cd8b2d;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
