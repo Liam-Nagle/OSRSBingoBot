@@ -3752,62 +3752,209 @@ async function loadAnalyticsWithFilters() {
 
         async function loadGroupHighscore() {
             try {
-                // Show loading state
-                document.getElementById('groupName').textContent = 'Loading...';
-                document.getElementById('groupRank').textContent = 'Overall: ...';
-                document.getElementById('groupPrestige').textContent = 'Prestige: ...';
-                document.getElementById('groupXP').textContent = 'Total XP: ...';
+                // Check localStorage cache first
+                const cacheKey = 'gim_highscore_cache';
+                const cached = localStorage.getItem(cacheKey);
 
-                const response = await fetch(`${API_URL}/clan-info`);
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    const cacheAge = Date.now() - data.timestamp;
+                    const oneHour = 60 * 60 * 1000;
 
-                if (!response.ok) {
-                    throw new Error('Failed to fetch GIM data');
-                }
-
-                const data = await response.json();
-
-                if (data.success) {
-                    document.getElementById('groupName').textContent = data.group_name || 'Unsociables';
-
-                    // Overall GIM rank
-                    if (data.overall_rank) {
-                        document.getElementById('groupRank').textContent = `Overall: #${data.overall_rank.toLocaleString()}`;
+                    // If cache is less than 1 hour old, use it
+                    if (cacheAge < oneHour) {
+                        console.log(`✅ Using cached GIM data (${Math.round(cacheAge / 60000)} minutes old)`);
+                        displayGimData(data);
+                        return;
                     } else {
-                        document.getElementById('groupRank').textContent = 'Overall: Not ranked';
-                    }
-
-                    // Prestige rank
-                    if (data.prestige_rank) {
-                        document.getElementById('groupPrestige').textContent = `Prestige: #${data.prestige_rank.toLocaleString()} ⭐`;
-                    } else if (data.has_prestige === false) {
-                        document.getElementById('groupPrestige').textContent = 'Prestige: Lost';
-                    } else {
-                        document.getElementById('groupPrestige').textContent = 'Prestige: Not ranked';
-                    }
-
-                    // Total XP
-                    if (data.formatted_xp) {
-                        document.getElementById('groupXP').textContent = `Total XP: ${data.formatted_xp}`;
-                    } else {
-                        document.getElementById('groupXP').textContent = 'Total XP: --';
+                        console.log('⏰ Cache expired, fetching new data...');
                     }
                 } else {
-                    throw new Error(data.error || 'Unknown error');
+                    console.log('📥 No cache found, fetching data for first time...');
                 }
+
+                // Show loading state
+                document.getElementById('groupName').textContent = 'Unsociables';
+                document.getElementById('groupRank').textContent = 'Overall: Fetching...';
+                document.getElementById('groupPrestige').textContent = 'Prestige: Fetching...';
+                document.getElementById('groupXP').textContent = 'Total XP: Please wait 2-3 min...';
+
+                console.log('🛡️ Fetching GIM highscore via CORS proxy (this will take 2-3 minutes)...');
+
+                const groupName = 'unsociables';
+                const proxyUrl = 'https://corsproxy.io/?';
+                const baseUrl = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page=';
+
+                let overallRank = null;
+                let totalXp = null;
+                let prestigeCount = 0;
+                let found = false;
+
+                // Search through pages (max 150)
+                for (let page = 1; page <= 150; page++) {
+                    if (found) break;
+
+                    const url = proxyUrl + encodeURIComponent(baseUrl + page);
+
+                    try {
+                        console.log(`📄 Fetching page ${page}...`);
+
+                        const response = await fetch(url);
+
+                        if (!response.ok) {
+                            console.error(`Page ${page} returned ${response.status}`);
+
+                            // If we get blocked, stop trying
+                            if (response.status === 403) {
+                                console.error('❌ Blocked by Cloudflare - stopping');
+                                throw new Error('Blocked by Cloudflare');
+                            }
+                            continue;
+                        }
+
+                        const html = await response.text();
+
+                        // Parse the HTML
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+
+                        // Find tbody
+                        const tbody = doc.querySelector('tbody');
+                        if (!tbody) {
+                            console.warn(`No tbody on page ${page}`);
+                            continue;
+                        }
+
+                        const rows = tbody.querySelectorAll('tr');
+
+                        for (const row of rows) {
+                            const cells = row.querySelectorAll('td');
+                            if (cells.length < 4) continue;
+
+                            // Cell 0: Rank
+                            const rankText = cells[0].textContent.trim().replace(',', '');
+                            const rank = parseInt(rankText);
+                            if (isNaN(rank)) continue;
+
+                            // Cell 1: Group name
+                            const nameCell = cells[1];
+                            const hasStar = nameCell.querySelector('img') !== null;
+                            const cleanName = nameCell.textContent.trim().toLowerCase();
+
+                            // Cell 3: XP
+                            const xpText = cells[3].textContent.trim().replace(/,/g, '');
+                            const xp = parseInt(xpText);
+
+                            // Check if this is our group
+                            if (cleanName.includes(groupName)) {
+                                console.log(`✅ FOUND: ${cleanName} at rank #${rank}`);
+
+                                overallRank = rank;
+                                totalXp = xp;
+                                found = true;
+
+                                if (hasStar) {
+                                    prestigeCount += 1;
+                                    console.log(`⭐ Group has PRESTIGE!`);
+                                } else {
+                                    console.log(`❌ Group does NOT have prestige`);
+                                }
+
+                                break;
+                            }
+
+                            // Count prestige groups before us
+                            if (hasStar && !found) {
+                                prestigeCount++;
+                            }
+                        }
+
+                        // Progress indicator every 10 pages
+                        if (page % 10 === 0 && !found) {
+                            console.log(`💤 Scanned ${page * 20} groups, found ${prestigeCount} prestige groups...`);
+                        }
+
+                        // Longer delay to avoid rate limiting (1-2 seconds)
+                        if (!found) {
+                            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+                        }
+
+                    } catch (error) {
+                        console.error(`Error fetching page ${page}:`, error);
+
+                        // If it's a network/blocking error, stop trying
+                        if (error.message.includes('Blocked')) {
+                            throw error;
+                        }
+                        continue;
+                    }
+                }
+
+                if (!found) {
+                    throw new Error('Group not found in top 3000');
+                }
+
+                const prestigeRank = prestigeCount > 0 ? prestigeCount : null;
+
+                console.log('📊 RESULTS:');
+                console.log(`   Overall: #${overallRank.toLocaleString()}`);
+                if (prestigeRank) {
+                    console.log(`   Prestige: #${prestigeRank.toLocaleString()} ⭐`);
+                }
+                console.log(`   XP: ${totalXp.toLocaleString()}`);
+
+                // Cache the results
+                const cacheData = {
+                    overallRank,
+                    prestigeRank,
+                    totalXp,
+                    timestamp: Date.now()
+                };
+
+                localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+                console.log('💾 Cached data for 1 hour');
+
+                // Display the data
+                displayGimData(cacheData);
 
             } catch (error) {
                 console.error('Failed to load GIM highscore:', error);
                 document.getElementById('groupName').textContent = 'Unsociables';
                 document.getElementById('groupRank').textContent = 'Overall: Error';
                 document.getElementById('groupPrestige').textContent = 'Prestige: Error';
-                document.getElementById('groupXP').textContent = 'Total XP: --';
+                document.getElementById('groupXP').textContent = 'Total XP: Try refresh';
             }
+        }
+
+        function displayGimData(data) {
+            // Format XP
+            function formatXp(xp) {
+                if (!xp) return null;
+                if (xp >= 1_000_000_000) {
+                    return `${(xp / 1_000_000_000).toFixed(2)}B`;
+                } else if (xp >= 1_000_000) {
+                    return `${(xp / 1_000_000).toFixed(1)}M`;
+                } else {
+                    return xp.toLocaleString();
+                }
+            }
+
+            document.getElementById('groupName').textContent = 'Unsociables';
+            document.getElementById('groupRank').textContent = `Overall: #${data.overallRank.toLocaleString()}`;
+
+            if (data.prestigeRank) {
+                document.getElementById('groupPrestige').textContent = `Prestige: #${data.prestigeRank.toLocaleString()} ⭐`;
+            } else {
+                document.getElementById('groupPrestige').textContent = 'Prestige: Lost';
+            }
+
+            document.getElementById('groupXP').textContent = `Total XP: ${formatXp(data.totalXp)}`;
         }
 
         // Load on page load
         loadGroupHighscore();
 
-        // Refresh every 1 hour (cached on server anyway)
+        // Auto-refresh every 1 hour (to match cache expiry)
         setInterval(loadGroupHighscore, 60 * 60 * 1000);
 
 
