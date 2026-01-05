@@ -1204,9 +1204,17 @@
 
         /* Apply the rotating X button to ALL modals */
         .modal .close-btn,
-        #dropHistoryModal .close-btn,
+        #loginModal .close-btn,
+        #manualOverrideModal .close-btn,
+        #boardSizeModal .close-btn,
+        #editModal .close-btn,
+        #bonusModal .close-btn,
+        #apiModal .close-btn,
+        #historyModal .close-btn,
+        #changelogModal .close-btn,
         #analyticsModal .close-btn,
         #kcModal .close-btn,
+        #deathsModal .close-btn,
         .modal-content .close-btn {
             position: absolute;
             top: 15px;
@@ -1229,9 +1237,17 @@
         }
 
         .modal .close-btn:hover,
-        #dropHistoryModal .close-btn:hover,
+        #loginModal .close-btn:hover,
+        #manualOverrideModal .close-btn:hover,
+        #boardSizeModal .close-btn:hover,
+        #editModal .close-btn:hover,
+        #bonusModal .close-btn:hover,
+        #apiModal .close-btn:hover,
+        #historyModal .close-btn:hover,
+        #changelogModal .close-btn:hover,
         #analyticsModal .close-btn:hover,
         #kcModal .close-btn:hover,
+        #deathsModal .close-btn:hover,
         .modal-content .close-btn:hover {
             background: rgba(139, 0, 0, 1);
             transform: rotate(90deg);

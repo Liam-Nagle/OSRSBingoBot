@@ -3775,7 +3775,7 @@ async function loadAnalyticsWithFilters() {
             const modalHtml = `
                 <div class="modal" id="changelogModal">
                     <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
-                        <button class="modal-close-btn" onclick="closeChangelogModal()">×</button>
+                        <button class="close-btn" onclick="closeChangelogModal()">×</button>
                         <h2>📜 Changelog</h2>
                         <p style="color: #666; margin-bottom: 20px;">Recent updates and improvements to the OSRS Bingo Board</p>
                         ${changelogHtml}

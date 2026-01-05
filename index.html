@@ -101,6 +101,7 @@
     <!-- Admin Login Modal -->
     <div class="modal" id="loginModal">
         <div class="modal-content">
+            <button onclick="closeLoginModal()" class="close-btn">✕</button>
             <h2>🔐 Admin Login</h2>
             <p style="color: #666; margin-bottom: 20px;">Enter the admin password to access editing features.</p>
 
@@ -118,6 +119,7 @@
     <!-- Manual Override Modal -->
     <div class="modal" id="manualOverrideModal">
         <div class="modal-content" style="max-width: 700px;">
+            <button onclick="closeManualOverrideModal()" class="close-btn">✕</button>
             <h2>✏️ Manual Override & Drop Logging</h2>
             <p style="color: #666; margin-bottom: 20px;">Manually adjust tiles or log missed drops</p>
 
@@ -172,6 +174,7 @@
     <!-- Board Size Modal -->
     <div class="modal" id="boardSizeModal">
         <div class="modal-content">
+            <button onclick="closeBoardSizeModal()" class="close-btn">✕</button>
             <h2>📐 Change Board Size</h2>
             <p style="color: #666; margin-bottom: 20px;">⚠️ Warning: Changing board size will clear all tiles and progress!</p>
 
@@ -247,6 +250,7 @@ Dragon warhammer"></textarea>
     <!-- API Info Modal -->
     <div class="modal" id="apiModal">
         <div class="modal-content">
+            <button onclick="closeApiModal()" class="close-btn">✕</button>
             <h2>🔗 API Integration</h2>
             <p>To connect your Discord bot, add this endpoint URL to your bot:</p>
             <input type="text" id="apiUrl" readonly value="http://localhost:8000/drop">
@@ -260,6 +264,7 @@ Dragon warhammer"></textarea>
     <!-- Drop History Modal -->
     <div class="modal" id="historyModal">
         <div class="modal-content" style="max-width: 1000px;">
+            <button onclick="closeHistoryModal()" class="close-btn">✕</button>
             <h2>📜 Drop History</h2>
             <p style="color: #666; margin-bottom: 20px;">Recent drops recorded from Discord</p>
 
@@ -371,6 +376,7 @@ Dragon warhammer"></textarea>
     <!-- Analytics Modal -->
     <div class="modal" id="analyticsModal">
         <div class="modal-content" style="max-width: 1200px;">
+            <button onclick="closeAnalyticsModal()" class="close-btn">✕</button>
             <h2>📊 Drop Analytics Dashboard</h2>
             <p style="color: #666; margin-bottom: 20px;">Comprehensive statistics and insights</p>
 
@@ -579,6 +585,7 @@ Dragon warhammer"></textarea>
     <!-- Enhanced Deaths Modal with Deadliest Bosses Section -->
     <div class="modal" id="deathsModal">
         <div class="modal-content" style="max-width: 1100px;">
+            <button onclick="closeDeathsModal()" class="close-btn">✕</button>
             <h2>💀 Death Statistics</h2>
             <p style="color: #666; margin-bottom: 20px;">Comprehensive death tracking and boss statistics</p>
 
