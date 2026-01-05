@@ -804,6 +804,4 @@ if __name__ == "__main__":
     print("Tracking: Loot Drops, Collection Log, Deaths")
     print("=" * 50)
 
-    from discord.ext import tasks
-
     bot.run(TOKEN)
