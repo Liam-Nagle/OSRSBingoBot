@@ -1,6 +1,6 @@
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import json
 import requests
 import asyncio
@@ -231,6 +231,10 @@ async def on_ready():
     print('  !import_history [channel_id] [limit] - Import drop history')
     print('  !import_deaths [channel_id] [limit] - Import death history')
     print('  !stats [player] - Show drop statistics')
+    # Start the GIM auto-update task
+    if not auto_update_gim.is_running():
+        auto_update_gim.start()
+        print('🔄 Started GIM auto-update task')
 
 
 @bot.event
@@ -771,6 +775,20 @@ async def gimrank(ctx):
         await ctx.send("❌ Failed - check logs")
 
 
+
+
+@tasks.loop(hours=24)
+async def auto_update_gim():
+    print("🔄 Auto-updating GIM highscore...")
+    await scrape_gim_highscore()
+
+@auto_update_gim.before_loop
+async def before_auto_update():
+    await bot.wait_until_ready()
+    await asyncio.sleep(300)
+
+
+
 # Run the bot
 if __name__ == "__main__":
     TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
@@ -787,28 +805,5 @@ if __name__ == "__main__":
     print("=" * 50)
 
     from discord.ext import tasks
-
-
-    @tasks.loop(hours=24)
-    async def auto_update_gim():
-        print("🔄 Auto-updating GIM...")
-        await scrape_gim_highscore()
-
-
-    @auto_update_gim.before_loop
-    async def before_auto_update():
-        await bot.wait_until_ready()
-        await asyncio.sleep(300)
-        print("✅ Will update GIM in 5 mins")
-
-    @bot.event
-    async def on_ready():
-        print(f'{bot.user} is now tracking Dink drops!')
-        print('Listening for loot drops...')
-
-        # Start GIM auto-update task
-        if not auto_update_gim.is_running():
-            auto_update_gim.start()
-            print('🔄 Started GIM auto-update task')
 
     bot.run(TOKEN)
