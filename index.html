@@ -577,7 +577,23 @@ Dragon warhammer"></textarea>
             </div>
 
             <div id="kcTabContentEffort" class="kc-tab-content" style="display: none;">
-                <!-- KC gained during bingo -->
+                <!-- View Toggle Buttons -->
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+                    <button onclick="showEffortView('player')" id="effortViewPlayer" class="kc-tab active">
+                        👤 Player View
+                    </button>
+                    <button onclick="showEffortView('boss')" id="effortViewBoss" class="kc-tab">
+                        🎯 Boss View
+                    </button>
+                </div>
+
+                <!-- Content containers -->
+                <div id="effortPlayerView">
+                    <!-- Player-focused effort data -->
+                </div>
+                <div id="effortBossView" style="display: none;">
+                    <!-- Boss-focused effort leaderboards -->
+                </div>
             </div>
         </div>
     </div>

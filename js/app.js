@@ -3124,6 +3124,16 @@ async function loadAnalyticsWithFilters() {
             document.getElementById(`kcTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
         }
 
+        function showEffortView(view) {
+            // Toggle buttons
+            document.getElementById('effortViewPlayer').classList.toggle('active', view === 'player');
+            document.getElementById('effortViewBoss').classList.toggle('active', view === 'boss');
+
+            // Toggle content
+            document.getElementById('effortPlayerView').style.display = view === 'player' ? 'block' : 'none';
+            document.getElementById('effortBossView').style.display = view === 'boss' ? 'block' : 'none';
+        }
+
         async function loadKCData() {
             try {
                 const response = await fetch(`${API_URL}/kc/all`);
@@ -3307,102 +3317,200 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = html;
         }
 
-        async function renderKCEffort(data) {
-            const container = document.getElementById('kcTabContentEffort');
-            if (!container) {
-                console.error('KC Effort container not found');
+                async function renderKCEffort(data) {
+            const playerContainer = document.getElementById('effortPlayerView');
+            const bossContainer = document.getElementById('effortBossView');
+
+            if (!playerContainer || !bossContainer) {
+                console.error('Effort containers not found');
                 return;
             }
 
-            console.log('Rendering KC Effort with data:', data);
-
-            // Show loading state
-            container.innerHTML = `
-                <div style="text-align: center; color: #666; padding: 40px;">
-                    <p>Loading effort data...</p>
-                </div>
-            `;
-
             try {
-                // Fetch ALL snapshots (not just latest)
                 const response = await fetch(`${API_URL}/kc/effort`);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
                 const effortData = await response.json();
 
                 if (!effortData.success) {
-                    container.innerHTML = `
-                        <div style="text-align: center; color: #666; padding: 40px;">
-                            <h3 style="margin-bottom: 20px;">Effort Tracking</h3>
-                            <p>${effortData.message || 'Unable to calculate effort'}</p>
+                    playerContainer.innerHTML = `
+                        <div class="loading-message" style="padding: 40px;">
+                            <p>⚠️ ${effortData.message || 'Unable to calculate effort'}</p>
                             <p style="margin-top: 20px;">Use the "Mark as Bingo Start" button in admin controls to set a baseline.</p>
                         </div>
                     `;
+                    bossContainer.innerHTML = playerContainer.innerHTML;
                     return;
                 }
 
-                // Render effort data
-                const players = effortData.players || [];
+                // Render both views
+                renderEffortPlayerView(effortData, playerContainer);
+                renderEffortBossView(effortData, bossContainer);
 
-                if (players.length === 0) {
-                    container.innerHTML = `
-                        <div style="text-align: center; color: #666; padding: 40px;">
-                            <h3 style="margin-bottom: 20px;">No Effort Data</h3>
-                            <p>No KC gains detected since bingo start.</p>
+            } catch (error) {
+                console.error('Failed to load effort data:', error);
+                const errorHtml = '<div class="loading-message" style="padding: 40px;">Failed to load effort data</div>';
+                playerContainer.innerHTML = errorHtml;
+                bossContainer.innerHTML = errorHtml;
+            }
+        }
+
+        function renderEffortPlayerView(effortData, container) {
+            const players = effortData.players || [];
+
+            if (players.length === 0) {
+                container.innerHTML = `
+                    <div class="loading-message" style="padding: 40px;">
+                        <p>No effort data available yet!</p>
+                        <p style="margin-top: 20px;">Fetch KC after marking bingo start to track progress.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort players by total kills gained
+            players.sort((a, b) => b.totalKills - a.totalKills);
+
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px;">';
+
+            players.forEach((player, index) => {
+                const rankEmojis = ['🥇', '🥈', '🥉'];
+                const rankEmoji = index < 3 ? rankEmojis[index] : `#${index + 1}`;
+
+                html += `
+                    <div class="player-kc-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0;">${player.player}</h3>
+                            <span style="font-size: 24px;">${rankEmoji}</span>
                         </div>
-                    `;
-                    return;
-                }
+                        <div style="background: rgba(205, 139, 45, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 15px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #cd8b2d;">${player.totalKills.toLocaleString()}</div>
+                            <div style="font-size: 12px; color: #8b7355;">Total KC Gained</div>
+                        </div>
+                `;
 
-                // Build HTML
-                let html = '<div style="padding: 20px;">';
+                if (player.bosses && player.bosses.length > 0) {
+                    // Sort bosses by gains
+                    const sortedBosses = [...player.bosses].sort((a, b) => b.gained - a.gained);
+                    const topBosses = sortedBosses.slice(0, 5);
 
-                players.forEach(player => {
-                    const bosses = Object.entries(player.effort || {})
-                        .filter(([boss, kc]) => kc > 0)
-                        .sort((a, b) => b[1] - a[1]);
-
-                    if (bosses.length === 0) {
-                        return; // Skip players with no gains
-                    }
-
-                    html += `
-                        <div class="player-kc-card">
-                            <h3>${player.player}</h3>
-                            <p style="color: #666; font-size: 12px;">KC gained since bingo start</p>
-                            <div class="boss-list" style="margin-top: 15px;">
-                    `;
-
-                    bosses.forEach(([boss, kc]) => {
+                    topBosses.forEach(boss => {
                         html += `
-                            <div class="boss-item">
-                                <span class="boss-name">${boss}</span>
-                                <span class="boss-kc" style="color: #4CAF50;">+${kc.toLocaleString()} KC</span>
+                            <div class="boss-kc-item">
+                                <span>${boss.boss}</span>
+                                <span class="kc-value">+${boss.gained.toLocaleString()}</span>
                             </div>
                         `;
                     });
 
+                    if (sortedBosses.length > 5) {
+                        html += `<div style="text-align: center; color: #8b7355; font-size: 12px; margin-top: 10px; font-style: italic;">+${sortedBosses.length - 5} more bosses</div>`;
+                    }
+                } else {
+                    html += '<div style="text-align: center; color: #8b7355; font-style: italic; padding: 20px;">No gains yet</div>';
+                }
+
+                html += `</div>`;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderEffortBossView(effortData, container) {
+            const players = effortData.players || [];
+
+            if (players.length === 0) {
+                container.innerHTML = `
+                    <div class="loading-message" style="padding: 40px;">
+                        <p>No effort data available yet!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Aggregate boss data across all players
+            const bossMap = new Map();
+
+            players.forEach(player => {
+                if (player.bosses) {
+                    player.bosses.forEach(boss => {
+                        if (!bossMap.has(boss.boss)) {
+                            bossMap.set(boss.boss, []);
+                        }
+                        bossMap.get(boss.boss).push({
+                            player: player.player,
+                            gained: boss.gained,
+                            start: boss.start,
+                            current: boss.current
+                        });
+                    });
+                }
+            });
+
+            // Convert to array and sort by total gains
+            const bossList = Array.from(bossMap.entries()).map(([boss, playerData]) => {
+                const totalGains = playerData.reduce((sum, p) => sum + p.gained, 0);
+                // Sort players by gains for this boss
+                playerData.sort((a, b) => b.gained - a.gained);
+                return { boss, playerData, totalGains };
+            }).sort((a, b) => b.totalGains - a.totalGains);
+
+            if (bossList.length === 0) {
+                container.innerHTML = '<div class="loading-message" style="padding: 40px;">No boss gains recorded yet!</div>';
+                return;
+            }
+
+            // Create accordion-style boss cards
+            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+
+            bossList.forEach(({ boss, playerData, totalGains }) => {
+                html += `
+                    <div class="player-kc-card" style="cursor: pointer;" onclick="toggleBossDetail('${boss.replace(/'/g, "\\'")}')">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0;">🎯 ${boss}</h3>
+                            <div style="text-align: right;">
+                                <div class="kc-value" style="font-size: 20px;">+${totalGains.toLocaleString()}</div>
+                                <div style="font-size: 11px; color: #8b7355;">Total Gained</div>
+                            </div>
+                        </div>
+
+                        <!-- Expandable Player List -->
+                        <div id="boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 2px solid rgba(205, 139, 45, 0.3);">
+                            <div style="font-size: 13px; font-weight: bold; color: #8b7355; margin-bottom: 10px;">📊 Player Rankings:</div>
+                `;
+
+                playerData.forEach((player, index) => {
+                    const rankEmojis = ['🥇', '🥈', '🥉'];
+                    const rankIcon = index < 3 ? rankEmojis[index] : `${index + 1}.`;
+
                     html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255, 255, 255, 0.3); border-radius: 4px; margin-bottom: 6px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-size: 16px; min-width: 30px;">${rankIcon}</span>
+                                <span style="font-weight: 500;">${player.player}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="kc-value">+${player.gained.toLocaleString()}</div>
+                                <div style="font-size: 10px; color: #8b7355;">${player.start} → ${player.current} KC</div>
                             </div>
                         </div>
                     `;
                 });
 
-                html += '</div>';
-                container.innerHTML = html;
-
-            } catch (error) {
-                console.error('Failed to load effort data:', error);
-                container.innerHTML = `
-                    <div style="text-align: center; color: #f44336; padding: 40px;">
-                        <h3 style="margin-bottom: 20px;">Error Loading Effort Data</h3>
-                        <p>${error.message}</p>
-                        <p style="margin-top: 20px;">Check browser console for details.</p>
+                html += `
+                        </div>
                     </div>
                 `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function toggleBossDetail(boss) {
+            const elementId = `boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.style.display = element.style.display === 'none' ? 'block' : 'none';
             }
         }
 
@@ -3551,9 +3659,18 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
                            {
+                version: "v2.1.0",
+                date: "2025-01-05",
+                title: "Added new effort tab with Boss/Player view",
+                changes: [
+                    { type: "feature", text: "Added new effort tab with Boss/Player view" },
+                    { type: "fix", text: "Fixed view all boss modal opening underneath BossKC modal" },
+                ]
+            },
+                           {
                 version: "v2.0.2",
                 date: "2025-01-05",
-                title: "Changed Boss KC styling and added clan highscore widget",
+                title: "Modal change to BossKC",
                 changes: [
                     { type: "improvement", text: "Updated view all BossKC modal. No longer an alert." },
                 ]
@@ -3561,7 +3678,7 @@ async function loadAnalyticsWithFilters() {
                            {
                 version: "v2.0.1",
                 date: "2025-01-05",
-                title: "Changed Boss KC styling and added clan highscore widget",
+                title: "Lots of styling changes and fixed BossKC not loading correctly",
                 changes: [
                     { type: "improvement", text: "Updated some styling across the site" },
                     { type: "fix", text: "BossKC Modal wouldn't always load without switching tabs. Should be fixed" },
@@ -3570,7 +3687,7 @@ async function loadAnalyticsWithFilters() {
                           {
                 version: "v2.0.0",
                 date: "2025-01-05",
-                title: "Changed Boss KC styling and added clan highscore widget",
+                title: "Highscore scraping and more styling improvements",
                 changes: [
                     { type: "feature", text: "Added highscores which pulls overall highscore and scrapes for prestige highscore" },
                     { type: "improvement", text: "Improved BossKC modal styling to match others" },
@@ -3579,7 +3696,7 @@ async function loadAnalyticsWithFilters() {
                           {
                 version: "v1.9.2",
                 date: "2025-01-04",
-                title: "Changed Boss KC styling and added clan highscore widget",
+                title: "Clan highscore widget improvements",
                 changes: [
                     { type: "improvement", text: "Improved clan highscore widget" },
                 ]
@@ -3587,7 +3704,7 @@ async function loadAnalyticsWithFilters() {
                           {
                 version: "v1.9.1",
                 date: "2025-01-04",
-                title: "Changed Boss KC styling and added clan highscore widget",
+                title: "Clan highscore widget and styling",
                 changes: [
                     { type: "feature", text: "Added a new clan highscore widget" },
                     { type: "improvement", text: "Improved styling on the Boss KC modal" },

@@ -1597,3 +1597,7 @@
         #playerKCDetailContent .boss-kc-item:last-child {
             margin-bottom: 0;
         }
+
+        #playerKCDetailModal {
+            z-index: 10001 !important;
+        }
