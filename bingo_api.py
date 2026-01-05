@@ -6,15 +6,6 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 import requests
 from datetime import datetime
-from datetime import datetime, timedelta
-import re
-from html.parser import HTMLParser
-
-# Cache for GIM data (so we don't scrape every request)
-gim_cache = {
-    'data': None,
-    'expires': None
-}
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
@@ -795,207 +786,6 @@ def manual_drop():
     else:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-
-@app.route('/clan-info', methods=['GET'])
-def get_clan_info():
-    """Fetch GIM group information from OSRS hiscores with prestige rank calculation"""
-    global gim_cache
-
-    # Check cache first (1 hour expiry)
-    now = datetime.utcnow()
-    if gim_cache['data'] and gim_cache['expires'] and now < gim_cache['expires']:
-        print(f"✅ Returning cached GIM data (expires in {(gim_cache['expires'] - now).seconds}s)")
-        return jsonify(gim_cache['data'])
-
-    try:
-        group_name = 'unsociables'
-
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-
-        print(f"\n{'=' * 60}")
-        print(f"🔍 Searching for GIM group: {group_name}")
-        print(f"{'=' * 60}")
-
-        # CORRECT OSRS GIM Hiscores URL
-        base_url = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page='
-
-        overall_rank = None
-        total_xp = None
-        prestige_count = 0
-        found = False
-
-        # Search through pages (max 250 pages = top 5000 groups)
-        for page in range(1, 251):
-            if found:
-                break
-
-            url = f"{base_url}{page}"
-
-            try:
-                print(f"📄 Fetching page {page}: {url}")
-                response = requests.get(url, headers=headers, timeout=15)
-
-                if response.status_code != 200:
-                    print(f"⚠️  Page {page} returned status {response.status_code}")
-                    continue
-
-                html = response.text
-
-                # Debug: Save first page HTML for inspection
-                if page == 1:
-                    print(f"📝 First page HTML length: {len(html)} chars")
-
-                # Parse the table - OSRS uses <tbody> with rows
-                # Each row format: <tr><td>Rank</td><td>Name (possibly with star)</td><td>Level</td><td>XP</td></tr>
-
-                # Find all table rows in the main tbody
-                tbody_match = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.DOTALL)
-                if not tbody_match:
-                    print(f"⚠️  No tbody found on page {page}")
-                    continue
-
-                tbody_content = tbody_match.group(1)
-                rows = re.findall(r'<tr[^>]*>(.*?)</tr>', tbody_content, re.DOTALL)
-
-                print(f"   Found {len(rows)} rows on page {page}")
-
-                for row_html in rows:
-                    # Extract all <td> cells
-                    cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
-
-                    if len(cells) < 4:
-                        continue
-
-                    # Cell 0: Rank
-                    rank_text = re.sub(r'<.*?>', '', cells[0]).strip()
-                    try:
-                        rank = int(rank_text.replace(',', ''))
-                    except:
-                        continue
-
-                    # Cell 1: Group name (may contain star image)
-                    name_cell = cells[1]
-
-                    # Check for prestige star in name cell
-                    # Star appears as: <img src="..." class="prestige-icon" or similar
-                    has_star = '<img' in name_cell and ('prestige' in name_cell.lower() or 'star' in name_cell.lower())
-
-                    # Extract clean group name
-                    clean_name = re.sub(r'<.*?>', '', name_cell).strip().lower()
-
-                    # Cell 3: XP (last cell)
-                    xp_text = re.sub(r'<.*?>', '', cells[3]).strip()
-                    try:
-                        xp = int(xp_text.replace(',', ''))
-                    except:
-                        xp = None
-
-                    # Debug first few rows
-                    if page == 1 and rank <= 5:
-                        print(f"   Row {rank}: '{clean_name}' | Prestige: {has_star} | XP: {xp}")
-
-                    # Check if this is our group
-                    if group_name in clean_name:
-                        print(f"\n✅ FOUND: '{clean_name}' at rank #{rank}")
-
-                        overall_rank = rank
-                        total_xp = xp
-                        found = True
-
-                        if total_xp:
-                            print(f"💎 Total XP: {total_xp:,}")
-
-                        # Check if our group has prestige
-                        if has_star:
-                            prestige_count += 1  # Include ourselves
-                            print(f"⭐ Group has PRESTIGE status!")
-                        else:
-                            print(f"❌ Group does NOT have prestige")
-
-                        break
-
-                    # Count prestige groups before us
-                    if has_star and not found:
-                        prestige_count += 1
-
-                # Small delay to avoid rate limiting
-                if page % 10 == 0:
-                    print(f"   💤 Checked {prestige_count} prestige groups so far...")
-                    import time
-                    time.sleep(0.5)
-
-            except Exception as e:
-                print(f"❌ Error fetching page {page}: {e}")
-                continue
-
-        if not found:
-            raise Exception(f'Group "{group_name}" not found in top 5000')
-
-        # Calculate prestige rank (only if group has prestige)
-        prestige_rank = prestige_count if prestige_count > 0 else None
-
-        print(f"\n📊 RESULTS:")
-        print(f"   Overall Rank: #{overall_rank:,}")
-        if prestige_rank:
-            print(f"   Prestige Rank: #{prestige_rank:,} ⭐")
-        else:
-            print(f"   Prestige Status: LOST (no star)")
-        if total_xp:
-            print(f"   Total XP: {total_xp:,}")
-        print(f"{'=' * 60}\n")
-
-        # Format XP
-        def format_xp(xp):
-            if not xp:
-                return None
-            if xp >= 1_000_000_000:
-                return f"{xp / 1_000_000_000:.2f}B"
-            elif xp >= 1_000_000:
-                return f"{xp / 1_000_000:.1f}M"
-            else:
-                return f"{xp:,}"
-
-        result = {
-            'success': True,
-            'group_name': 'Unsociables',
-            'overall_rank': overall_rank,
-            'prestige_rank': prestige_rank,
-            'has_prestige': prestige_rank is not None,
-            'total_xp': total_xp,
-            'formatted_xp': format_xp(total_xp)
-        }
-
-        # Cache for 1 hour
-        gim_cache['data'] = result
-        gim_cache['expires'] = now + timedelta(hours=1)
-        print(f"💾 Cached GIM data for 1 hour")
-
-        return jsonify(result)
-
-    except Exception as e:
-        print(f"❌ Error fetching GIM info: {e}")
-        import traceback
-        traceback.print_exc()
-
-        # Return cached data if available, even if expired
-        if gim_cache['data']:
-            print("⚠️  Returning stale cached data due to error")
-            return jsonify(gim_cache['data'])
-
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'group_name': 'Unsociables',
-            'overall_rank': None,
-            'prestige_rank': None,
-            'has_prestige': False,
-            'total_xp': None,
-            'formatted_xp': None
-        })
-
-
 @app.route('/history-only', methods=['POST'])
 def record_history_only():
     """Save drop to history ONLY (no tile checking) - for historical imports"""
@@ -1340,6 +1130,81 @@ def manual_override():
             })
 
     return jsonify({'error': 'Invalid action'}), 400
+
+@app.route('/clan-info', methods=['GET'])
+def get_clan_info():
+    """Get GIM group information from MongoDB (scraped by Discord bot)"""
+    try:
+        if not USE_MONGODB:
+            return jsonify({
+                'success': False,
+                'error': 'MongoDB not available'
+            }), 503
+
+        # Get GIM data from MongoDB
+        gim_collection = db['gim_highscore']
+        gim_data = gim_collection.find_one({'group_name': 'Unsociables'})
+
+        if not gim_data:
+            return jsonify({
+                'success': False,
+                'error': 'No GIM data found. Run !gimrank command in Discord to update.',
+                'group_name': 'Unsociables',
+                'overall_rank': None,
+                'prestige_rank': None,
+                'has_prestige': False,
+                'total_xp': None,
+                'formatted_xp': None
+            })
+
+        # Format XP
+        def format_xp(xp):
+            if not xp:
+                return None
+            if xp >= 1_000_000_000:
+                return f"{xp / 1_000_000_000:.2f}B"
+            elif xp >= 1_000_000:
+                return f"{xp / 1_000_000:.1f}M"
+            else:
+                return f"{xp:,}"
+
+        # Calculate how old the data is
+        updated_at = gim_data.get('updated_at')
+        if updated_at:
+            age = datetime.utcnow() - updated_at
+            age_hours = int(age.total_seconds() / 3600)
+            last_updated = f"{age_hours} hours ago" if age_hours > 0 else "Less than 1 hour ago"
+        else:
+            last_updated = "Unknown"
+
+        result = {
+            'success': True,
+            'group_name': gim_data.get('group_name', 'Unsociables'),
+            'overall_rank': gim_data.get('overall_rank'),
+            'prestige_rank': gim_data.get('prestige_rank'),
+            'has_prestige': gim_data.get('has_prestige', False),
+            'total_xp': gim_data.get('total_xp'),
+            'formatted_xp': format_xp(gim_data.get('total_xp')),
+            'last_updated': last_updated
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"❌ Error fetching GIM info from MongoDB: {e}")
+        import traceback
+        traceback.print_exc()
+
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'group_name': 'Unsociables',
+            'overall_rank': None,
+            'prestige_rank': None,
+            'has_prestige': False,
+            'total_xp': None,
+            'formatted_xp': None
+        })
 
 
 if __name__ == '__main__':

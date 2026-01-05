@@ -1,11 +1,14 @@
 import os
 import discord
 from discord.ext import commands
-import re
 import json
-from datetime import datetime, timedelta
 import requests
 import asyncio
+import re
+from datetime import datetime, timedelta
+import time
+import random
+from pymongo import MongoClient
 
 # Bot setup
 intents = discord.Intents.default()
@@ -23,6 +26,18 @@ if BINGO_API_BASE.endswith('/drop'):
 
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
+# MongoDB Setup
+MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+try:
+    mongo_client = MongoClient(MONGODB_URI)
+    db = mongo_client['osrs_bingo']
+    gim_collection = db['gim_highscore']
+    # Test connection
+    mongo_client.admin.command('ping')
+    print("✅ Connected to MongoDB for GIM tracking")
+except Exception as e:
+    print(f"⚠️ MongoDB not available: {e}")
+    gim_collection = None
 
 def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, value=0, value_string=''):
     """Send drop to bingo board API with value information"""
@@ -612,6 +627,150 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
         print(f"Death import error: {e}")
 
 
+async def scrape_gim_highscore():
+    """Scrape OSRS GIM hiscores for Unsociables group"""
+    try:
+        if not gim_collection:
+            print("❌ MongoDB not available - cannot save GIM data")
+            return False
+
+        group_name = 'unsociables'
+
+        print(f"\n{'=' * 60}")
+        print(f"🛡️ Scraping GIM Highscore for: {group_name}")
+        print(f"{'=' * 60}")
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+
+        base_url = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page='
+
+        overall_rank = None
+        total_xp = None
+        prestige_count = 0
+        found = False
+
+        # Search through pages
+        for page in range(1, 151):
+            if found:
+                break
+
+            url = f"{base_url}{page}"
+
+            try:
+                print(f"📄 Fetching page {page}...")
+                time.sleep(random.uniform(1.0, 3.0))
+
+                response = requests.get(url, headers=headers, timeout=15)
+
+                if response.status_code == 403:
+                    print(f"⚠️  Blocked (403) - stopping")
+                    break
+
+                if response.status_code != 200:
+                    continue
+
+                html = response.text
+                tbody_match = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.DOTALL)
+                if not tbody_match:
+                    continue
+
+                tbody_content = tbody_match.group(1)
+                rows = re.findall(r'<tr[^>]*>(.*?)</tr>', tbody_content, re.DOTALL)
+
+                for row_html in rows:
+                    cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
+
+                    if len(cells) < 4:
+                        continue
+
+                    rank_text = re.sub(r'<.*?>', '', cells[0]).strip()
+                    try:
+                        rank = int(rank_text.replace(',', ''))
+                    except:
+                        continue
+
+                    name_cell = cells[1]
+                    has_star = '<img' in name_cell and 'prestige' in name_cell.lower()
+                    clean_name = re.sub(r'<.*?>', '', name_cell).strip().lower()
+
+                    xp_text = re.sub(r'<.*?>', '', cells[3]).strip()
+                    try:
+                        xp = int(xp_text.replace(',', ''))
+                    except:
+                        xp = None
+
+                    if group_name in clean_name:
+                        print(f"\n✅ FOUND at rank #{rank}")
+                        overall_rank = rank
+                        total_xp = xp
+                        found = True
+
+                        if has_star:
+                            prestige_count += 1
+                            print(f"⭐ Has PRESTIGE!")
+
+                        break
+
+                    if has_star and not found:
+                        prestige_count += 1
+
+                if page % 10 == 0 and not found:
+                    print(f"   💤 Checked {prestige_count} prestige groups...")
+
+            except Exception as e:
+                print(f"❌ Error page {page}: {e}")
+                continue
+
+        if not found:
+            return False
+
+        prestige_rank = prestige_count if prestige_count > 0 else None
+
+        print(f"\n📊 RESULTS:")
+        print(f"   Overall: #{overall_rank:,}")
+        if prestige_rank:
+            print(f"   Prestige: #{prestige_rank:,} ⭐")
+        if total_xp:
+            print(f"   XP: {total_xp:,}")
+        print(f"{'=' * 60}\n")
+
+        gim_data = {
+            'group_name': 'Unsociables',
+            'overall_rank': overall_rank,
+            'prestige_rank': prestige_rank,
+            'has_prestige': prestige_rank is not None,
+            'total_xp': total_xp,
+            'updated_at': datetime.utcnow()
+        }
+
+        gim_collection.update_one(
+            {'group_name': 'Unsociables'},
+            {'$set': gim_data},
+            upsert=True
+        )
+
+        print(f"💾 Saved to MongoDB")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+
+
+@bot.command()
+async def gimrank(ctx):
+    """Update GIM highscore"""
+    await ctx.send("🛡️ Updating GIM highscore... 1-2 minutes.")
+    success = await scrape_gim_highscore()
+
+    if success:
+        await ctx.send("✅ Updated!")
+    else:
+        await ctx.send("❌ Failed - check logs")
+
+
 # Run the bot
 if __name__ == "__main__":
     TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
@@ -626,5 +785,23 @@ if __name__ == "__main__":
     print(f"Bingo API: {BINGO_API_BASE}")
     print("Tracking: Loot Drops, Collection Log, Deaths")
     print("=" * 50)
+
+    from discord.ext import tasks
+
+
+    @tasks.loop(hours=24)
+    async def auto_update_gim():
+        print("🔄 Auto-updating GIM...")
+        await scrape_gim_highscore()
+
+
+    @auto_update_gim.before_loop
+    async def before_auto_update():
+        await bot.wait_until_ready()
+        await asyncio.sleep(300)
+        print("✅ Will update GIM in 5 mins")
+
+
+    auto_update_gim.start()
 
     bot.run(TOKEN)
