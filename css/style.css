@@ -1180,51 +1180,63 @@
             }
         }
 
+        /* ============================================
+           BOSS KC MODAL STYLING (Light Theme)
+           ============================================ */
+
+        /* Boss KC Modal - Light Theme (Matches Drop Analytics) */
+        #kcModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #kcModal.active {
+            display: flex;
+        }
+
         #kcModal .modal-content {
-        background: linear-gradient(135deg, #2c1810 0%, #4a2c1a 100%);
-        color: #f4e4c1;
+            background: linear-gradient(135deg, #f5e6d3 0%, #e8d4bc 100%);
+            border: 4px solid #8b6f47;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 95vw;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            position: relative;
+            color: #2c1810;
         }
 
         #kcModal h2 {
-            color: #cd8b2d;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            color: #8b6f47;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 24px;
         }
 
         #kcModal h3 {
-            color: #cd8b2d;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            color: #8b6f47;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 18px;
         }
 
-        .kc-tab {
-            background: rgba(205, 139, 45, 0.1);
-            border: 2px solid rgba(205, 139, 45, 0.3);
-            color: #f4e4c1;
-            padding: 12px 24px;
-            border-radius: 8px 8px 0 0;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-weight: bold;
-            border-bottom: none;
-        }
-
-        .kc-tab:hover {
-            background: rgba(205, 139, 45, 0.2);
-            border-color: #cd8b2d;
-        }
-
-        .kc-tab.active {
-            background: rgba(205, 139, 45, 0.3);
-            border-color: #cd8b2d;
-            color: #cd8b2d;
-            box-shadow: 0 -2px 8px rgba(205, 139, 45, 0.3);
-        }
-
-        #kcAdminControls {
-            background: rgba(205, 139, 45, 0.1) !important;
-            border: 2px solid rgba(205, 139, 45, 0.3);
-        }
-
+        /* Close Button - Consistent across all modals */
+        .modal-content .close-btn,
         #kcModal .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
             background: rgba(139, 0, 0, 0.8);
             color: #f4e4c1;
             border: 2px solid rgba(139, 0, 0, 0.6);
@@ -1234,22 +1246,226 @@
             border-radius: 50%;
             cursor: pointer;
             transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
         }
 
+        .modal-content .close-btn:hover,
         #kcModal .close-btn:hover {
             background: rgba(139, 0, 0, 1);
             transform: rotate(90deg);
             box-shadow: 0 4px 12px rgba(139, 0, 0, 0.6);
         }
 
+        /* Admin Controls Section */
+        #kcAdminControls {
+            background: rgba(205, 139, 45, 0.15);
+            border: 2px solid #cd8b2d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        #kcAdminControls h3 {
+            color: #8b6f47;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        #kcAdminControls button {
+            background: #cd8b2d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+
+        #kcAdminControls button:hover {
+            background: #b8771f;
+            transform: translateY(-2px);
+        }
+
+        /* Tab Navigation */
+        .kc-tab-nav {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #cd8b2d;
+        }
+
+        .kc-tab {
+            background: rgba(205, 139, 45, 0.15);
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: #8b6f47;
+            padding: 12px 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .kc-tab:hover {
+            background: rgba(205, 139, 45, 0.25);
+        }
+
+        .kc-tab.active {
+            background: rgba(205, 139, 45, 0.3);
+            border-bottom-color: #cd8b2d;
+            color: #6d5635;
+        }
+
+        /* Tab Content */
+        .kc-tab-content {
+            display: none;
+            padding: 20px 0;
+        }
+
+        .kc-tab-content.active {
+            display: block;
+        }
+
+        /* Player Cards */
+        .player-kc-card {
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid #cd8b2d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .player-kc-card:hover {
+            background: rgba(255, 255, 255, 0.7);
+            box-shadow: 0 4px 12px rgba(205, 139, 45, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .player-kc-card h3 {
+            color: #8b6f47;
+            margin: 0 0 10px 0;
+            font-size: 18px;
+        }
+
+        .player-kc-card p {
+            color: #5d4a2f;
+            font-size: 12px;
+            margin: 5px 0;
+        }
+
+        /* Boss List */
+        .boss-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .boss-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 10px;
+            background: rgba(205, 139, 45, 0.1);
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .boss-item .boss-name {
+            color: #5d4a2f;
+            font-weight: 500;
+        }
+
+        .boss-item .boss-kc {
+            color: #cd8b2d;
+            font-weight: bold;
+        }
+
+        /* Leaderboard */
         #bossLeaderboardSelect {
-            background: rgba(205, 139, 45, 0.1) !important;
-            border: 2px solid rgba(205, 139, 45, 0.3) !important;
-            color: #f4e4c1 !important;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 2px solid #cd8b2d;
+            border-radius: 5px;
+            background: white;
+            color: #5d4a2f;
+            font-size: 14px;
             font-weight: bold;
         }
 
         #bossLeaderboardSelect option {
-            background: #2c1810;
-            color: #f4e4c1;
+            background: white;
+            color: #5d4a2f;
+        }
+
+        .leaderboard-entry {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid #cd8b2d;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .leaderboard-entry.rank-1 {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.3) 0%, rgba(255, 215, 0, 0.1) 100%);
+            border-color: #FFD700;
+        }
+
+        .leaderboard-entry.rank-2 {
+            background: linear-gradient(135deg, rgba(192, 192, 192, 0.3) 0%, rgba(192, 192, 192, 0.1) 100%);
+            border-color: #C0C0C0;
+        }
+
+        .leaderboard-entry.rank-3 {
+            background: linear-gradient(135deg, rgba(205, 127, 50, 0.3) 0%, rgba(205, 127, 50, 0.1) 100%);
+            border-color: #CD7F32;
+        }
+
+        .leaderboard-rank {
+            font-size: 20px;
+            font-weight: bold;
+            color: #8b6f47;
+            min-width: 40px;
+        }
+
+        .leaderboard-player {
+            flex: 1;
+            font-weight: bold;
+            color: #5d4a2f;
+        }
+
+        .leaderboard-kc {
+            font-weight: bold;
+            color: #cd8b2d;
+            font-size: 16px;
+        }
+
+        /* View All Bosses Button */
+        .view-all-btn {
+            background: #cd8b2d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        .view-all-btn:hover {
+            background: #b8771f;
+            transform: translateY(-2px);
         }

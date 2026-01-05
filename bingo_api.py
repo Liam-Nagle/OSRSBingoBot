@@ -441,6 +441,71 @@ def get_all_kc():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/kc/effort', methods=['GET'])
+def get_kc_effort():
+    """Calculate KC effort (gains since bingo start)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get all players
+        players = kc_collection.distinct('player')
+
+        effort_results = []
+
+        for player in players:
+            # Get bingo start snapshot
+            start_snapshot = kc_collection.find_one({
+                'player': player,
+                'snapshot_type': 'start'
+            }, sort=[('timestamp', -1)])
+
+            # Get latest current snapshot
+            current_snapshot = kc_collection.find_one({
+                'player': player,
+                'snapshot_type': 'current'
+            }, sort=[('timestamp', -1)])
+
+            if not start_snapshot or not current_snapshot:
+                continue  # Skip if missing either snapshot
+
+            # Calculate effort (current - start)
+            start_bosses = start_snapshot.get('bosses', {})
+            current_bosses = current_snapshot.get('bosses', {})
+
+            effort = {}
+            for boss, current_kc in current_bosses.items():
+                start_kc = start_bosses.get(boss, 0)
+                gain = current_kc - start_kc
+                if gain > 0:
+                    effort[boss] = gain
+
+            if effort:  # Only include if there are gains
+                effort_results.append({
+                    'player': player,
+                    'effort': effort,
+                    'start_timestamp': start_snapshot['timestamp'].isoformat(),
+                    'current_timestamp': current_snapshot['timestamp'].isoformat()
+                })
+
+        if not effort_results:
+            return jsonify({
+                'success': False,
+                'message': 'No bingo start snapshot found. Click "Mark as Bingo Start" to set baseline.',
+                'players': []
+            })
+
+        return jsonify({
+            'success': True,
+            'players': effort_results
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 @app.route('/players', methods=['GET'])
 def get_players():

@@ -3293,7 +3293,7 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = html;
         }
 
-        function renderKCEffort(data) {
+        async function renderKCEffort(data) {
             const container = document.getElementById('kcTabContentEffort');
             if (!container) {
                 console.error('KC Effort container not found');
@@ -3302,13 +3302,94 @@ async function loadAnalyticsWithFilters() {
 
             console.log('Rendering KC Effort with data:', data);
 
+            // Show loading state
             container.innerHTML = `
                 <div style="text-align: center; color: #666; padding: 40px;">
-                    <h3 style="margin-bottom: 20px;">Effort Tracking</h3>
-                    <p>This feature requires a "Bingo Start" snapshot to track KC gained during the bingo period.</p>
-                    <p style="margin-top: 20px;">Use the "Mark as Bingo Start" button in admin controls to enable this feature.</p>
+                    <p>Loading effort data...</p>
                 </div>
             `;
+
+            try {
+                // Fetch ALL snapshots (not just latest)
+                const response = await fetch(`${API_URL}/kc/effort`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const effortData = await response.json();
+
+                if (!effortData.success) {
+                    container.innerHTML = `
+                        <div style="text-align: center; color: #666; padding: 40px;">
+                            <h3 style="margin-bottom: 20px;">Effort Tracking</h3>
+                            <p>${effortData.message || 'Unable to calculate effort'}</p>
+                            <p style="margin-top: 20px;">Use the "Mark as Bingo Start" button in admin controls to set a baseline.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Render effort data
+                const players = effortData.players || [];
+
+                if (players.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align: center; color: #666; padding: 40px;">
+                            <h3 style="margin-bottom: 20px;">No Effort Data</h3>
+                            <p>No KC gains detected since bingo start.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Build HTML
+                let html = '<div style="padding: 20px;">';
+
+                players.forEach(player => {
+                    const bosses = Object.entries(player.effort || {})
+                        .filter(([boss, kc]) => kc > 0)
+                        .sort((a, b) => b[1] - a[1]);
+
+                    if (bosses.length === 0) {
+                        return; // Skip players with no gains
+                    }
+
+                    html += `
+                        <div class="player-kc-card">
+                            <h3>${player.player}</h3>
+                            <p style="color: #666; font-size: 12px;">KC gained since bingo start</p>
+                            <div class="boss-list" style="margin-top: 15px;">
+                    `;
+
+                    bosses.forEach(([boss, kc]) => {
+                        html += `
+                            <div class="boss-item">
+                                <span class="boss-name">${boss}</span>
+                                <span class="boss-kc" style="color: #4CAF50;">+${kc.toLocaleString()} KC</span>
+                            </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div>';
+                container.innerHTML = html;
+
+            } catch (error) {
+                console.error('Failed to load effort data:', error);
+                container.innerHTML = `
+                    <div style="text-align: center; color: #f44336; padding: 40px;">
+                        <h3 style="margin-bottom: 20px;">Error Loading Effort Data</h3>
+                        <p>${error.message}</p>
+                        <p style="margin-top: 20px;">Check browser console for details.</p>
+                    </div>
+                `;
+            }
         }
 
         function showPlayerKCDetail(player) {
@@ -3433,6 +3514,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                          {
+                version: "v2.0.0",
+                date: "2025-01-05",
+                title: "Changed Boss KC styling and added clan highscore widget",
+                changes: [
+                    { type: "feature", text: "Added highscores which pulls overall highscore and scrapes for prestige highscore" },
+                    { type: "improvement", text: "Improved BossKC modal styling to match others" },
+                ]
+            },
                           {
                 version: "v1.9.2",
                 date: "2025-01-04",
