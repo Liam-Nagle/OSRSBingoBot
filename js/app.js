@@ -3317,7 +3317,7 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = html;
         }
 
-                async function renderKCEffort(data) {
+        async function renderKCEffort(data) {
             const playerContainer = document.getElementById('effortPlayerView');
             const bossContainer = document.getElementById('effortBossView');
 
