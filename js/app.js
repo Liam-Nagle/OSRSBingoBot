@@ -3330,24 +3330,55 @@ async function loadAnalyticsWithFilters() {
                 const response = await fetch(`${API_URL}/kc/effort`);
                 const effortData = await response.json();
 
+                console.log('Effort API Response:', effortData);
+
                 if (!effortData.success) {
+                    const message = effortData.message || 'Unable to calculate effort';
                     playerContainer.innerHTML = `
                         <div class="loading-message" style="padding: 40px;">
-                            <p>⚠️ ${effortData.message || 'Unable to calculate effort'}</p>
-                            <p style="margin-top: 20px;">Use the "Mark as Bingo Start" button in admin controls to set a baseline.</p>
+                            <p>⚠️ ${message}</p>
+                            ${message.includes('snapshot') ? '<p style="margin-top: 20px;">Use the "Mark as Bingo Start" button in admin controls to set a baseline.</p>' : ''}
                         </div>
                     `;
                     bossContainer.innerHTML = playerContainer.innerHTML;
                     return;
                 }
 
+                // Transform API data to match expected format
+                const transformedData = {
+                    success: true,
+                    players: effortData.players.map(player => {
+                        const bossesArray = Object.entries(player.effort || {}).map(([boss, gained]) => ({
+                            boss: boss,
+                            gained: gained,
+                            start: 0,  // API doesn't provide this in current format
+                            current: gained  // Approximation
+                        }));
+
+                        const totalKills = bossesArray.reduce((sum, b) => sum + b.gained, 0);
+
+                        return {
+                            player: player.player,
+                            totalKills: totalKills,
+                            bosses: bossesArray
+                        };
+                    })
+                };
+
+                console.log('Transformed Data:', transformedData);
+
                 // Render both views
-                renderEffortPlayerView(effortData, playerContainer);
-                renderEffortBossView(effortData, bossContainer);
+                renderEffortPlayerView(transformedData, playerContainer);
+                renderEffortBossView(transformedData, bossContainer);
 
             } catch (error) {
                 console.error('Failed to load effort data:', error);
-                const errorHtml = '<div class="loading-message" style="padding: 40px;">Failed to load effort data</div>';
+                const errorHtml = `
+                    <div class="loading-message" style="padding: 40px;">
+                        <p>Failed to load effort data</p>
+                        <p style="font-size: 12px; color: #8b7355; margin-top: 10px;">Error: ${error.message}</p>
+                    </div>
+                `;
                 playerContainer.innerHTML = errorHtml;
                 bossContainer.innerHTML = errorHtml;
             }
