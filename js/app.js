@@ -1873,6 +1873,9 @@
             const overlay = document.getElementById('expandedChartOverlay');
             overlay.style.display = 'none';
 
+            // Sync filters back to main analytics view
+            syncFiltersToMain();
+
             // Destroy expanded chart instance
             if (expandedChartInstance) {
                 expandedChartInstance.destroy();
@@ -1880,6 +1883,27 @@
             }
 
             currentExpandedChart = null;
+            expandedChartType = null;
+        }
+
+        function syncFiltersToMain() {
+            // Copy filter values from expanded view back to main analytics
+            const expandedType = document.getElementById('expandedTypeFilter')?.value || '';
+            const expandedValue = document.getElementById('expandedValueFilter')?.value || '0';
+            const expandedSearch = document.getElementById('expandedSearchFilter')?.value || '';
+
+            document.getElementById('analyticsTypeFilter').value = expandedType;
+            document.getElementById('analyticsValueFilter').value = expandedValue;
+            document.getElementById('analyticsSearchFilter').value = expandedSearch;
+
+            // Copy selected players back
+            analyticsSelectedPlayers = [...expandedSelectedPlayers];
+            updateAnalyticsPlayerButton();
+
+            // Reload main analytics with updated filters
+            if (expandedType || expandedValue !== '0' || expandedSearch || expandedSelectedPlayers.length > 0) {
+                applyAnalyticsFilters();
+            }
         }
 
         // Expanded chart filter functionality
