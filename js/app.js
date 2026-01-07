@@ -1994,48 +1994,342 @@
             }
         }
 
-        function updateExpandedChartWithData(chartId, drops, players, playerColors) {
+function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             if (!expandedChartInstance) return;
 
-            // Destroy and recreate chart with filtered data
+            // Destroy current chart
             expandedChartInstance.destroy();
 
-            // Get chart configuration based on type
+            // Get the canvas context
+            const ctx = document.getElementById('expandedChartCanvas').getContext('2d');
+
+            // Create chart based on type using the ACTUAL chart creation logic
             let config;
+
             switch(chartId) {
                 case 'dropsPerDayChart':
-                    config = createDropsOverTimeConfig(drops, players, playerColors);
+                    // Recreate drops over time chart with filtered data
+                    const last30Days = [];
+                    const dayCounts = {};
+                    const today = new Date();
+
+                    for (let i = 29; i >= 0; i--) {
+                        const date = new Date(today);
+                        date.setDate(today.getDate() - i);
+                        const dateStr = date.toISOString().split('T')[0];
+                        last30Days.push(dateStr);
+                        players.forEach(player => {
+                            if (!dayCounts[player]) dayCounts[player] = {};
+                            dayCounts[player][dateStr] = 0;
+                        });
+                    }
+
+                    drops.forEach(d => {
+                        const dateStr = d.timestamp.toISOString().split('T')[0];
+                        if (last30Days.includes(dateStr)) {
+                            if (dayCounts[d.player]) {
+                                dayCounts[d.player][dateStr] = (dayCounts[d.player][dateStr] || 0) + 1;
+                            }
+                        }
+                    });
+
+                    const datasets = players.map(player => ({
+                        label: player,
+                        data: last30Days.map(date => dayCounts[player]?.[date] || 0),
+                        borderColor: playerColors[player],
+                        backgroundColor: playerColors[player] + '20',
+                        tension: 0.4,
+                        fill: true
+                    }));
+
+                    config = {
+                        type: 'line',
+                        data: {
+                            labels: last30Days.map(d => {
+                                const date = new Date(d);
+                                return `${date.getMonth() + 1}/${date.getDate()}`;
+                            }),
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Drops Over Time (Last 30 Days)',
+                                    font: { size: 16 }
+                                },
+                                legend: {
+                                    labels: { font: { size: 14 }, padding: 15 }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { stepSize: 1 }
+                                }
+                            }
+                        }
+                    };
                     break;
+
                 case 'topItemsChart':
-                    config = createTopItemsConfig(drops, players, playerColors);
+                    // Recreate top items chart with filtered data
+                    const itemValues = {};
+                    drops.forEach(d => {
+                        const value = d.value || 0;
+                        if (itemValues[d.item]) {
+                            itemValues[d.item] += value;
+                        } else {
+                            itemValues[d.item] = value;
+                        }
+                    });
+
+                    const sortedItems = Object.entries(itemValues)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 10);
+
+                    config = {
+                        type: 'bar',
+                        data: {
+                            labels: sortedItems.map(item => item[0]),
+                            datasets: [{
+                                label: 'Total Value (GP)',
+                                data: sortedItems.map(item => item[1]),
+                                backgroundColor: '#cd8b2d',
+                                borderColor: '#8B6914',
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Top 10 Most Valuable Drops',
+                                    font: { size: 16 }
+                                },
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        callback: function(value) {
+                                            if (value >= 1000000) {
+                                                return (value / 1000000).toFixed(1) + 'M';
+                                            } else if (value >= 1000) {
+                                                return (value / 1000).toFixed(0) + 'K';
+                                            }
+                                            return value;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
                     break;
+
                 case 'dayOfWeekChart':
-                    config = createDayOfWeekConfig(drops);
+                    // Recreate day of week chart with filtered data
+                    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const dayCounts2 = [0, 0, 0, 0, 0, 0, 0];
+
+                    drops.forEach(d => {
+                        const day = d.timestamp.getDay();
+                        dayCounts2[day]++;
+                    });
+
+                    config = {
+                        type: 'bar',
+                        data: {
+                            labels: dayNames,
+                            datasets: [{
+                                label: 'Drops',
+                                data: dayCounts2,
+                                backgroundColor: '#cd8b2d',
+                                borderColor: '#8B6914',
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Activity by Day of Week',
+                                    font: { size: 16 }
+                                },
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { stepSize: 1 }
+                                }
+                            }
+                        }
+                    };
                     break;
+
                 case 'hourHeatmapChart':
-                    config = createHourHeatmapConfig(drops, players, playerColors);
+                    // Recreate hour heatmap with filtered data
+                    const hourCounts = {};
+                    const hours = Array.from({length: 24}, (_, i) => i);
+
+                    players.forEach(player => {
+                        hourCounts[player] = Array(24).fill(0);
+                    });
+
+                    drops.forEach(d => {
+                        const hour = d.timestamp.getHours();
+                        if (hourCounts[d.player]) {
+                            hourCounts[d.player][hour]++;
+                        }
+                    });
+
+                    const hourDatasets = players.map(player => ({
+                        label: player,
+                        data: hourCounts[player] || Array(24).fill(0),
+                        borderColor: playerColors[player],
+                        backgroundColor: playerColors[player] + '40',
+                        tension: 0.4,
+                        fill: true
+                    }));
+
+                    config = {
+                        type: 'line',
+                        data: {
+                            labels: hours.map(h => `${h}:00`),
+                            datasets: hourDatasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Activity by Hour of Day',
+                                    font: { size: 16 }
+                                },
+                                legend: {
+                                    labels: { font: { size: 14 }, padding: 15 }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { stepSize: 1 }
+                                }
+                            }
+                        }
+                    };
                     break;
+
                 case 'playerActivityChart':
-                    config = createPlayerActivityConfig(drops);
+                    // Recreate player activity chart with filtered data
+                    const playerCounts = {};
+                    drops.forEach(d => {
+                        playerCounts[d.player] = (playerCounts[d.player] || 0) + 1;
+                    });
+
+                    const sortedPlayers = Object.entries(playerCounts)
+                        .sort((a, b) => b[1] - a[1]);
+
+                    config = {
+                        type: 'doughnut',
+                        data: {
+                            labels: sortedPlayers.map(p => p[0]),
+                            datasets: [{
+                                data: sortedPlayers.map(p => p[1]),
+                                backgroundColor: sortedPlayers.map(p => playerColors[p[0]] || '#cd8b2d'),
+                                borderColor: '#8B6914',
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Player Activity Distribution',
+                                    font: { size: 16 }
+                                },
+                                legend: {
+                                    labels: { font: { size: 14 }, padding: 15 }
+                                }
+                            }
+                        }
+                    };
                     break;
+
                 case 'monthComparisonChart':
-                    config = createMonthComparisonConfig(drops);
+                    // Recreate month comparison chart with filtered data
+                    const monthNames2 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const monthCounts2 = {};
+
+                    drops.forEach(d => {
+                        const monthKey = `${d.timestamp.getFullYear()}-${String(d.timestamp.getMonth() + 1).padStart(2, '0')}`;
+                        monthCounts2[monthKey] = (monthCounts2[monthKey] || 0) + 1;
+                    });
+
+                    const sortedMonths = Object.entries(monthCounts2)
+                        .sort((a, b) => a[0].localeCompare(b[0]))
+                        .slice(-6);
+
+                    config = {
+                        type: 'bar',
+                        data: {
+                            labels: sortedMonths.map(m => {
+                                const [year, month] = m[0].split('-');
+                                return `${monthNames2[parseInt(month) - 1]} ${year}`;
+                            }),
+                            datasets: [{
+                                label: 'Drops',
+                                data: sortedMonths.map(m => m[1]),
+                                backgroundColor: '#cd8b2d',
+                                borderColor: '#8B6914',
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Monthly Drop Comparison (Last 6 Months)',
+                                    font: { size: 16 }
+                                },
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { stepSize: 1 }
+                                }
+                            }
+                        }
+                    };
                     break;
+
                 default:
+                    console.error('Unknown chart type:', chartId);
                     return;
             }
 
-            if (!config.options) config.options = {};
-            if (!config.options.plugins) config.options.plugins = {};
-            if (!config.options.plugins.legend) config.options.plugins.legend = {};
-            config.options.plugins.legend.labels = {
-                ...config.options.plugins.legend.labels,
-                font: { size: 14 },
-                padding: 15
-            };
-            config.options.maintainAspectRatio = false;
-
-            const ctx = document.getElementById('expandedChartCanvas').getContext('2d');
+            // Create the new chart
             expandedChartInstance = new Chart(ctx, config);
         }
 
@@ -4019,6 +4313,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                            {
+                version: "v2.2.0",
+                date: "2025-01-05",
+                title: "Added new effort tab with Boss/Player view",
+                changes: [
+                    { type: "fix", text: "Expanded chart filters not working" },
+                ]
+            },
                             {
                 version: "v2.2.0",
                 date: "2025-01-05",
