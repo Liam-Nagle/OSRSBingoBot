@@ -3412,6 +3412,16 @@ async function loadAnalyticsWithFilters() {
             return colorMap;
         }
 
+        // Helper function to clean markdown links from Dink messages
+        function cleanMarkdownLinks(text) {
+            if (!text) return text;
+
+            // Convert markdown links [text](url) to just the text
+            // Regex: \[([^\]]+)\]\([^\)]+\)
+            return text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+        }
+
+
         // ===========================
         // ENHANCED DEATH TRACKING
         // ===========================
@@ -3492,8 +3502,9 @@ async function loadAnalyticsWithFilters() {
 
                             if (playerNpcs.length > 0) {
                                 const [nemesisNpc, nemesisDeaths] = playerNpcs[0];  // Get #1 deadliest
+                                const cleanNemesisNpc = cleanMarkdownLinks(nemesisNpc);
                                 nemesisHtml = `<div style="font-size: 12px; color: #8B0000; margin-top: 3px;">
-                                    💀 Nemesis: ${nemesisNpc} (${nemesisDeaths} death${nemesisDeaths !== 1 ? 's' : ''})
+                                    💀 Nemesis: ${cleanNemesisNpc} (${nemesisDeaths} death${nemesisDeaths !== 1 ? 's' : ''})
                                 </div>`;
                             }
                         }
@@ -3502,7 +3513,7 @@ async function loadAnalyticsWithFilters() {
                         let lastNpcHtml = '';
                         if (player.last_npc) {
                             // Clean up NPC display
-                            let npcDisplay = player.last_npc;
+                            let npcDisplay = cleanMarkdownLinks(player.last_npc);
 
                             // If it's Unknown or %NPC%, style it differently
                             if (npcDisplay === 'Unknown' || npcDisplay === '%NPC%') {
@@ -3594,7 +3605,7 @@ async function loadAnalyticsWithFilters() {
                                     <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
                                         <div style="font-size: 20px; min-width: 30px;">${medal}</div>
                                         <div>
-                                            <div style="font-weight: bold; font-size: 16px; color: #2c1810;">${npc.npc}</div>
+                                            <div style="font-weight: bold; font-size: 16px; color: #2c1810;">${cleanMarkdownLinks(npc.npc)}</div>
                                             <div style="font-size: 11px; color: #666; margin-top: 2px;">
                                                 ${npc.unique_players} player${npc.unique_players !== 1 ? 's' : ''} killed
                                             </div>
@@ -4337,9 +4348,17 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                             {
+                version: "v2.2.1",
+                date: "2025-01-07",
+                title: "Added new effort tab with Boss/Player view",
+                changes: [
+                    { type: "fix", text: "Fixed NPC Urls in name" },
+                ]
+            },
                             {
-                version: "v2.2.0",
-                date: "2025-01-05",
+                version: "v2.2.1",
+                date: "2025-01-06",
                 title: "Added new effort tab with Boss/Player view",
                 changes: [
                     { type: "fix", text: "Expanded chart filters not working" },
@@ -4347,7 +4366,7 @@ async function loadAnalyticsWithFilters() {
             },
                             {
                 version: "v2.2.0",
-                date: "2025-01-05",
+                date: "2025-01-06",
                 title: "Added new effort tab with Boss/Player view",
                 changes: [
                     { type: "feature", text: "Added expandable charts (Click on a chart to expand)" },
@@ -4356,7 +4375,7 @@ async function loadAnalyticsWithFilters() {
             },
                            {
                 version: "v2.1.0",
-                date: "2025-01-05",
+                date: "2025-01-06",
                 title: "Added new effort tab with Boss/Player view",
                 changes: [
                     { type: "feature", text: "Added new effort tab with Boss/Player view" },
