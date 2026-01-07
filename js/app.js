@@ -2049,6 +2049,67 @@
             if (expandedSelectedPlayers.length > 0) {
                 expandedSelectedPlayers.forEach(player => {
 
+                    chips.push(`
+                        <span style="background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                            👤 ${player}
+                            <button onclick="toggleExpandedPlayer('${player.replace(/'/g, "\\'")}'); event.stopPropagation();"
+                                    style="background: none; border: none; color: white; cursor: pointer; font-size: 14px; padding: 0; line-height: 1;">✕</button>
+                        </span>
+                    `);
+                });
+            }
+
+            // Type chip
+            const typeFilter = document.getElementById('expandedTypeFilter')?.value;
+            if (typeFilter) {
+                const typeLabel = typeFilter === 'loot' ? 'Loot Drop' : 'Collection Log';
+                chips.push(`
+                    <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                        📦 ${typeLabel}
+                        <button onclick="document.getElementById('expandedTypeFilter').value=''; applyExpandedChartFilters(); event.stopPropagation();"
+                                style="background: none; border: none; color: white; cursor: pointer; font-size: 14px; padding: 0; line-height: 1;">✕</button>
+                    </span>
+                `);
+            }
+
+            // Value chip
+            const valueFilter = document.getElementById('expandedValueFilter')?.value;
+            if (valueFilter && valueFilter !== '0') {
+                const valueLabel = parseInt(valueFilter) >= 1000000
+                    ? `${parseInt(valueFilter) / 1000000}M+`
+                    : `${parseInt(valueFilter) / 1000}K+`;
+                chips.push(`
+                    <span style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                        💰 ${valueLabel}
+                        <button onclick="document.getElementById('expandedValueFilter').value='0'; applyExpandedChartFilters(); event.stopPropagation();"
+                                style="background: none; border: none; color: white; cursor: pointer; font-size: 14px; padding: 0; line-height: 1;">✕</button>
+                    </span>
+                `);
+            }
+
+            // Search chip
+            const searchFilter = document.getElementById('expandedSearchFilter')?.value;
+            if (searchFilter) {
+                chips.push(`
+                    <span style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                        🔍 "${searchFilter}"
+                        <button onclick="document.getElementById('expandedSearchFilter').value=''; applyExpandedChartFilters(); event.stopPropagation();"
+                                style="background: none; border: none; color: white; cursor: pointer; font-size: 14px; padding: 0; line-height: 1;">✕</button>
+                    </span>
+                `);
+            }
+
+            container.innerHTML = chips.join('');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('expandedPlayerDropdown');
+            const button = document.getElementById('expandedPlayerButton');
+            if (dropdown && button && !dropdown.contains(event.target) && !button.contains(event.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
 
         // Make all charts expandable after they're created
         function initializeExpandableCharts() {
