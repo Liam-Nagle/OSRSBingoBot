@@ -1213,6 +1213,7 @@
         #historyModal .close-btn,
         #changelogModal .close-btn,
         #analyticsModal .close-btn,
+        #expandedChartOverlay .close-btn,
         #kcModal .close-btn,
         #deathsModal .close-btn,
         .modal-content .close-btn {
@@ -1246,6 +1247,8 @@
         #historyModal .close-btn:hover,
         #changelogModal .close-btn:hover,
         #analyticsModal .close-btn:hover,
+        #expandedChartOverlay .close-btn,
+        #expandedChartOverlay .close-btn,
         #kcModal .close-btn:hover,
         #deathsModal .close-btn:hover,
         .modal-content .close-btn:hover {
@@ -1600,4 +1603,35 @@
 
         #playerKCDetailModal {
             z-index: 10001 !important;
+        }
+
+        /* Expandable Chart Styles */
+        #expandedChartOverlay canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* Chart hover effect */
+        canvas[id$='Chart'] {
+            transition: opacity 0.2s;
+        }
+
+        canvas[id$='Chart']:hover {
+            opacity: 0.8;
+        }
+
+        /* Expanded chart container */
+        #expandedChartOverlay > div {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: scale(0.9);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
         }

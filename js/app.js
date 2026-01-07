@@ -1735,8 +1735,13 @@
             const loadingDiv = document.getElementById('analyticsLoading');
             const contentDiv = document.getElementById('analyticsContent');
 
-            loadingDiv.style.display = 'block';
-            contentDiv.style.display = 'none';
+            loadingDiv.style.display = 'none';
+            contentDiv.style.display = 'block';
+
+            // Initialize expandable charts
+            setTimeout(() => {
+                initializeExpandableCharts();
+            }, 100);
 
             try {
                 // Fetch all history data
@@ -1789,6 +1794,270 @@
                 console.error('Error loading analytics:', error);
                 loadingDiv.innerHTML = '<div style="text-align: center; padding: 60px; color: #8b1a1a;">❌ Failed to load analytics</div>';
             }
+        }
+
+        // Chart expansion functionality
+        let currentExpandedChart = null;
+        let expandedChartInstance = null;
+
+        function makeChartExpandable(chartId, chartTitle) {
+            const canvas = document.getElementById(chartId);
+            if (!canvas) return;
+
+            // Add cursor pointer style
+            canvas.style.cursor = 'pointer';
+
+            // Add click handler
+            canvas.onclick = function() {
+                expandChart(chartId, chartTitle);
+            };
+        }
+
+        function expandChart(chartId, chartTitle) {
+            const sourceCanvas = document.getElementById(chartId);
+            if (!sourceCanvas) return;
+
+            const overlay = document.getElementById('expandedChartOverlay');
+            const expandedCanvas = document.getElementById('expandedChartCanvas');
+            const titleElement = document.getElementById('expandedChartTitle');
+
+            // Store references
+            currentExpandedChart = chartId;
+            expandedChartType = chartId;
+
+            // Sync filters from main view
+            syncFiltersToExpanded();
+
+            // Set title
+            titleElement.textContent = chartTitle;
+
+            // Destroy previous expanded chart if exists
+            if (expandedChartInstance) {
+                expandedChartInstance.destroy();
+            }
+
+            // Get the original chart instance
+            const originalChart = Chart.getChart(sourceCanvas);
+            if (!originalChart) {
+                console.error('No chart found for', chartId);
+                return;
+            }
+
+            // Clone the chart configuration
+            const config = {
+                type: originalChart.config.type,
+                data: JSON.parse(JSON.stringify(originalChart.config.data)), // Deep clone
+                options: JSON.parse(JSON.stringify(originalChart.config.options || {}))
+            };
+
+            // Enhance options for larger display
+            if (!config.options) config.options = {};
+            if (!config.options.plugins) config.options.plugins = {};
+            if (!config.options.plugins.legend) config.options.plugins.legend = {};
+            config.options.plugins.legend.labels = {
+                ...config.options.plugins.legend.labels,
+                font: { size: 14 },
+                padding: 15
+            };
+            config.options.maintainAspectRatio = false;
+
+            // Show overlay
+            overlay.style.display = 'flex';
+
+            // Create expanded chart
+            const ctx = expandedCanvas.getContext('2d');
+            expandedChartInstance = new Chart(ctx, config);
+        }
+
+        function closeExpandedChart() {
+            const overlay = document.getElementById('expandedChartOverlay');
+            overlay.style.display = 'none';
+
+            // Destroy expanded chart instance
+            if (expandedChartInstance) {
+                expandedChartInstance.destroy();
+                expandedChartInstance = null;
+            }
+
+            currentExpandedChart = null;
+        }
+
+        // Expanded chart filter functionality
+        let expandedSelectedPlayers = [];
+        let expandedChartData = null;
+        let expandedChartType = null;
+
+        function syncFiltersToExpanded() {
+            // Copy filter values from main analytics to expanded view
+            const mainType = document.getElementById('analyticsTypeFilter')?.value || '';
+            const mainValue = document.getElementById('analyticsValueFilter')?.value || '0';
+            const mainSearch = document.getElementById('analyticsSearchFilter')?.value || '';
+
+            document.getElementById('expandedTypeFilter').value = mainType;
+            document.getElementById('expandedValueFilter').value = mainValue;
+            document.getElementById('expandedSearchFilter').value = mainSearch;
+
+            // Copy selected players
+            expandedSelectedPlayers = [...analyticsSelectedPlayers];
+            updateExpandedPlayerButton();
+            populateExpandedPlayerDropdown();
+        }
+
+        function toggleExpandedPlayerDropdown() {
+            const dropdown = document.getElementById('expandedPlayerDropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function populateExpandedPlayerDropdown() {
+            if (!expandedChartData) return;
+
+            const dropdown = document.getElementById('expandedPlayerDropdown');
+            const players = [...new Set(expandedChartData.map(d => d.player))].sort();
+
+            dropdown.innerHTML = players.map(player => {
+                const isChecked = expandedSelectedPlayers.includes(player);
+                return `
+                    <label style="display: block; padding: 8px 12px; cursor: pointer; color: #333; ${isChecked ? 'background: rgba(205, 139, 45, 0.2);' : ''}">
+                        <input type="checkbox"
+                               ${isChecked ? 'checked' : ''}
+                               onchange="toggleExpandedPlayer('${player.replace(/'/g, "\\'")}')">
+                        ${player}
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function toggleExpandedPlayer(player) {
+            const index = expandedSelectedPlayers.indexOf(player);
+            if (index === -1) {
+                expandedSelectedPlayers.push(player);
+            } else {
+                expandedSelectedPlayers.splice(index, 1);
+            }
+            updateExpandedPlayerButton();
+            applyExpandedChartFilters();
+        }
+
+        function updateExpandedPlayerButton() {
+            const button = document.getElementById('expandedPlayerButton');
+            if (!button) return;
+
+            if (expandedSelectedPlayers.length === 0) {
+                button.textContent = 'All Players';
+            } else if (expandedSelectedPlayers.length === 1) {
+                button.textContent = expandedSelectedPlayers[0];
+            } else {
+                button.textContent = `${expandedSelectedPlayers.length} Players Selected`;
+            }
+        }
+
+        async function applyExpandedChartFilters() {
+            if (!expandedChartType || !currentExpandedChart) return;
+
+            renderExpandedFilterChips();
+
+            // Get filter values
+            const typeFilter = document.getElementById('expandedTypeFilter')?.value || '';
+            const valueFilter = parseInt(document.getElementById('expandedValueFilter')?.value || '0');
+            const searchFilter = document.getElementById('expandedSearchFilter')?.value.toLowerCase() || '';
+
+            // Build query parameters
+            const params = new URLSearchParams({ limit: 10000 });
+            if (typeFilter) params.append('type', typeFilter);
+            if (valueFilter > 0) params.append('minValue', valueFilter);
+            if (searchFilter) params.append('search', searchFilter);
+
+            try {
+                const response = await fetch(`${API_URL}/history?${params}`);
+                const data = await response.json();
+
+                let filteredHistory = (data.history || []).map(d => ({
+                    ...d,
+                    timestamp: new Date(d.timestamp)
+                }));
+
+                // Store for player dropdown
+                expandedChartData = filteredHistory;
+
+                // Get players to display
+                const players = expandedSelectedPlayers.length > 0
+                    ? expandedSelectedPlayers
+                    : [...new Set(filteredHistory.map(r => r.player))];
+
+                const playerColors = assignPlayerColors(players);
+
+                // Update the expanded chart based on type
+                updateExpandedChartWithData(currentExpandedChart, filteredHistory, players, playerColors);
+
+            } catch (error) {
+                console.error('Failed to apply expanded chart filters:', error);
+            }
+        }
+
+        function updateExpandedChartWithData(chartId, drops, players, playerColors) {
+            if (!expandedChartInstance) return;
+
+            // Destroy and recreate chart with filtered data
+            expandedChartInstance.destroy();
+
+            // Get chart configuration based on type
+            let config;
+            switch(chartId) {
+                case 'dropsPerDayChart':
+                    config = createDropsOverTimeConfig(drops, players, playerColors);
+                    break;
+                case 'topItemsChart':
+                    config = createTopItemsConfig(drops, players, playerColors);
+                    break;
+                case 'dayOfWeekChart':
+                    config = createDayOfWeekConfig(drops);
+                    break;
+                case 'hourHeatmapChart':
+                    config = createHourHeatmapConfig(drops, players, playerColors);
+                    break;
+                case 'playerActivityChart':
+                    config = createPlayerActivityConfig(drops);
+                    break;
+                case 'monthComparisonChart':
+                    config = createMonthComparisonConfig(drops);
+                    break;
+                default:
+                    return;
+            }
+
+            if (!config.options) config.options = {};
+            if (!config.options.plugins) config.options.plugins = {};
+            if (!config.options.plugins.legend) config.options.plugins.legend = {};
+            config.options.plugins.legend.labels = {
+                ...config.options.plugins.legend.labels,
+                font: { size: 14 },
+                padding: 15
+            };
+            config.options.maintainAspectRatio = false;
+
+            const ctx = document.getElementById('expandedChartCanvas').getContext('2d');
+            expandedChartInstance = new Chart(ctx, config);
+        }
+
+        function renderExpandedFilterChips() {
+            const container = document.getElementById('expandedAppliedFilters');
+            if (!container) return;
+
+            const chips = [];
+
+            // Player chips
+            if (expandedSelectedPlayers.length > 0) {
+                expandedSelectedPlayers.forEach(player => {
+
+
+        // Make all charts expandable after they're created
+        function initializeExpandableCharts() {
+            makeChartExpandable('dropsPerDayChart', '📊 Drops Over Time');
+            makeChartExpandable('topItemsChart', '🏆 Most Valuable Drops');
+            makeChartExpandable('dayOfWeekChart', '📅 Activity by Day of Week');
+            makeChartExpandable('hourHeatmapChart', '🕐 Activity Heatmap');
+            makeChartExpandable('playerActivityChart', '👥 Player Activity');
+            makeChartExpandable('monthComparisonChart', '📆 Monthly Comparison');
         }
 
         function generateKeyStats(drops) {
@@ -3689,6 +3958,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                            {
+                version: "v2.2.0",
+                date: "2025-01-05",
+                title: "Added new effort tab with Boss/Player view",
+                changes: [
+                    { type: "feature", text: "Added expandable charts (Click on a chart to expand)" },
+                    { type: "feature", text: "Added filtes to the expandable charts" },
+                ]
+            },
                            {
                 version: "v2.1.0",
                 date: "2025-01-05",
@@ -4240,6 +4518,34 @@ async function loadAnalyticsWithFilters() {
             }
 
             document.getElementById('groupXP').textContent = `Total XP: ${formatXp(data.totalXp)}`;
+        }
+
+                // Helper functions to create chart configs
+        function createDropsOverTimeConfig(drops, players, playerColors) {
+            // Extract the config creation logic from updateDropsOverTimeChart
+            // Return the config object
+            // (You'll need to extract this from your existing chart creation functions)
+            return Chart.getChart(document.getElementById('dropsPerDayChart'))?.config || {};
+        }
+
+        function createTopItemsConfig(drops, players, playerColors) {
+            return Chart.getChart(document.getElementById('topItemsChart'))?.config || {};
+        }
+
+        function createDayOfWeekConfig(drops) {
+            return Chart.getChart(document.getElementById('dayOfWeekChart'))?.config || {};
+        }
+
+        function createHourHeatmapConfig(drops, players, playerColors) {
+            return Chart.getChart(document.getElementById('hourHeatmapChart'))?.config || {};
+        }
+
+        function createPlayerActivityConfig(drops) {
+            return Chart.getChart(document.getElementById('playerActivityChart'))?.config || {};
+        }
+
+        function createMonthComparisonConfig(drops) {
+            return Chart.getChart(document.getElementById('monthComparisonChart'))?.config || {};
         }
 
         // Load on page load
