@@ -1216,7 +1216,11 @@
         #expandedChartOverlay .close-btn,
         #kcModal .close-btn,
         #deathsModal .close-btn,
-        .modal-content .close-btn {
+        #playerKCDetailModal .close-btn,
+        #rankHistoryModal .close-btn,
+        .modal-content .close-btn,
+        .tile-detail-popup .close-btn,
+        [class*="modal"] .close-btn {
             position: absolute;
             top: 15px;
             right: 15px;
@@ -1247,11 +1251,14 @@
         #historyModal .close-btn:hover,
         #changelogModal .close-btn:hover,
         #analyticsModal .close-btn:hover,
-        #expandedChartOverlay .close-btn,
-        #expandedChartOverlay .close-btn,
+        #expandedChartOverlay .close-btn:hover,
         #kcModal .close-btn:hover,
         #deathsModal .close-btn:hover,
-        .modal-content .close-btn:hover {
+        #playerKCDetailModal .close-btn:hover,
+        #rankHistoryModal .close-btn:hover,
+        .modal-content .close-btn:hover,
+        .tile-detail-popup .close-btn:hover,
+        [class*="modal"] .close-btn:hover {
             background: rgba(139, 0, 0, 1);
             transform: rotate(90deg);
             box-shadow: 0 4px 12px rgba(139, 0, 0, 0.6);
