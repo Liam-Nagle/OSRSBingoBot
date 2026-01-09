@@ -3060,6 +3060,38 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        async function cleanupDeathMarkdown() {
+            if (!isAdmin) {
+                alert('Admin access required!');
+                return;
+            }
+
+            if (!confirm('Clean markdown links from all death records in database?\n\nThis will fix old data that has [NPC Name](url) format.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/deaths/cleanup-markdown`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert(`✅ Cleanup complete!\n\nUpdated: ${result.updated} records\nTotal checked: ${result.total_checked}`);
+                    // Reload deaths to show cleaned data
+                    loadDeathStats();
+                } else {
+                    alert(`❌ Cleanup failed: ${result.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Cleanup error:', error);
+                alert(`❌ Failed to clean death data: ${error.message}`);
+            }
+        }
+
+
         function updateDropsOverTimeChart(historyData, players, playerColors) {
             const ctx = document.getElementById('dropsPerDayChart').getContext('2d');
 

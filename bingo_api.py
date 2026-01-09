@@ -921,6 +921,49 @@ def record_death():
     else:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+
+@app.route('/deaths/cleanup-markdown', methods=['POST'])
+def cleanup_death_markdown():
+    """Clean markdown links from existing death data (admin only)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        import re
+
+        # Get all deaths with NPC names
+        deaths = list(deaths_collection.find({'npc': {'$exists': True, '$ne': None}}))
+
+        updated_count = 0
+
+        for death in deaths:
+            npc_name = death['npc']
+
+            # Clean markdown links
+            cleaned_npc = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', npc_name)
+            cleaned_npc = re.sub(r'<([^>]+)>', r'\1', cleaned_npc)
+            cleaned_npc = re.sub(r'https?://[^\s]+', '', cleaned_npc)
+            cleaned_npc = cleaned_npc.strip()
+
+            # Only update if it changed
+            if cleaned_npc != npc_name and cleaned_npc:
+                deaths_collection.update_one(
+                    {'_id': death['_id']},
+                    {'$set': {'npc': cleaned_npc}}
+                )
+                updated_count += 1
+                print(f"Cleaned: {npc_name} → {cleaned_npc}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned {updated_count} death records',
+            'updated': updated_count,
+            'total_checked': len(deaths)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/deaths', methods=['GET'])
 def get_deaths():
     """Get death statistics"""

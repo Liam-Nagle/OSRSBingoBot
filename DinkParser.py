@@ -393,8 +393,11 @@ def parse_death_embed(embed, message):
             if npc_match:
                 npc_text = npc_match.group(1).strip()
 
-                # Remove markdown links: [NPC Name](URL) -> NPC Name
-                npc_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', npc_text)
+                # Handle multiple formats
+                npc_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', npc_text)  # [text](url)
+                npc_text = re.sub(r'<([^>]+)>', r'\1', npc_text)  # <url>
+                npc_text = re.sub(r'https?://[^\s]+', '', npc_text)  # bare URLs
+                npc_text = npc_text.strip()
 
                 # Remove %NPC% placeholder if present
                 if npc_text == '%NPC%' or npc_text == '':
