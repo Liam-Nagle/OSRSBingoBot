@@ -938,21 +938,35 @@ def cleanup_death_markdown():
 
         for death in deaths:
             npc_name = death['npc']
+            original_npc = npc_name
 
-            # Clean markdown links
-            cleaned_npc = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', npc_name)
-            cleaned_npc = re.sub(r'<([^>]+)>', r'\1', cleaned_npc)
+            # Step 1: Remove complete markdown links [text](url)
+            cleaned_npc = re.sub(r'\[([^\]]+)\]\([^\)]*\)', r'\1', npc_name)
+
+            # Step 2: Remove incomplete markdown [text](
+            cleaned_npc = re.sub(r'\[([^\]]+)\]\(', r'\1', cleaned_npc)
+
+            # Step 3: Remove just brackets [text]
+            cleaned_npc = re.sub(r'\[([^\]]+)\]', r'\1', cleaned_npc)
+
+            # Step 4: Remove any remaining brackets or parentheses
+            cleaned_npc = cleaned_npc.replace('[', '').replace(']', '')
+            cleaned_npc = cleaned_npc.replace('(', '').replace(')', '')
+
+            # Step 5: Remove any URLs
             cleaned_npc = re.sub(r'https?://[^\s]+', '', cleaned_npc)
+
+            # Step 6: Clean up whitespace
             cleaned_npc = cleaned_npc.strip()
 
-            # Only update if it changed
-            if cleaned_npc != npc_name and cleaned_npc:
+            # Only update if it changed and result is not empty
+            if cleaned_npc != original_npc and cleaned_npc:
                 deaths_collection.update_one(
                     {'_id': death['_id']},
                     {'$set': {'npc': cleaned_npc}}
                 )
                 updated_count += 1
-                print(f"Cleaned: {npc_name} → {cleaned_npc}")
+                print(f"Cleaned: '{original_npc}' → '{cleaned_npc}'")
 
         return jsonify({
             'success': True,

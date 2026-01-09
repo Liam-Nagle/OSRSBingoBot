@@ -393,10 +393,24 @@ def parse_death_embed(embed, message):
             if npc_match:
                 npc_text = npc_match.group(1).strip()
 
-                # Handle multiple formats
-                npc_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', npc_text)  # [text](url)
-                npc_text = re.sub(r'<([^>]+)>', r'\1', npc_text)  # <url>
-                npc_text = re.sub(r'https?://[^\s]+', '', npc_text)  # bare URLs
+                # Remove markdown links more aggressively
+                # Step 1: Complete markdown links [text](url)
+                npc_text = re.sub(r'\[([^\]]+)\]\([^\)]*\)', r'\1', npc_text)
+
+                # Step 2: Incomplete markdown [text](
+                npc_text = re.sub(r'\[([^\]]+)\]\(', r'\1', npc_text)
+
+                # Step 3: Just brackets [text]
+                npc_text = re.sub(r'\[([^\]]+)\]', r'\1', npc_text)
+
+                # Step 4: Remove any remaining brackets/parentheses
+                npc_text = npc_text.replace('[', '').replace(']', '')
+                npc_text = npc_text.replace('(', '').replace(')', '')
+
+                # Step 5: Remove URLs
+                npc_text = re.sub(r'https?://[^\s]+', '', npc_text)
+
+                # Step 6: Clean whitespace
                 npc_text = npc_text.strip()
 
                 # Remove %NPC% placeholder if present
