@@ -4380,10 +4380,18 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                              {
+                version: "v2.3.0",
+                date: "2025-01-09",
+                title: "Rank History Modal",
+                changes: [
+                    { type: "feature", text: "Added new Rank History modal that tracks progress and ranks overtime" },
+                ]
+            },
                              {
                 version: "v2.2.1",
                 date: "2025-01-07",
-                title: "Added new effort tab with Boss/Player view",
+                title: "Fixed NPC Urls in name",
                 changes: [
                     { type: "fix", text: "Fixed NPC Urls in name" },
                 ]
@@ -4391,7 +4399,7 @@ async function loadAnalyticsWithFilters() {
                             {
                 version: "v2.2.1",
                 date: "2025-01-06",
-                title: "Added new effort tab with Boss/Player view",
+                title: "Expanded chart filters not working",
                 changes: [
                     { type: "fix", text: "Expanded chart filters not working" },
                 ]
@@ -4399,7 +4407,7 @@ async function loadAnalyticsWithFilters() {
                             {
                 version: "v2.2.0",
                 date: "2025-01-06",
-                title: "Added new effort tab with Boss/Player view",
+                title: "Added expandable charts",
                 changes: [
                     { type: "feature", text: "Added expandable charts (Click on a chart to expand)" },
                     { type: "feature", text: "Added filtes to the expandable charts" },
@@ -4933,6 +4941,223 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        // Save rank snapshot automatically
+        async function saveRankSnapshot(rankData) {
+            try {
+                // Calculate changes from previous data
+                const previousData = localStorage.getItem('previousRankData');
+                let changes = { rankChange: 0, prestigeRankChange: 0, xpChange: 0 };
+
+                if (previousData) {
+                    const prev = JSON.parse(previousData);
+                    changes.rankChange = prev.rank - rankData.rank; // Negative = rank went down (worse)
+                    changes.prestigeRankChange = prev.prestigeRank - rankData.prestigeRank;
+                    changes.xpChange = rankData.totalXp - prev.totalXp;
+                }
+
+                // Save to backend
+                await fetch(`${API_URL}/rank/snapshot`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        rank: rankData.rank,
+                        prestigeRank: rankData.prestigeRank,
+                        totalXp: rankData.totalXp,
+                        ...changes
+                    })
+                });
+
+                // Store current as previous for next time
+                localStorage.setItem('previousRankData', JSON.stringify(rankData));
+
+                console.log('📊 Rank snapshot saved');
+            } catch (error) {
+                console.error('Failed to save rank snapshot:', error);
+            }
+        }
+
+        function openRankHistoryModal() {
+            document.getElementById('rankHistoryModal').classList.add('active');
+            loadRankHistory();
+        }
+
+        function closeRankHistoryModal() {
+            document.getElementById('rankHistoryModal').classList.remove('active');
+        }
+
+        async function loadRankHistory() {
+            const loadingDiv = document.getElementById('rankHistoryLoading');
+            const contentDiv = document.getElementById('rankHistoryContent');
+
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_URL}/rank/history`);
+                const data = await response.json();
+
+                if (!data.success || !data.history || data.history.length === 0) {
+                    loadingDiv.innerHTML = '<div style="text-align: center; padding: 60px; color: #8b7355;">No rank history data yet! Data is saved automatically as you use the site.</div>';
+                    return;
+                }
+
+                const history = data.history.reverse(); // Oldest to newest for chart
+
+                // Show current stats with changes
+                const latest = history[history.length - 1];
+                const previous = history[history.length - 2];
+
+                document.getElementById('currentRank').textContent = latest.rank.toLocaleString();
+                document.getElementById('currentPrestige').textContent = latest.prestigeRank.toLocaleString();
+                document.getElementById('currentXP').textContent = formatXp(latest.totalXp);
+
+                if (previous) {
+                    const rankDiff = previous.rank - latest.rank;
+                    const prestigeDiff = previous.prestigeRank - latest.prestigeRank;
+                    const xpDiff = latest.totalXp - previous.totalXp;
+
+                    document.getElementById('rankChange').innerHTML = rankDiff > 0
+                        ? `<span style="color: #4CAF50;">⬆ +${rankDiff} (improved)</span>`
+                        : rankDiff < 0
+                        ? `<span style="color: #8B0000;">⬇ ${rankDiff} (dropped)</span>`
+                        : '<span style="color: #8b7355;">No change</span>';
+
+                    document.getElementById('prestigeChange').innerHTML = prestigeDiff > 0
+                        ? `<span style="color: #4CAF50;">⬆ +${prestigeDiff}</span>`
+                        : prestigeDiff < 0
+                        ? `<span style="color: #8B0000;">⬇ ${prestigeDiff}</span>`
+                        : '<span style="color: #8b7355;">No change</span>';
+
+                    document.getElementById('xpChange').innerHTML = xpDiff > 0
+                        ? `<span style="color: #4CAF50;">+${formatXp(xpDiff)}</span>`
+                        : '<span style="color: #8b7355;">No change</span>';
+                }
+
+                // Render chart
+                renderRankHistoryChart(history);
+
+                // Render table
+                renderRankHistoryTable(history.slice().reverse()); // Newest first for table
+
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+
+            } catch (error) {
+                console.error('Failed to load rank history:', error);
+                loadingDiv.innerHTML = '<div style="text-align: center; padding: 60px; color: #8B0000;">❌ Failed to load rank history</div>';
+            }
+        }
+
+        function renderRankHistoryChart(history) {
+            const ctx = document.getElementById('rankHistoryChart').getContext('2d');
+
+            // Destroy existing chart if it exists
+            if (window.rankHistoryChartInstance) {
+                window.rankHistoryChartInstance.destroy();
+            }
+
+            window.rankHistoryChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => new Date(h.timestamp).toLocaleDateString()),
+                    datasets: [
+                        {
+                            label: 'Overall Rank',
+                            data: history.map(h => h.rank),
+                            borderColor: '#cd8b2d',
+                            backgroundColor: 'rgba(205, 139, 45, 0.1)',
+                            yAxisID: 'y',
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Prestige Rank',
+                            data: history.map(h => h.prestigeRank),
+                            borderColor: '#FFD700',
+                            backgroundColor: 'rgba(255, 215, 0, 0.1)',
+                            yAxisID: 'y',
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Rank Progression Over Time',
+                            color: '#6d5635',
+                            font: { size: 16 }
+                        },
+                        legend: {
+                            labels: { color: '#6d5635' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            reverse: true, // Lower rank = better
+                            title: {
+                                display: true,
+                                text: 'Rank (lower is better)',
+                                color: '#6d5635'
+                            },
+                            ticks: { color: '#6d5635' }
+                        },
+                        x: {
+                            ticks: { color: '#6d5635' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderRankHistoryTable(history) {
+            const tbody = document.getElementById('rankHistoryTable');
+
+            let html = '';
+            history.forEach((record, index) => {
+                const date = new Date(record.timestamp);
+                const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+
+                const nextRecord = history[index + 1]; // Next in array = previous in time
+
+                let changeHtml = '';
+                if (nextRecord) {
+                    const rankDiff = nextRecord.rank - record.rank;
+                    const prestigeDiff = nextRecord.prestigeRank - record.prestigeRank;
+
+                    if (rankDiff !== 0 || prestigeDiff !== 0) {
+                        changeHtml = '<div style="font-size: 11px;">';
+                        if (rankDiff > 0) changeHtml += `<div style="color: #4CAF50;">Rank: +${rankDiff} ⬆</div>`;
+                        if (rankDiff < 0) changeHtml += `<div style="color: #8B0000;">Rank: ${rankDiff} ⬇</div>`;
+                        if (prestigeDiff > 0) changeHtml += `<div style="color: #4CAF50;">Prestige: +${prestigeDiff} ⬆</div>`;
+                        if (prestigeDiff < 0) changeHtml += `<div style="color: #8B0000;">Prestige: ${prestigeDiff} ⬇</div>`;
+                        changeHtml += '</div>';
+                    }
+                }
+
+                html += `
+                    <tr style="border-bottom: 1px solid rgba(205, 139, 45, 0.2);">
+                        <td style="padding: 12px; color: #6d5635;">${dateStr}</td>
+                        <td style="padding: 12px; text-align: center; color: #cd8b2d; font-weight: bold;">${record.rank.toLocaleString()}</td>
+                        <td style="padding: 12px; text-align: center; color: #FFD700; font-weight: bold;">${record.prestigeRank.toLocaleString()}</td>
+                        <td style="padding: 12px; text-align: center; color: #6d5635;">${formatXp(record.totalXp)}</td>
+                        <td style="padding: 12px; text-align: center;">${changeHtml || '-'}</td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        }
+
+
         function displayGimData(data) {
             // Format XP
             function formatXp(xp) {
@@ -4956,6 +5181,13 @@ async function loadAnalyticsWithFilters() {
             }
 
             document.getElementById('groupXP').textContent = `Total XP: ${formatXp(data.totalXp)}`;
+
+            // Auto-save rank snapshot
+            saveRankSnapshot({
+                rank: data.rank,
+                prestigeRank: data.prestigeRank,
+                totalXp: data.totalXp
+            });
         }
 
                 // Helper functions to create chart configs

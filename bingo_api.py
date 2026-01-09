@@ -19,6 +19,7 @@ db = mongo_client['osrs_bingo']
 bingo_collection = db['bingo_board']
 history_collection = db['drop_history']
 deaths_collection = db['deaths']
+rank_history_collection = db['rank_history']
 
 # Fallback to file-based storage if MongoDB not available
 USE_MONGODB = True
@@ -1082,6 +1083,76 @@ def get_deaths_by_npc():
     except Exception as e:
         return jsonify({'error': f'Failed to get NPC deaths: {str(e)}'}), 500
 
+
+@app.route('/rank/history', methods=['GET'])
+def get_rank_history():
+    """Get historical rank data"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get all rank snapshots, sorted by date
+        history = list(rank_history_collection.find(
+            {},
+            {'_id': 0}  # Exclude MongoDB ID
+        ).sort('timestamp', -1).limit(100))  # Last 100 snapshots
+
+        return jsonify({
+            'success': True,
+            'history': history
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/rank/snapshot', methods=['POST'])
+def save_rank_snapshot():
+    """Save current rank data (called from frontend)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        data = request.json
+
+        # Validate data
+        required_fields = ['rank', 'prestigeRank', 'totalXp']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        # Create snapshot
+        snapshot = {
+            'timestamp': datetime.utcnow(),
+            'rank': data['rank'],
+            'prestigeRank': data['prestigeRank'],
+            'totalXp': data['totalXp'],
+            'rankChange': data.get('rankChange', 0),
+            'prestigeRankChange': data.get('prestigeRankChange', 0),
+            'xpChange': data.get('xpChange', 0)
+        }
+
+        # Check if we already have a snapshot from today
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = rank_history_collection.find_one({
+            'timestamp': {'$gte': today_start}
+        })
+
+        if existing:
+            # Update today's snapshot
+            rank_history_collection.update_one(
+                {'_id': existing['_id']},
+                {'$set': snapshot}
+            )
+            print(f"📊 Updated today's rank snapshot")
+        else:
+            # Insert new snapshot
+            rank_history_collection.insert_one(snapshot)
+            print(f"📊 Saved new rank snapshot")
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/history', methods=['GET'])
 def get_history():
