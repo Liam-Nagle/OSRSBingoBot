@@ -5157,19 +5157,19 @@ async function loadAnalyticsWithFilters() {
             tbody.innerHTML = html;
         }
 
+        // Format XP
+        function formatXp(xp) {
+            if (!xp) return null;
+            if (xp >= 1_000_000_000) {
+                return `${(xp / 1_000_000_000).toFixed(2)}B`;
+            } else if (xp >= 1_000_000) {
+                return `${(xp / 1_000_000).toFixed(1)}M`;
+            } else {
+                return xp.toLocaleString();
+            }
+        }
 
         function displayGimData(data) {
-            // Format XP
-            function formatXp(xp) {
-                if (!xp) return null;
-                if (xp >= 1_000_000_000) {
-                    return `${(xp / 1_000_000_000).toFixed(2)}B`;
-                } else if (xp >= 1_000_000) {
-                    return `${(xp / 1_000_000).toFixed(1)}M`;
-                } else {
-                    return xp.toLocaleString();
-                }
-            }
 
             document.getElementById('groupName').textContent = 'Unsociables';
             document.getElementById('groupRank').textContent = `Overall: #${data.overallRank.toLocaleString()}`;
