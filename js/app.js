@@ -5184,7 +5184,7 @@ async function loadAnalyticsWithFilters() {
 
             // Auto-save rank snapshot
             saveRankSnapshot({
-                rank: data.rank,
+                rank: data.overallRank,
                 prestigeRank: data.prestigeRank,
                 totalXp: data.totalXp
             });
