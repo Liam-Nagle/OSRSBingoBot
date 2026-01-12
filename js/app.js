@@ -3730,7 +3730,7 @@ async function loadAnalyticsWithFilters() {
             const modalHtml = `
                 <div class="modal tile-info-modal" id="tileInfoModal">
                     <div class="modal-content">
-                        <button class="modal-close-btn" onclick="closeTileInfoModal()">×</button>
+                        <button class="close-btn" onclick="closeTileInfoModal()">×</button>
 
                         <div class="tile-info-header">
                             ${iconHtml}
