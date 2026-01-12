@@ -4748,9 +4748,9 @@ async function loadAnalyticsWithFilters() {
                     const modalContent = modalEl.querySelector('.modal-content');
                     if (modalContent) {
                         // Check if close button already exists
-                        if (!modalContent.querySelector('.modal-close-btn')) {
+                        if (!modalContent.querySelector('.close-btn')) {
                             const closeBtn = document.createElement('button');
-                            closeBtn.className = 'modal-close-btn';
+                            closeBtn.className = 'close-btn';
                             closeBtn.innerHTML = '×';
                             closeBtn.setAttribute('onclick', modal.closeFunc);
                             modalContent.insertBefore(closeBtn, modalContent.firstChild);
