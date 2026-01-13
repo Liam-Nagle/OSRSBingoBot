@@ -1642,29 +1642,3 @@
                 opacity: 1;
             }
         }
-
-        /* Hide any browser-default or extension-added close buttons */
-        .modal-content::before,
-        .modal-content > *:first-child:not(.close-btn):not(button):not(h1):not(h2):not(h3) {
-            display: none !important;
-        }
-
-        /* Ensure modal content doesn't have user-agent styles */
-        .modal-content {
-            appearance: none !important;
-            -webkit-appearance: none !important;
-            -moz-appearance: none !important;
-        }
-
-        /* Hide any dialog close buttons that browsers might add */
-        .modal dialog,
-        .modal-content dialog {
-            appearance: none !important;
-        }
-
-        /* Make sure no icon fonts are accidentally applied */
-        .modal-content::before,
-        .modal-content *::before {
-            content: none !important;
-            display: none !important;
-        }
