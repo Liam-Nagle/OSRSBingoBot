@@ -3675,6 +3675,144 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        // ============================================
+        // DEATHS VIEW SWITCHING
+        // ============================================
+
+        function switchDeathsView(view) {
+            // Update button states
+            document.getElementById('deathsViewOverview').classList.toggle('active', view === 'overview');
+            document.getElementById('deathsViewBreakdown').classList.toggle('active', view === 'breakdown');
+
+            // Toggle content visibility
+            document.getElementById('deathsOverviewContent').style.display = view === 'overview' ? 'grid' : 'none';
+            document.getElementById('deathsBreakdownContent').style.display = view === 'breakdown' ? 'block' : 'none';
+
+            // Load breakdown data if switching to that view
+            if (view === 'breakdown') {
+                loadDeathsBreakdown();
+            }
+        }
+
+        async function loadDeathsBreakdown() {
+            const container = document.getElementById('deathsBreakdownContent');
+
+            // Don't reload if already loaded (unless empty)
+            if (container.children.length > 0 && !container.textContent.includes('Loading')) {
+                return;
+            }
+
+            container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><p>Loading death breakdown...</p></div>';
+
+            try {
+                const response = await fetch(`${API_URL}/deaths/by-player-npc`);
+                const data = await response.json();
+
+                if (!data.player_npc_deaths || Object.keys(data.player_npc_deaths).length === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 60px; color: #666;">No death data available!</div>';
+                    return;
+                }
+
+                renderDeathsBreakdown(data.player_npc_deaths);
+
+            } catch (error) {
+                console.error('Failed to load deaths breakdown:', error);
+                container.innerHTML = '<div style="text-align: center; padding: 60px; color: #8B0000;">❌ Failed to load breakdown data</div>';
+            }
+        }
+
+        function renderDeathsBreakdown(playerNpcData) {
+            const container = document.getElementById('deathsBreakdownContent');
+
+            // Aggregate all NPCs across all players
+            const npcTotals = {};
+            Object.values(playerNpcData).forEach(npcs => {
+                Object.entries(npcs).forEach(([npc, count]) => {
+                    npcTotals[npc] = (npcTotals[npc] || 0) + count;
+                });
+            });
+
+            // Sort NPCs by total deaths
+            const sortedNPCs = Object.entries(npcTotals)
+                .sort((a, b) => b[1] - a[1]);
+
+            if (sortedNPCs.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 60px; color: #666;">No NPC death data found!</div>';
+                return;
+            }
+
+            // Create accordion-style cards for each NPC
+            let html = '<div style="display: grid; gap: 15px;">';
+
+            sortedNPCs.forEach(([npc, totalDeaths]) => {
+                const cleanNpc = cleanMarkdownLinks(npc);
+                const npcId = `boss-${cleanNpc.replace(/[^a-zA-Z0-9]/g, '')}`;
+
+                // Get all players who died to this NPC
+                const playerDeaths = [];
+                Object.entries(playerNpcData).forEach(([player, npcs]) => {
+                    if (npcs[npc]) {
+                        playerDeaths.push({ player, deaths: npcs[npc] });
+                    }
+                });
+
+                // Sort players by death count
+                playerDeaths.sort((a, b) => b.deaths - a.deaths);
+
+                // Create player rankings HTML
+                let playersHtml = '<div style="display: grid; gap: 8px; margin-top: 15px;" class="boss-death-players" id="' + npcId + '-players" style="display: none;">';
+                playerDeaths.forEach((pd, index) => {
+                    const rank = index + 1;
+                    const rankIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+
+                    playersHtml += `
+                        <div style="background: rgba(139,0,0,0.03); padding: 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : '#8B0000'};">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="font-size: 18px; min-width: 30px;">${rankIcon}</span>
+                                <span style="font-weight: bold; color: #2c1810;">${pd.player}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 20px; font-weight: bold; color: #8B0000;">${pd.deaths}</div>
+                                <div style="font-size: 11px; color: #666;">death${pd.deaths !== 1 ? 's' : ''}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                playersHtml += '</div>';
+
+                html += `
+                    <div style="background: rgba(139,0,0,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #8B0000; cursor: pointer;" onclick="toggleBossDeathDetail('${npcId}')">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: bold; font-size: 18px; color: #2c1810; margin-bottom: 5px;">
+                                    💀 ${cleanNpc}
+                                </div>
+                                <div style="font-size: 12px; color: #666;">
+                                    ${playerDeaths.length} player${playerDeaths.length !== 1 ? 's' : ''} died here • Click to expand
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 28px; font-weight: bold; color: #8B0000;">${totalDeaths}</div>
+                                <div style="font-size: 12px; color: #666;">total deaths</div>
+                            </div>
+                        </div>
+                        ${playersHtml}
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function toggleBossDeathDetail(bossId) {
+            const playersDiv = document.getElementById(`${bossId}-players`);
+            if (playersDiv) {
+                const isHidden = playersDiv.style.display === 'none';
+                playersDiv.style.display = isHidden ? 'block' : 'none';
+            }
+        }
+
         function openTileInfoModal(index) {
             const tile = bingoData.tiles[index];
             const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
@@ -4380,6 +4518,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                              {
+                version: "v2.4.0",
+                date: "2025-01-13",
+                title: "Added Boss Breakdown in Deaths statistics",
+                changes: [
+                    { type: "feature", text: "Added a new Boss breakdown in death statistics which shows deaths per boss" },
+                ]
+            },
                               {
                 version: "v2.3.0",
                 date: "2025-01-09",
