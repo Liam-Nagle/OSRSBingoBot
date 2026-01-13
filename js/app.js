@@ -4518,6 +4518,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                             {
+                version: "v2.4.1",
+                date: "2025-01-13",
+                title: "Added Boss Breakdown in Deaths statistics",
+                changes: [
+                    { type: "fix", text: "Fixed deaths modal with bosses. Wasn't displaying some things correctly" },
+                    { type: "fix", text: "Fixed Boss KC modal not having an X button" },
+                ]
+            },
                               {
                 version: "v2.4.0",
                 date: "2025-01-13",
