@@ -1038,6 +1038,70 @@
             }
         }
 
+        async function shuffleBoard() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+
+            const confirmed = confirm(
+                '🔀 Shuffle Board?\n\n' +
+                'This will randomly reorder all tiles while keeping their content and completions intact.\n\n' +
+                'Are you sure you want to shuffle?'
+            );
+
+            if (!confirmed) return;
+
+            const password = sessionStorage.getItem('adminPassword');
+            if (!password) {
+                alert('Session expired. Please log in again.');
+                return;
+            }
+
+            localStorage.setItem('previousBoardState', JSON.stringify(bingoData.tiles));
+
+            try {
+                const response = await fetch(`${API_URL}/shuffle-board`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ password: password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert(`✅ ${result.message}`);
+
+                    // Update local data with shuffled tiles
+                    bingoData.tiles = result.tiles;
+
+                    // Re-render the board
+                    renderBoard();
+                    updatePlayerStats();
+                } else {
+                    alert(`❌ ${result.error || result.message || 'Shuffle failed'}`);
+                }
+            } catch (error) {
+                console.error('Shuffle error:', error);
+                alert('❌ Could not connect to server');
+            }
+        }
+
+        function undoShuffle() {
+            const previous = localStorage.getItem('previousBoardState');
+            if (!previous) {
+                alert('No previous board state to restore!');
+                return;
+            }
+
+            if (confirm('Restore previous board layout?')) {
+                bingoData.tiles = JSON.parse(previous);
+                renderBoard();
+                saveData();
+                alert('✅ Board restored to previous state!');
+            }
+        }
+
         function exportBoard() {
             const dataStr = JSON.stringify(bingoData, null, 2);
             const dataBlob = new Blob([dataStr], {type: 'application/json'});
@@ -4518,7 +4582,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
-                             {
+                            {
+                version: "v2.5.0",
+                date: "2025-01-21",
+                title: "Added Boss Breakdown in Deaths statistics",
+                changes: [
+                    { type: "feature", text: "Added the ability for admin to shuffle and undo shuffle the bingo board" },
+                ]
+            },
+                            {
                 version: "v2.4.1",
                 date: "2025-01-13",
                 title: "Added Boss Breakdown in Deaths statistics",

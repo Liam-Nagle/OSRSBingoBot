@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 import requests
+import random
 from datetime import datetime
 
 app = Flask(__name__)
@@ -1217,6 +1218,55 @@ def update_board():
     data = request.json
     save_bingo_data(data)
     return jsonify({'success': True})
+
+
+@app.route('/shuffle-board', methods=['POST'])
+def shuffle_board():
+    """Shuffle board tiles randomly (admin only)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        data = request.json
+        password = data.get('password')
+
+        # Verify admin password
+        if password != ADMIN_PASSWORD:
+            print(f"❌ Unauthorized shuffle attempt")
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Get current board
+        bingo_doc = bingo_collection.find_one({'_id': 'current_board'})
+        if not bingo_doc:
+            return jsonify({'error': 'No board found'}), 404
+
+        # Get tiles and shuffle them
+        tiles = bingo_doc.get('tiles', [])
+
+        if not tiles:
+            return jsonify({'error': 'No tiles to shuffle'}), 400
+
+        # Shuffle the tiles array
+        import random
+        random.shuffle(tiles)
+
+        # Update the board with shuffled tiles
+        bingo_collection.update_one(
+            {'_id': 'current_board'},
+            {'$set': {'tiles': tiles}}
+        )
+
+        print(f"🔀 Board shuffled successfully - {len(tiles)} tiles reordered")
+
+        return jsonify({
+            'success': True,
+            'message': f'Board shuffled! {len(tiles)} tiles reordered',
+            'tiles': tiles
+        })
+
+    except Exception as e:
+        print(f"❌ Error shuffling board: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/deaths/by-player-npc', methods=['GET'])
