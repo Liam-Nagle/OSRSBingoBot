@@ -1642,3 +1642,198 @@
                 opacity: 1;
             }
         }
+
+        /* ============================================
+        EVENT TIMER WIDGET
+        ============================================ */
+
+        .event-timer-widget {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 999;
+            max-width: 300px;
+        }
+
+        .event-timer-widget.active {
+            display: block;
+        }
+
+        .event-timer-container {
+            background: linear-gradient(135deg, #f4e4c1 0%, #d4c4a1 100%);
+            border: 4px solid #8B6914;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5),
+                        inset 0 2px 4px rgba(255,255,255,0.3);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated glow background */
+        .event-timer-glow {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(205,139,45,0.15) 0%, transparent 70%);
+            animation: event-timer-pulse 4s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes event-timer-pulse {
+            0%, 100% {
+                transform: scale(1) rotate(0deg);
+                opacity: 0.5;
+            }
+            50% {
+                transform: scale(1.2) rotate(180deg);
+                opacity: 0.8;
+            }
+        }
+
+        /* Header section */
+        .event-timer-header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #8B6914;
+            padding-bottom: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .event-timer-icon {
+            font-size: 36px;
+            margin-bottom: 5px;
+            filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.3));
+            animation: event-timer-icon-pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes event-timer-icon-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .event-timer-name {
+            font-weight: bold;
+            font-size: 18px;
+            color: #2c1810;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
+        }
+
+        /* Countdown section */
+        .event-timer-countdown-box {
+            background: linear-gradient(135deg, rgba(205,139,45,0.2) 0%, rgba(139,69,20,0.2) 100%);
+            border: 3px solid #cd8b2d;
+            border-radius: 10px;
+            padding: 18px;
+            margin-bottom: 15px;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.2),
+                        0 0 20px rgba(205,139,45,0.3);
+            position: relative;
+            z-index: 1;
+        }
+
+        .event-timer-countdown {
+            font-size: 36px;
+            font-weight: bold;
+            color: #8B4513;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            text-shadow: 2px 2px 4px rgba(255,255,255,0.5),
+                         0 0 10px rgba(205,139,45,0.4);
+            letter-spacing: 2px;
+        }
+
+        /* Status section */
+        .event-timer-status-container {
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .event-timer-status-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            border: 2px solid #8B6914;
+            border-radius: 20px;
+            padding: 6px 18px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .event-timer-status {
+            font-size: 12px;
+            font-weight: bold;
+            color: #2c1810;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
+        }
+
+        /* Status colors */
+        .event-timer-status.status-pending {
+            color: #2196F3;
+        }
+
+        .event-timer-status.status-active {
+            color: #2c1810;
+        }
+
+        .event-timer-status.status-ended {
+            color: #8B0000;
+        }
+
+        .event-timer-end-date-label {
+            font-size: 11px;
+            color: #6d5635;
+            opacity: 0.8;
+            margin-bottom: 3px;
+        }
+
+        .event-timer-end-date {
+            font-size: 13px;
+            font-weight: bold;
+            color: #2c1810;
+            background: rgba(139,69,20,0.1);
+            padding: 5px 12px;
+            border-radius: 6px;
+            display: inline-block;
+            border: 1px solid #cd8b2d;
+        }
+
+        /* Decorative corners */
+        .event-timer-corner {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            opacity: 0.5;
+        }
+
+        .event-timer-corner.top-left {
+            top: 8px;
+            left: 8px;
+            border-left: 3px solid #cd8b2d;
+            border-top: 3px solid #cd8b2d;
+        }
+
+        .event-timer-corner.top-right {
+            top: 8px;
+            right: 8px;
+            border-right: 3px solid #cd8b2d;
+            border-top: 3px solid #cd8b2d;
+        }
+
+        .event-timer-corner.bottom-left {
+            bottom: 8px;
+            left: 8px;
+            border-left: 3px solid #cd8b2d;
+            border-bottom: 3px solid #cd8b2d;
+        }
+
+        .event-timer-corner.bottom-right {
+            bottom: 8px;
+            right: 8px;
+            border-right: 3px solid #cd8b2d;
+            border-bottom: 3px solid #cd8b2d;
+        }

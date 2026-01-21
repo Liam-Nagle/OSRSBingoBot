@@ -5492,11 +5492,13 @@ async function loadAnalyticsWithFilters() {
                 minute: '2-digit'
             });
 
-            widget.style.display = 'block';
+            widget.classList.add('active'); // Use class instead of inline style
         }
 
         function hideEventTimer() {
-            document.getElementById('eventTimerWidget').style.display = 'none';
+            const widget = document.getElementById('eventTimerWidget');
+            widget.classList.remove('active');
+
             if (eventTimerInterval) {
                 clearInterval(eventTimerInterval);
                 eventTimerInterval = null;
@@ -5504,7 +5506,6 @@ async function loadAnalyticsWithFilters() {
         }
 
         function startEventCountdown(config) {
-            // Clear any existing interval
             if (eventTimerInterval) {
                 clearInterval(eventTimerInterval);
             }
@@ -5522,7 +5523,7 @@ async function loadAnalyticsWithFilters() {
                     const timeUntilStart = start - now;
                     countdownEl.textContent = formatTimeRemaining(timeUntilStart);
                     statusEl.textContent = 'Event Starts In';
-                    statusEl.style.color = '#2196F3';
+                    statusEl.className = 'event-timer-status status-pending';
                 }
                 // Check if event is active
                 else if (now >= start && now <= end) {
@@ -5531,25 +5532,24 @@ async function loadAnalyticsWithFilters() {
                     if (timeRemaining <= 0) {
                         countdownEl.textContent = '00:00:00';
                         statusEl.textContent = 'Event Ended';
-                        statusEl.style.color = '#8B0000';
+                        statusEl.className = 'event-timer-status status-ended';
                         clearInterval(eventTimerInterval);
                         return;
                     }
 
                     countdownEl.textContent = formatTimeRemaining(timeRemaining);
                     statusEl.textContent = 'Event Active';
-                    statusEl.style.color = '#4CAF50';
+                    statusEl.className = 'event-timer-status status-active';
                 }
                 // Event has ended
                 else {
                     countdownEl.textContent = '00:00:00';
                     statusEl.textContent = 'Event Ended';
-                    statusEl.style.color = '#8B0000';
+                    statusEl.className = 'event-timer-status status-ended';
                     clearInterval(eventTimerInterval);
                 }
             }
 
-            // Update immediately and then every second
             updateCountdown();
             eventTimerInterval = setInterval(updateCountdown, 1000);
         }

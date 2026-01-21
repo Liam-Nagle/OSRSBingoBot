@@ -25,20 +25,41 @@
     <link rel="stylesheet" href="css/style.css?v=2.1">
 </head>
 <body>
-    <!-- Event Timer Widget (hidden by default) -->
-    <div id="eventTimerWidget" style="display: none; position: fixed; top: 20px; left: 20px; z-index: 999; background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%); padding: 15px 20px; border-radius: 10px; border: 3px solid #8B6914; box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-width: 300px;">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-            <div style="font-size: 24px;">⏱️</div>
-            <div style="font-weight: bold; font-size: 16px; color: #2c1810;" id="eventName">Bingo Event</div>
-        </div>
-        <div style="font-size: 13px; color: #2c1810; margin-bottom: 5px;">
-            <strong>Ends:</strong> <span id="eventEndDateDisplay">-</span>
-        </div>
-        <div style="font-size: 20px; font-weight: bold; color: #2c1810; text-align: center; background: rgba(255,255,255,0.3); padding: 8px; border-radius: 5px; font-family: 'Courier New', monospace;" id="eventCountdown">
-            --:--:--
-        </div>
-        <div style="font-size: 11px; color: #6d5635; margin-top: 5px; text-align: center;" id="eventStatus">
-            Event Active
+    <!-- Event Timer Widget -->
+    <div id="eventTimerWidget" class="event-timer-widget">
+        <div class="event-timer-container">
+
+            <!-- Animated glow background -->
+            <div class="event-timer-glow"></div>
+
+            <!-- Header -->
+            <div class="event-timer-header">
+                <div class="event-timer-icon">⏳</div>
+                <div class="event-timer-name" id="eventName">Bingo Event</div>
+            </div>
+
+            <!-- Countdown -->
+            <div class="event-timer-countdown-box">
+                <div class="event-timer-countdown" id="eventCountdown">--:--:--</div>
+            </div>
+
+            <!-- Status and end date -->
+            <div class="event-timer-status-container">
+                <div class="event-timer-status-badge">
+                    <div class="event-timer-status status-active" id="eventStatus">Event Active</div>
+                </div>
+                <div>
+                    <div class="event-timer-end-date-label">Ends:</div>
+                    <div class="event-timer-end-date" id="eventEndDateDisplay">-</div>
+                </div>
+            </div>
+
+            <!-- Decorative corners -->
+            <div class="event-timer-corner top-left"></div>
+            <div class="event-timer-corner top-right"></div>
+            <div class="event-timer-corner bottom-left"></div>
+            <div class="event-timer-corner bottom-right"></div>
+
         </div>
     </div>
     <div class="container">
