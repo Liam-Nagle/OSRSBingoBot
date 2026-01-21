@@ -5624,7 +5624,7 @@ async function loadAnalyticsWithFilters() {
             document.getElementById('eventFields').style.display = enabled ? 'block' : 'none';
         }
 
-        async function saveEventConfig() {
+async function saveEventConfig() {
             const password = sessionStorage.getItem('adminPassword');
             if (!password) {
                 alert('Session expired. Please log in again.');
@@ -5633,23 +5633,52 @@ async function loadAnalyticsWithFilters() {
 
             const enabled = document.getElementById('eventEnabled').checked;
             const eventName = document.getElementById('eventNameInput').value.trim();
-            const startDate = document.getElementById('eventStartDate').value;
-            const endDate = document.getElementById('eventEndDate').value;
+            const startDateInput = document.getElementById('eventStartDate');
+            const endDateInput = document.getElementById('eventEndDate');
+
+            // Get the actual values
+            const startDate = startDateInput ? startDateInput.value : '';
+            const endDate = endDateInput ? endDateInput.value : '';
+
+            console.log('Event Config Debug:');
+            console.log('Enabled:', enabled);
+            console.log('Event Name:', eventName);
+            console.log('Start Date:', startDate);
+            console.log('End Date:', endDate);
 
             if (enabled) {
-                if (!startDate || !endDate) {
-                    alert('Please set both start and end dates!');
+                // Only validate if event is enabled
+                if (!eventName) {
+                    alert('Please enter an event name!');
                     return;
                 }
 
-                if (!eventName) {
-                    alert('Please enter an event name!');
+                if (!startDate || startDate === '') {
+                    alert('Please set a start date!');
+                    return;
+                }
+
+                if (!endDate || endDate === '') {
+                    alert('Please set an end date!');
                     return;
                 }
 
                 // Validate dates
                 const start = new Date(startDate);
                 const end = new Date(endDate);
+
+                console.log('Parsed Start:', start);
+                console.log('Parsed End:', end);
+
+                if (isNaN(start.getTime())) {
+                    alert('Invalid start date!');
+                    return;
+                }
+
+                if (isNaN(end.getTime())) {
+                    alert('Invalid end date!');
+                    return;
+                }
 
                 if (end <= start) {
                     alert('End date must be after start date!');
@@ -5658,30 +5687,35 @@ async function loadAnalyticsWithFilters() {
             }
 
             try {
+                const payload = {
+                    password: password,
+                    enabled: enabled,
+                    eventName: eventName || 'Bingo Event',
+                    startDate: startDate ? new Date(startDate).toISOString() : null,
+                    endDate: endDate ? new Date(endDate).toISOString() : null
+                };
+
+                console.log('Sending payload:', payload);
+
                 const response = await fetch(`${API_URL}/event/config`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        password: password,
-                        enabled: enabled,
-                        eventName: eventName,
-                        startDate: startDate ? new Date(startDate).toISOString() : null,
-                        endDate: endDate ? new Date(endDate).toISOString() : null
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 const result = await response.json();
+                console.log('Server response:', result);
 
                 if (response.ok && result.success) {
                     alert('✅ Event configuration saved!');
                     closeEventConfigModal();
                     loadEventConfig(); // Reload timer
                 } else {
-                    alert(`❌ ${result.error || 'Failed to save configuration'}`);
+                    alert(`❌ ${result.error || result.message || 'Failed to save configuration'}`);
                 }
             } catch (error) {
                 console.error('Save event config error:', error);
-                alert('❌ Could not connect to server');
+                alert('❌ Could not connect to server: ' + error.message);
             }
         }
 
