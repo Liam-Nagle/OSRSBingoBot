@@ -5505,7 +5505,7 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
-        function startEventCountdown(config) {
+function startEventCountdown(config) {
             if (eventTimerInterval) {
                 clearInterval(eventTimerInterval);
             }
@@ -5517,13 +5517,14 @@ async function loadAnalyticsWithFilters() {
 
                 const countdownEl = document.getElementById('eventCountdown');
                 const statusEl = document.getElementById('eventStatus');
+                const badgeEl = statusEl.closest('.event-timer-status-badge');
 
                 // Check if event hasn't started
                 if (now < start) {
                     const timeUntilStart = start - now;
                     countdownEl.textContent = formatTimeRemaining(timeUntilStart);
-                    statusEl.textContent = 'Event Starts In';
-                    statusEl.className = 'event-timer-status status-pending';
+                    statusEl.textContent = 'Starts In';
+                    badgeEl.className = 'event-timer-status-badge status-pending';
                 }
                 // Check if event is active
                 else if (now >= start && now <= end) {
@@ -5532,20 +5533,20 @@ async function loadAnalyticsWithFilters() {
                     if (timeRemaining <= 0) {
                         countdownEl.textContent = '00:00:00';
                         statusEl.textContent = 'Event Ended';
-                        statusEl.className = 'event-timer-status status-ended';
+                        badgeEl.className = 'event-timer-status-badge status-ended';
                         clearInterval(eventTimerInterval);
                         return;
                     }
 
                     countdownEl.textContent = formatTimeRemaining(timeRemaining);
                     statusEl.textContent = 'Event Active';
-                    statusEl.className = 'event-timer-status status-active';
+                    badgeEl.className = 'event-timer-status-badge status-active';
                 }
                 // Event has ended
                 else {
                     countdownEl.textContent = '00:00:00';
                     statusEl.textContent = 'Event Ended';
-                    statusEl.className = 'event-timer-status status-ended';
+                    badgeEl.className = 'event-timer-status-badge status-ended';
                     clearInterval(eventTimerInterval);
                 }
             }
