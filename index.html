@@ -25,6 +25,22 @@
     <link rel="stylesheet" href="css/style.css?v=2.1">
 </head>
 <body>
+    <!-- Event Timer Widget (hidden by default) -->
+    <div id="eventTimerWidget" style="display: none; position: fixed; top: 20px; left: 20px; z-index: 999; background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%); padding: 15px 20px; border-radius: 10px; border: 3px solid #8B6914; box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-width: 300px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <div style="font-size: 24px;">⏱️</div>
+            <div style="font-weight: bold; font-size: 16px; color: #2c1810;" id="eventName">Bingo Event</div>
+        </div>
+        <div style="font-size: 13px; color: #2c1810; margin-bottom: 5px;">
+            <strong>Ends:</strong> <span id="eventEndDate">-</span>
+        </div>
+        <div style="font-size: 20px; font-weight: bold; color: #2c1810; text-align: center; background: rgba(255,255,255,0.3); padding: 8px; border-radius: 5px; font-family: 'Courier New', monospace;" id="eventCountdown">
+            --:--:--
+        </div>
+        <div style="font-size: 11px; color: #6d5635; margin-top: 5px; text-align: center;" id="eventStatus">
+            Event Active
+        </div>
+    </div>
     <div class="container">
         <h1>⚔️ OSRS BINGO BOARD ⚔️</h1>
 
@@ -77,6 +93,7 @@
                 <button onclick="openManualOverrideModal()" class="secondary">✏️ Manual Override</button>
                 <button onclick="openBoardSizeModal()" class="secondary">📐 Board Size</button>
                 <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
+                <button onclick="openEventConfigModal()" class="secondary">⏱️ Event Timer</button>
                 <button onclick="shuffleBoard()" class="secondary">🔀 Shuffle Board</button>
                 <button onclick="undoShuffle()" class="secondary">↩️ Undo Shuffle</button>
                 <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
@@ -656,6 +673,46 @@ Dragon warhammer"></textarea>
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Event Configuration Modal -->
+    <div class="modal" id="eventConfigModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <button onclick="closeEventConfigModal()" class="close-btn">✕</button>
+            <h2>⏱️ Event Timer Configuration</h2>
+            <p style="color: #666; margin-bottom: 20px;">Set start and end dates for the bingo event. Only drops/deaths/KC within this window will count.</p>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                    <input type="checkbox" id="eventEnabled" onchange="toggleEventFields()">
+                    <span style="font-weight: bold;">Enable Event Timer</span>
+                </label>
+            </div>
+
+            <div id="eventFields" style="display: none;">
+                <label>Event Name:</label>
+                <input type="text" id="eventNameInput" placeholder="e.g., January 2026 Bingo" value="Bingo Event">
+
+                <label>Start Date & Time:</label>
+                <input type="datetime-local" id="eventStartDate">
+
+                <label>End Date & Time:</label>
+                <input type="datetime-local" id="eventEndDate">
+
+                <div style="background: rgba(255,193,7,0.1); border-left: 4px solid #FFC107; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                    <div style="font-weight: bold; margin-bottom: 5px; color: #F57C00;">⚠️ Important:</div>
+                    <div style="font-size: 13px; color: #666;">
+                        When enabled, only drops, deaths, and boss KC that occur between the start and end dates will be counted.
+                        Data from outside this window will be rejected.
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeEventConfigModal()">Cancel</button>
+                <button class="btn-save" onclick="saveEventConfig()">Save Configuration</button>
             </div>
         </div>
     </div>

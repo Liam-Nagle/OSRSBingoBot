@@ -681,6 +681,16 @@ def record_drop():
     value_string = data.get('value_string', '')  #Original value text (e.g., "2.95M")
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
+    # Check if within event window
+    if not is_within_event_window():
+        event_config = bingo_collection.find_one({'_id': 'event_config'})
+        event_name = event_config.get('eventName', 'Event') if event_config else 'Event'
+        print(f"⏱️  Drop rejected: Outside event window ({event_name})")
+        return jsonify({
+            'success': False,
+            'message': f'Drop rejected: Outside {event_name} event window'
+        })
+
     print(f"\n{'=' * 60}")
     print(f"📥 Received drop from Discord bot:")
     print(f"   Player: {player_name}")
@@ -905,6 +915,16 @@ def record_death():
 
     if not player_name:
         return jsonify({'error': 'Missing player name'}), 400
+
+    # Check if within event window
+    if not is_within_event_window():
+        event_config = bingo_collection.find_one({'_id': 'event_config'})
+        event_name = event_config.get('eventName', 'Event') if event_config else 'Event'
+        print(f"⏱️  Death rejected: Outside event window ({event_name})")
+        return jsonify({
+            'success': False,
+            'message': f'Death rejected: Outside {event_name} event window'
+        })
 
     if USE_MONGODB:
         try:
@@ -1267,6 +1287,145 @@ def shuffle_board():
     except Exception as e:
         print(f"❌ Error shuffling board: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================
+# EVENT TIMER CONFIGURATION
+# ============================================
+
+@app.route('/event/config', methods=['GET'])
+def get_event_config():
+    """Get current event configuration"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        # Get event config from MongoDB
+        event_config = bingo_collection.find_one({'_id': 'event_config'})
+
+        if not event_config:
+            # No event configured - return empty config
+            return jsonify({
+                'enabled': False,
+                'startDate': None,
+                'endDate': None
+            })
+
+        return jsonify({
+            'enabled': event_config.get('enabled', False),
+            'startDate': event_config.get('startDate'),
+            'endDate': event_config.get('endDate'),
+            'eventName': event_config.get('eventName', 'Bingo Event')
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/config', methods=['POST'])
+def set_event_config():
+    """Set event configuration (admin only)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        data = request.json
+        password = data.get('password')
+
+        # Verify admin password
+        if password != ADMIN_PASSWORD:
+            print(f"❌ Unauthorized event config attempt")
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        enabled = data.get('enabled', False)
+        start_date = data.get('startDate')
+        end_date = data.get('endDate')
+        event_name = data.get('eventName', 'Bingo Event')
+
+        # Validate dates if enabled
+        if enabled:
+            if not start_date or not end_date:
+                return jsonify({'error': 'Start and end dates required when enabled'}), 400
+
+            # Parse dates to ensure they're valid
+            from datetime import datetime
+            try:
+                start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+
+                if end <= start:
+                    return jsonify({'error': 'End date must be after start date'}), 400
+            except Exception as e:
+                return jsonify({'error': f'Invalid date format: {str(e)}'}), 400
+
+        # Save event config
+        event_config = {
+            '_id': 'event_config',
+            'enabled': enabled,
+            'startDate': start_date,
+            'endDate': end_date,
+            'eventName': event_name
+        }
+
+        bingo_collection.replace_one(
+            {'_id': 'event_config'},
+            event_config,
+            upsert=True
+        )
+
+        print(f"⏱️  Event config updated: {event_name} ({start_date} to {end_date}, enabled={enabled})")
+
+        return jsonify({
+            'success': True,
+            'message': 'Event configuration saved',
+            'config': event_config
+        })
+
+    except Exception as e:
+        print(f"❌ Error setting event config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def is_within_event_window(timestamp=None):
+    """Check if a timestamp is within the current event window"""
+    try:
+        # Get event config
+        event_config = bingo_collection.find_one({'_id': 'event_config'})
+
+        # If no event or event disabled, allow all
+        if not event_config or not event_config.get('enabled', False):
+            return True
+
+        # Use provided timestamp or current time
+        if timestamp is None:
+            check_time = datetime.utcnow()
+        else:
+            # Convert timestamp to datetime if it's a string
+            if isinstance(timestamp, str):
+                check_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            elif isinstance(timestamp, datetime):
+                check_time = timestamp
+            else:
+                check_time = datetime.utcnow()
+
+        # Get event dates
+        start_date = event_config.get('startDate')
+        end_date = event_config.get('endDate')
+
+        if not start_date or not end_date:
+            return True
+
+        # Parse dates
+        start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+
+        # Check if within window
+        return start <= check_time <= end
+
+    except Exception as e:
+        print(f"⚠️  Error checking event window: {e}")
+        # On error, allow the action (fail open)
+        return True
 
 
 @app.route('/deaths/by-player-npc', methods=['GET'])

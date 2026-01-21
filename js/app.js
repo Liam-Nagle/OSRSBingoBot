@@ -4583,6 +4583,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
                             {
+                version: "v2.6.0",
+                date: "2025-01-21",
+                title: "Added Boss Breakdown in Deaths statistics",
+                changes: [
+                    { type: "feature", text: "Added an event timer. Configure on the admin panel" },
+                ]
+            },
+                            {
                 version: "v2.5.0",
                 date: "2025-01-21",
                 title: "Added Boss Breakdown in Deaths statistics",
@@ -5445,6 +5453,242 @@ async function loadAnalyticsWithFilters() {
             return Chart.getChart(document.getElementById('monthComparisonChart'))?.config || {};
         }
 
+        // ============================================
+        // EVENT TIMER SYSTEM
+        // ============================================
+
+        let eventTimerInterval = null;
+
+        async function loadEventConfig() {
+            try {
+                const response = await fetch(`${API_URL}/event/config`);
+                const config = await response.json();
+
+                if (config.enabled && config.startDate && config.endDate) {
+                    displayEventTimer(config);
+                    startEventCountdown(config);
+                } else {
+                    hideEventTimer();
+                }
+            } catch (error) {
+                console.error('Failed to load event config:', error);
+                hideEventTimer();
+            }
+        }
+
+        function displayEventTimer(config) {
+            const widget = document.getElementById('eventTimerWidget');
+            const nameEl = document.getElementById('eventName');
+            const endDateEl = document.getElementById('eventEndDate');
+
+            nameEl.textContent = config.eventName || 'Bingo Event';
+
+            const endDate = new Date(config.endDate);
+            endDateEl.textContent = endDate.toLocaleString('en-GB', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            widget.style.display = 'block';
+        }
+
+        function hideEventTimer() {
+            document.getElementById('eventTimerWidget').style.display = 'none';
+            if (eventTimerInterval) {
+                clearInterval(eventTimerInterval);
+                eventTimerInterval = null;
+            }
+        }
+
+        function startEventCountdown(config) {
+            // Clear any existing interval
+            if (eventTimerInterval) {
+                clearInterval(eventTimerInterval);
+            }
+
+            function updateCountdown() {
+                const now = new Date();
+                const start = new Date(config.startDate);
+                const end = new Date(config.endDate);
+
+                const countdownEl = document.getElementById('eventCountdown');
+                const statusEl = document.getElementById('eventStatus');
+
+                // Check if event hasn't started
+                if (now < start) {
+                    const timeUntilStart = start - now;
+                    countdownEl.textContent = formatTimeRemaining(timeUntilStart);
+                    statusEl.textContent = 'Event Starts In';
+                    statusEl.style.color = '#2196F3';
+                }
+                // Check if event is active
+                else if (now >= start && now <= end) {
+                    const timeRemaining = end - now;
+
+                    if (timeRemaining <= 0) {
+                        countdownEl.textContent = '00:00:00';
+                        statusEl.textContent = 'Event Ended';
+                        statusEl.style.color = '#8B0000';
+                        clearInterval(eventTimerInterval);
+                        return;
+                    }
+
+                    countdownEl.textContent = formatTimeRemaining(timeRemaining);
+                    statusEl.textContent = 'Event Active';
+                    statusEl.style.color = '#4CAF50';
+                }
+                // Event has ended
+                else {
+                    countdownEl.textContent = '00:00:00';
+                    statusEl.textContent = 'Event Ended';
+                    statusEl.style.color = '#8B0000';
+                    clearInterval(eventTimerInterval);
+                }
+            }
+
+            // Update immediately and then every second
+            updateCountdown();
+            eventTimerInterval = setInterval(updateCountdown, 1000);
+        }
+
+        function formatTimeRemaining(milliseconds) {
+            const totalSeconds = Math.floor(milliseconds / 1000);
+            const days = Math.floor(totalSeconds / 86400);
+            const hours = Math.floor((totalSeconds % 86400) / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            if (days > 0) {
+                return `${days}d ${hours}h ${minutes}m`;
+            } else if (hours > 0) {
+                return `${hours}h ${minutes}m ${seconds}s`;
+            } else {
+                return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function openEventConfigModal() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+
+            // Load current config
+            loadCurrentEventConfig();
+            document.getElementById('eventConfigModal').classList.add('active');
+        }
+
+        function closeEventConfigModal() {
+            document.getElementById('eventConfigModal').classList.remove('active');
+        }
+
+        async function loadCurrentEventConfig() {
+            try {
+                const response = await fetch(`${API_URL}/event/config`);
+                const config = await response.json();
+
+                document.getElementById('eventEnabled').checked = config.enabled || false;
+                document.getElementById('eventNameInput').value = config.eventName || 'Bingo Event';
+
+                if (config.startDate) {
+                    // Convert ISO string to datetime-local format
+                    const startDate = new Date(config.startDate);
+                    document.getElementById('eventStartDate').value = formatDateForInput(startDate);
+                }
+
+                if (config.endDate) {
+                    const endDate = new Date(config.endDate);
+                    document.getElementById('eventEndDate').value = formatDateForInput(endDate);
+                }
+
+                toggleEventFields();
+            } catch (error) {
+                console.error('Failed to load event config:', error);
+            }
+        }
+
+        function formatDateForInput(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        function toggleEventFields() {
+            const enabled = document.getElementById('eventEnabled').checked;
+            document.getElementById('eventFields').style.display = enabled ? 'block' : 'none';
+        }
+
+        async function saveEventConfig() {
+            const password = sessionStorage.getItem('adminPassword');
+            if (!password) {
+                alert('Session expired. Please log in again.');
+                return;
+            }
+
+            const enabled = document.getElementById('eventEnabled').checked;
+            const eventName = document.getElementById('eventNameInput').value.trim();
+            const startDate = document.getElementById('eventStartDate').value;
+            const endDate = document.getElementById('eventEndDate').value;
+
+            if (enabled) {
+                if (!startDate || !endDate) {
+                    alert('Please set both start and end dates!');
+                    return;
+                }
+
+                if (!eventName) {
+                    alert('Please enter an event name!');
+                    return;
+                }
+
+                // Validate dates
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+
+                if (end <= start) {
+                    alert('End date must be after start date!');
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/event/config`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        password: password,
+                        enabled: enabled,
+                        eventName: eventName,
+                        startDate: startDate ? new Date(startDate).toISOString() : null,
+                        endDate: endDate ? new Date(endDate).toISOString() : null
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert('✅ Event configuration saved!');
+                    closeEventConfigModal();
+                    loadEventConfig(); // Reload timer
+                } else {
+                    alert(`❌ ${result.error || 'Failed to save configuration'}`);
+                }
+            } catch (error) {
+                console.error('Save event config error:', error);
+                alert('❌ Could not connect to server');
+            }
+        }
+
+        // Load event config on page load
+        loadEventConfig();
+
+
         // Load on page load
         loadGroupHighscore();
 
@@ -5457,10 +5701,7 @@ async function loadAnalyticsWithFilters() {
             addCloseButtonsToModals();
         });
 
-        // Also run it in initBoard() to make sure it catches dynamically created modals
-        // Add this line at the end of your initBoard() function:
-        // addCloseButtonsToModals();
-
         (async () => {
             await initBoard();
+            loadEventConfig(); // Load and display event timer
         })();
