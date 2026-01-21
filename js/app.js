@@ -5479,7 +5479,7 @@ async function loadAnalyticsWithFilters() {
         function displayEventTimer(config) {
             const widget = document.getElementById('eventTimerWidget');
             const nameEl = document.getElementById('eventName');
-            const endDateEl = document.getElementById('eventEndDate');
+            const endDateEl = document.getElementById('eventEndDateDisplay');
 
             nameEl.textContent = config.eventName || 'Bingo Event';
 
