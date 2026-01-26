@@ -713,12 +713,18 @@ def save_kc():
 # Legacy KC collection reference (kept for backward compatibility)
 if USE_MONGODB:
     kc_collection = db['kc_snapshots']
+
+
 def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
     """Check if this drop already exists in history (within N seconds of the message timestamp)"""
     if not USE_MONGODB:
         return False  # Skip deduplication for file storage
 
     try:
+        tenant = get_tenant_from_request()
+        tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+        collections = get_tenant_collections(tenant_id)
+
         # Parse timestamp if it's a string
         if isinstance(message_timestamp, str):
             msg_time = datetime.fromisoformat(message_timestamp.replace('Z', '+00:00'))
@@ -729,8 +735,8 @@ def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
         time_start = msg_time - timedelta(seconds=seconds)
         time_end = msg_time + timedelta(seconds=seconds)
 
-        # Check for duplicate within the time window
-        duplicate = history_collection.find_one({
+        # CHANGE THIS LINE: history_collection → collections['history']
+        duplicate = collections['history'].find_one({
             'player': player,
             'item': item,
             'timestamp': {
@@ -822,29 +828,6 @@ def get_bingo():
     tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     return jsonify(load_bingo_data(tenant_id))
-
-
-@app.route('/tenant', methods=['GET'])
-def get_tenant_info():
-    """Get current tenant information"""
-    tenant = get_tenant_from_request()
-
-    if not tenant:
-        return jsonify({
-            'error': 'No tenant found',
-            'using_default': True
-        }), 404
-
-    # Return safe tenant info (no API key)
-    return jsonify({
-        'tenant_id': tenant['tenant_id'],
-        'name': tenant['name'],
-        'subdomain': tenant['subdomain'],
-        'plan': tenant['plan'],
-        'features': tenant.get('settings', {}).get('features', []),
-        'is_founder': tenant.get('is_founder', False)
-    })
-
 
 @app.route('/login', methods=['POST'])
 def admin_login():
@@ -1737,6 +1720,7 @@ def get_deaths_by_player_npc():
         return jsonify({'error': f'Failed to get player-NPC deaths: {str(e)}'}), 500
 
 
+
 @app.route('/manual-override', methods=['POST'])
 def manual_override():
     """Manual tile completion override (admin only)"""
@@ -1797,6 +1781,53 @@ def manual_override():
             })
 
     return jsonify({'error': 'Invalid action'}), 400
+
+
+@app.route('/api/tenant/info', methods=['GET'])
+def get_tenant_info():
+    """Get current tenant information and plan details"""
+    tenant = get_tenant_from_request()
+
+    if not tenant:
+        return jsonify({
+            'error': 'Tenant not found'
+        }), 404
+
+    # Get plan details
+    plan = tenant.get('plan', 'free')
+    settings = tenant.get('settings', {})
+    features = settings.get('features', [])
+
+    # Determine what features are available
+    is_premium = plan in ['premium', 'owner']
+
+    return jsonify({
+        'success': True,
+        'tenant': {
+            'id': tenant.get('tenant_id'),
+            'name': tenant.get('name'),
+            'subdomain': tenant.get('subdomain'),
+            'plan': plan
+        },
+        'features': {
+            'analytics': is_premium or 'analytics' in features,
+            'death_tracking': is_premium or 'death_tracking' in features,
+            'boss_kc': is_premium or 'boss_kc' in features,
+            'event_timer': is_premium or 'event_timer' in features,
+            'export_data': is_premium or 'export_data' in features,
+            'custom_colors': is_premium or 'custom_colors' in features,
+            'view_history': is_premium or 'view_history' in features,  # NEW
+            'rank_history': is_premium or 'rank_history' in features,  # NEW
+            'unlimited_history': is_premium,
+            'unlimited_board_size': is_premium
+        },
+        'limits': {
+            'board_size': 9 if is_premium else 3,
+            'drop_history': None if is_premium else 50,
+            'admins': 10 if is_premium else 1
+        }
+    })
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

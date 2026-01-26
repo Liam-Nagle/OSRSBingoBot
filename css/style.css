@@ -1721,3 +1721,146 @@
         .event-timer-status-badge.status-ended .event-timer-status {
             color: #ffcc33;
         }
+
+        /* ============================================
+        PREMIUM FEATURE BADGES
+        ============================================ */
+
+        .premium-badge {
+            display: inline-block;
+            margin-left: 5px;
+            font-size: 12px;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #2c1810;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: bold;
+            vertical-align: middle;
+        }
+
+        .plan-free .premium-only {
+            opacity: 0.6;
+            cursor: not-allowed !important;
+        }
+
+        .plan-free .premium-only:hover {
+            opacity: 0.8;
+        }
+
+        /* ============================================
+        UPGRADE MODAL
+        ============================================ */
+
+        .upgrade-modal-content {
+            max-width: 600px;
+            text-align: center;
+            background: linear-gradient(135deg, #3d2817 0%, #2c1810 100%);
+            border: 3px solid #8B6914;
+        }
+
+        .upgrade-modal-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .upgrade-modal-title {
+            color: #ffcc33;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .upgrade-modal-subtitle {
+            color: #f4e4c1;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        .upgrade-modal-subtitle strong {
+            color: #ffcc33;
+        }
+
+        .upgrade-pricing-box {
+            background: linear-gradient(135deg, rgba(139,105,20,0.3) 0%, rgba(205,139,45,0.3) 100%);
+            border: 3px solid #cd8b2d;
+            border-radius: 10px;
+            padding: 30px;
+            margin: 30px 0;
+            text-align: left;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .upgrade-price-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .upgrade-price {
+            font-size: 48px;
+            color: #ffcc33;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .upgrade-price-period {
+            color: #8b7355;
+            font-size: 14px;
+        }
+
+        .upgrade-features-title {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #ffcc33;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .upgrade-features-list {
+            color: #f4e4c1;
+            line-height: 2.2;
+            font-size: 15px;
+        }
+
+        .upgrade-btn-primary {
+            font-size: 18px;
+            padding: 15px 50px;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 20px 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.3);
+            transition: all 0.3s;
+        }
+
+        .upgrade-btn-primary:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        }
+
+        .upgrade-btn-secondary {
+            padding: 12px 30px;
+            margin: 20px 10px;
+            background: linear-gradient(135deg, #5c3d2e 0%, #3d2817 100%);
+            color: #f4e4c1;
+            border: 2px solid #8B6914;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            transition: all 0.3s;
+        }
+
+        .upgrade-btn-secondary:hover {
+            background: linear-gradient(135deg, #6d4e3f 0%, #4e3928 100%);
+            transform: translateY(-1px);
+        }
+
+        .upgrade-guarantee {
+            color: #8b7355;
+            font-size: 12px;
+            margin-top: 20px;
+        }

@@ -30,7 +30,177 @@
             }
         };
 
-        const API_URL = 'https://osrsbingobot.onrender.com';
+        const API_URL = 'https://osrsbingobot.onrender.com'; //Production ENV
+        //const API_URL = 'http://localhost:5000'; //Local Testing
+
+        // Tenant & Plan tracking
+        let currentTenant = null;
+        let tenantPlan = 'free';
+        let tenantFeatures = {};
+        let tenantLimits = {};
+
+
+        async function loadTenantInfo() {
+            console.log('📊 Loading tenant info...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/tenant/info`);
+
+                if (!response.ok) {
+                    console.error('Failed to load tenant info:', response.status);
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentTenant = data.tenant;
+                    tenantPlan = data.tenant.plan;
+                    tenantFeatures = data.features;
+                    tenantLimits = data.limits;
+
+                    console.log('✅ Tenant loaded:', currentTenant.name);
+                    console.log('   Plan:', tenantPlan);
+                    console.log('   Features:', tenantFeatures);
+                    console.log('   Limits:', tenantLimits);
+
+                    // Update UI based on plan
+                    updateUIForPlan();
+                } else {
+                    console.error('Tenant info error:', data.error);
+                }
+
+            } catch (error) {
+                console.error('❌ Error loading tenant info:', error);
+            }
+        }
+
+        function updateUIForPlan() {
+            console.log('🎨 Updating UI for plan:', tenantPlan);
+
+            const isPremium = tenantPlan === 'premium' || tenantPlan === 'owner';
+
+            if (isPremium) {
+                // Premium/Owner - show everything
+                document.body.classList.add('plan-premium');
+                document.body.classList.remove('plan-free');
+                console.log('   ✅ Premium features enabled');
+                return;
+            }
+
+            // Free tier - hide premium features
+            document.body.classList.add('plan-free');
+            document.body.classList.remove('plan-premium');
+
+            // Hide premium buttons (UPDATED LIST)
+            const premiumFeatures = [
+                'analyticsBtn',
+                'deathsBtn',
+                'bossKCBtn',
+                'eventTimerBtn',
+                'exportBtn',
+                'viewHistoryBtn',      // NEW
+                'rankHistoryBtn'       // NEW
+            ];
+
+            premiumFeatures.forEach(btnId => {
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    // Add premium badge
+                    if (!btn.querySelector('.premium-badge')) {
+                        const badge = document.createElement('span');
+                        badge.className = 'premium-badge';
+                        badge.textContent = '⭐';
+                        badge.title = 'Premium feature';
+                        btn.appendChild(badge);
+                    }
+
+                    // Override click to show upgrade modal
+                    btn.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        showUpgradeModal(btnId);
+                    };
+
+                    console.log('   🔒 Locked:', btnId);
+                }
+            });
+        }
+
+        function showUpgradeModal(featureName = '') {
+            // Feature name mapping
+            const featureNames = {
+                'analyticsBtn': 'Analytics & Charts',
+                'deathsBtn': 'Death Tracking',
+                'bossKCBtn': 'Boss KC Tracking',
+                'eventTimerBtn': 'Event Timer',
+                'exportBtn': 'Export Data',
+                'viewHistoryBtn': 'Drop History',
+                'rankHistoryBtn': 'Rank History'
+            };
+
+            const feature = featureNames[featureName] || 'Premium Features';
+
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.id = 'upgradeModal';
+
+            modal.innerHTML = `
+                <div class="modal-content upgrade-modal-content">
+                    <button class="close-btn" onclick="closeUpgradeModal()">×</button>
+
+                    <div class="upgrade-modal-icon">⭐</div>
+                    <h2 class="upgrade-modal-title">Upgrade to Premium</h2>
+                    <p class="upgrade-modal-subtitle">
+                        Unlock <strong>${feature}</strong> and all premium features!
+                    </p>
+
+                    <div class="upgrade-pricing-box">
+                        <div class="upgrade-price-container">
+                            <div class="upgrade-price">£2.99</div>
+                            <div class="upgrade-price-period">per month</div>
+                        </div>
+
+                        <div class="upgrade-features-title">
+                            ✓ Everything in Free, plus:
+                        </div>
+
+                        <div class="upgrade-features-list">
+                            ✓ Unlimited board size (up to 9x9)<br>
+                            ✓ Unlimited drop history<br>
+                            ✓ Full analytics & charts<br>
+                            ✓ Death tracking & statistics<br>
+                            ✓ Boss KC tracking<br>
+                            ✓ Complete rank history<br>
+                            ✓ Event timer with auto-filtering<br>
+                            ✓ Export data (CSV/JSON)<br>
+                            ✓ Priority support
+                        </div>
+                    </div>
+
+                    <button class="upgrade-btn-primary" onclick="window.location.href='${API_URL}/upgrade'">
+                        Upgrade Now - £2.99/month
+                    </button>
+
+                    <button class="upgrade-btn-secondary" onclick="closeUpgradeModal()">
+                        Maybe Later
+                    </button>
+
+                    <p class="upgrade-guarantee">
+                        7-day money-back guarantee • Cancel anytime
+                    </p>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+        }
+
+        function closeUpgradeModal() {
+            const modal = document.getElementById('upgradeModal');
+            if (modal) {
+                modal.remove();
+            }
+        }
 
         function changePlayer() {
             currentPlayer = document.getElementById('playerSelect').value || null;
@@ -391,6 +561,9 @@
         async function initBoard() {
             console.log('🚀 Initializing bingo board...');
             console.log(`API URL: ${API_URL}/bingo`);
+
+            // Load tenant info FIRST
+            await loadTenantInfo();
 
             try {
                 const response = await fetch(`${API_URL}/bingo`);
@@ -790,6 +963,18 @@
                 alert('⛔ Admin access required!');
                 return;
             }
+            if (tenantPlan === 'free') {
+                const select = document.getElementById('boardSizeSelect');
+                const options = select.querySelectorAll('option');
+
+                options.forEach(option => {
+                    const size = parseInt(option.value);
+                    if (size > tenantLimits.board_size) {
+                        option.disabled = true;
+                        option.textContent += ' (Premium)';
+                    }
+                });
+            }
             document.getElementById('boardSizeSelect').value = bingoData.boardSize;
             document.getElementById('boardSizeModal').classList.add('active');
         }
@@ -800,6 +985,12 @@
 
         function changeBoardSize() {
             const newSize = parseInt(document.getElementById('boardSizeSelect').value);
+
+            if (tenantLimits.board_size && newSize > tenantLimits.board_size) {
+                alert(`⭐ Board size ${newSize}x${newSize} requires Premium!\n\nFree tier is limited to ${tenantLimits.board_size}x${tenantLimits.board_size}.\n\nUpgrade to Premium for up to 9x9 boards.`);
+                showUpgradeModal('boardSize');
+                return;
+            }
 
             if (confirm(`Change board to ${newSize}x${newSize}? This will clear all tiles and progress!`)) {
                 bingoData = {
@@ -5615,7 +5806,7 @@ function startEventCountdown(config) {
             document.getElementById('eventFields').style.display = enabled ? 'block' : 'none';
         }
 
-async function saveEventConfig() {
+        async function saveEventConfig() {
             const password = sessionStorage.getItem('adminPassword');
             if (!password) {
                 alert('Session expired. Please log in again.');

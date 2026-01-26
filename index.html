@@ -73,12 +73,12 @@
             <!-- Public Controls - Centered Below -->
             <div style="flex-basis: 100%; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
                 <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
-                <button onclick="openHistoryModal()" class="secondary">📜 View History</button>
-                <button onclick="openRankHistoryModal()" class="secondary">📈 Rank History</button>
-                <button onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
+                <button id="viewHistoryBtn" onclick="openHistoryModal()" class="secondary">📜 View History</button>
+                <button id="rankHistoryBtn" onclick="openRankHistoryModal()" class="secondary">📈 Rank History</button>
+                <button id="analyticsBtn" onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
                 <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
-                <button onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
-                <button onclick="openDeathsModal()" class="secondary">💀 Deaths</button>
+                <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
+                <button id="deathsBtn" onclick="openDeathsModal()" class="secondary">💀 Deaths</button>
                 <button onclick="openChangelogModal()" class="secondary">📝 Changelog</button>
 
                 <!-- Login Button (Shows when not admin) -->
@@ -91,11 +91,11 @@
                 <button onclick="openManualOverrideModal()" class="secondary">✏️ Manual Override</button>
                 <button onclick="openBoardSizeModal()" class="secondary">📐 Board Size</button>
                 <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
-                <button onclick="openEventConfigModal()" class="secondary">⏱️ Event Timer</button>
+                <button id="eventTimerBtn" onclick="openEventConfigModal()" class="secondary">⏱️ Event Timer</button>
                 <button onclick="shuffleBoard()" class="secondary">🔀 Shuffle Board</button>
                 <button onclick="undoShuffle()" class="secondary">↩️ Undo Shuffle</button>
                 <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
-                <button onclick="exportBoard()" class="secondary">💾 Export</button>
+                <button id="exportBtn" onclick="exportBoard()" class="secondary">💾 Export</button>
                 <button onclick="importBoard()" class="secondary">📥 Import</button>
                 <button onclick="cleanupDeathMarkdown()" class="btn-secondary" style="margin-left: 10px;">🧹 Clean Old Death Data</button>
                 <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
