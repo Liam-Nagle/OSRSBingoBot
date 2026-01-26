@@ -5,63 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Unsociables Bingo Board</title>
 
-
-        <!-- GIM Highscore Widget -->
-        <div class="group-highscore">
-            <div class="group-highscore-content">
-                <div class="group-icon">🛡️</div>
-                <div class="group-info">
-                    <div class="group-name" id="groupName">Loading...</div>
-                    <div class="group-stats">
-                        <span id="groupRank">Overall: --</span>
-                        <span id="groupPrestige">Prestige: --</span>
-                        <span id="groupXP">Total XP: --</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
     <!-- External Stylesheet -->
     <link rel="stylesheet" href="css/style.css?v=2.1">
 </head>
 <body>
-    <!-- Event Timer Widget -->
-    <div id="eventTimerWidget" class="event-timer-widget">
-        <div class="event-timer-container">
-
-            <!-- Animated glow background -->
-            <div class="event-timer-glow"></div>
-
-            <!-- Header -->
-            <div class="event-timer-header">
-                <div class="event-timer-icon">⏳</div>
-                <div class="event-timer-name" id="eventName">Bingo Event</div>
-            </div>
-
-            <!-- Countdown -->
-            <div class="event-timer-countdown-box">
-                <div class="event-timer-countdown" id="eventCountdown">--:--:--</div>
-            </div>
-
-            <!-- Status and end date -->
-            <div class="event-timer-status-container">
-                <div class="event-timer-status-badge">
-                    <div class="event-timer-status status-active" id="eventStatus">Event Active</div>
-                </div>
-                <div>
-                    <div class="event-timer-end-date-label">Ends:</div>
-                    <div class="event-timer-end-date" id="eventEndDateDisplay">-</div>
-                </div>
-            </div>
-
-            <!-- Decorative corners -->
-            <div class="event-timer-corner top-left"></div>
-            <div class="event-timer-corner top-right"></div>
-            <div class="event-timer-corner bottom-left"></div>
-            <div class="event-timer-corner bottom-right"></div>
-
-        </div>
-    </div>
     <div class="container">
         <h1>⚔️ OSRS BINGO BOARD ⚔️</h1>
 
@@ -75,6 +22,36 @@
                 <button class="star-btn" id="favoriteBtn" onclick="toggleFavorite()" title="Set as favorite player">
                     ⭐ Favorite
                 </button>
+            </div>
+
+            <!-- Event Timer Widget (Centered) -->
+            <div id="eventTimerWidget" class="event-timer-widget">
+                <div class="event-timer-container">
+                    <div class="event-timer-header">
+                        <div class="event-timer-name" id="eventName">Bingo Event</div>
+                    </div>
+                    <div class="event-timer-countdown" id="eventCountdown">--:--:--</div>
+                    <div class="event-timer-status-container">
+                        <div class="event-timer-status-badge">
+                            <div class="event-timer-status status-active" id="eventStatus">Event Active</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GIM Highscore Widget -->
+            <div class="group-highscore">
+                <div class="group-highscore-content">
+                    <div class="group-icon">🛡️</div>
+                    <div class="group-info">
+                        <div class="group-name" id="groupName">Loading...</div>
+                        <div class="group-stats">
+                            <span id="groupRank">Overall: --</span>
+                            <span id="groupPrestige">Prestige: --</span>
+                            <span id="groupXP">Total XP: --</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Legend -->

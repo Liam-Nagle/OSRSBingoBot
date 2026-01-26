@@ -5307,7 +5307,7 @@ async function loadAnalyticsWithFilters() {
                         {
                             label: 'Prestige Rank',
                             data: history.map(h => h.prestigeRank),
-                            borderColor: '#FFD700',
+                            borderColor: '#c4614b',
                             backgroundColor: 'rgba(255, 215, 0, 0.1)',
                             yAxisID: 'y',
                             tension: 0.3
@@ -5382,7 +5382,7 @@ async function loadAnalyticsWithFilters() {
                     <tr style="border-bottom: 1px solid rgba(205, 139, 45, 0.2);">
                         <td style="padding: 12px; color: #6d5635;">${dateStr}</td>
                         <td style="padding: 12px; text-align: center; color: #cd8b2d; font-weight: bold;">${record.rank.toLocaleString()}</td>
-                        <td style="padding: 12px; text-align: center; color: #FFD700; font-weight: bold;">${record.prestigeRank.toLocaleString()}</td>
+                        <td style="padding: 12px; text-align: center; color: #c4614b; font-weight: bold;">${record.prestigeRank.toLocaleString()}</td>
                         <td style="padding: 12px; text-align: center; color: #6d5635;">${formatXp(record.totalXp)}</td>
                         <td style="padding: 12px; text-align: center;">${changeHtml || '-'}</td>
                     </tr>
@@ -5479,18 +5479,8 @@ async function loadAnalyticsWithFilters() {
         function displayEventTimer(config) {
             const widget = document.getElementById('eventTimerWidget');
             const nameEl = document.getElementById('eventName');
-            const endDateEl = document.getElementById('eventEndDateDisplay');
 
             nameEl.textContent = config.eventName || 'Bingo Event';
-
-            const endDate = new Date(config.endDate);
-            endDateEl.textContent = endDate.toLocaleString('en-GB', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
 
             widget.classList.add('active'); // Use class instead of inline style
         }

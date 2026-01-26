@@ -16,20 +16,138 @@ MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
 mongo_client = MongoClient(MONGODB_URI)
 db = mongo_client['osrs_bingo']
 
-# Collections
+# ============================================
+# MULTI-TENANT SYSTEM
+# ============================================
+
+# Tenants collection
+tenants_collection = db['tenants']
+
+# Default tenant (your personal board - backward compatibility)
+DEFAULT_TENANT_ID = 'unsociables_001'
+
+# Legacy collections (kept for backward compatibility during transition)
 bingo_collection = db['bingo_board']
 history_collection = db['drop_history']
 deaths_collection = db['deaths']
 rank_history_collection = db['rank_history']
+
+
+def get_tenant_by_id(tenant_id):
+    """Get tenant document by ID"""
+    return tenants_collection.find_one({'tenant_id': tenant_id})
+
+
+def get_tenant_by_api_key(api_key):
+    """Get tenant by API key"""
+    return tenants_collection.find_one({'api_key': api_key})
+
+
+def get_tenant_by_subdomain(subdomain):
+    """Get tenant by subdomain"""
+    return tenants_collection.find_one({'subdomain': subdomain.lower()})
+
+
+def get_tenant_from_request():
+    """
+    Identify tenant from the current request.
+    Priority: API key header > subdomain > default tenant
+    """
+    # Check for API key in header
+    api_key = request.headers.get('X-API-Key') or request.headers.get('Authorization')
+    if api_key:
+        if api_key.startswith('Bearer '):
+            api_key = api_key[7:]
+        tenant = get_tenant_by_api_key(api_key)
+        if tenant:
+            return tenant
+
+    # Check for subdomain in Origin/Referer header
+    origin = request.headers.get('Origin') or request.headers.get('Referer') or ''
+    if origin:
+        # Extract subdomain from origin (e.g., "https://unsociables.osrsbingo.com")
+        import re
+        match = re.search(r'https?://([^.]+)\.', origin)
+        if match:
+            subdomain = match.group(1)
+            if subdomain not in ['www', 'api']:
+                tenant = get_tenant_by_subdomain(subdomain)
+                if tenant:
+                    return tenant
+
+    # Check for tenant_id in query params (useful for testing)
+    tenant_id = request.args.get('tenant_id')
+    if tenant_id:
+        tenant = get_tenant_by_id(tenant_id)
+        if tenant:
+            return tenant
+
+    # Default to your personal tenant (backward compatibility)
+    return get_tenant_by_id(DEFAULT_TENANT_ID)
+
+
+def get_tenant_collections(tenant_id=None):
+    """
+    Get MongoDB collections for a specific tenant.
+    Returns dict with all tenant-specific collections.
+    """
+    if tenant_id is None:
+        tenant = get_tenant_from_request()
+        tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+
+    # Get tenant subdomain for collection naming
+    tenant = get_tenant_by_id(tenant_id)
+    if not tenant:
+        # Fallback to default tenant
+        tenant = get_tenant_by_id(DEFAULT_TENANT_ID)
+
+    subdomain = tenant['subdomain'] if tenant else 'unsociables'
+
+    return {
+        'bingo': db[f'tenant_{subdomain}_bingo'],
+        'history': db[f'tenant_{subdomain}_history'],
+        'deaths': db[f'tenant_{subdomain}_deaths'],
+        'rank_history': db[f'tenant_{subdomain}_rank_history'],
+        'kc': db[f'tenant_{subdomain}_kc']
+    }
+
+
+def check_tenant_feature(tenant, feature):
+    """Check if tenant has access to a specific feature"""
+    if not tenant:
+        return False
+
+    # Owner plan has all features
+    if tenant.get('plan') == 'owner':
+        return True
+
+    # Check settings
+    settings = tenant.get('settings', {})
+    features = settings.get('features', [])
+
+    return 'all' in features or feature in features
+
+
+# ============================================
+# END MULTI-TENANT SYSTEM
+# ============================================
 
 # Fallback to file-based storage if MongoDB not available
 USE_MONGODB = True
 try:
     # Test MongoDB connection
     mongo_client.admin.command('ping')
-    print("✅ Connected to MongoDB")
+    print("[OK] Connected to MongoDB")
+
+    # Check if default tenant exists
+    default_tenant = get_tenant_by_id(DEFAULT_TENANT_ID)
+    if default_tenant:
+        print(f"[OK] Default tenant: {default_tenant['name']} ({DEFAULT_TENANT_ID})")
+    else:
+        print(f"[!] Default tenant not found - run migrate_to_tenant.py first!")
+
 except Exception as e:
-    print(f"⚠️  MongoDB not available, falling back to file storage: {e}")
+    print(f"[!] MongoDB not available, falling back to file storage: {e}")
     USE_MONGODB = False
     BINGO_FILE = '/data/bingo_data.json' if os.path.exists('/data') else 'bingo_data.json'
 
@@ -195,15 +313,20 @@ def fetch_player_kc(player_name):
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     # Fetch from OSRS
-    kc_data = fetch_osrs_highscores(player_name)
+    kc_data, _ = fetch_osrs_highscores(player_name)
 
     if not kc_data:
         return jsonify({'error': f'Could not fetch KC for {player_name}'}), 404
 
-    # Store snapshot
+    # Store snapshot in tenant's KC collection
     try:
-        kc_collection.insert_one({
+        collections['kc'].insert_one({
             'player': player_name,
             'timestamp': datetime.utcnow(),
             'snapshot_type': 'current',
@@ -224,7 +347,7 @@ def fetch_player_kc(player_name):
 def create_kc_snapshot():
     """Create KC snapshot for all players"""
     debug_log = []
-    debug_log.append("🚀 KC Snapshot endpoint called")
+    debug_log.append("[*] KC Snapshot endpoint called")
 
     if not USE_MONGODB:
         return jsonify({
@@ -233,16 +356,21 @@ def create_kc_snapshot():
             'debug': debug_log
         }), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     data = request.json
     snapshot_type = data.get('type', 'manual')
-    debug_log.append(f"📝 Snapshot type: {snapshot_type}")
+    debug_log.append(f"[*] Snapshot type: {snapshot_type}")
 
-    # Get all unique players from history
+    # Get all unique players from tenant's history
     try:
-        players = history_collection.distinct('player')
-        debug_log.append(f"✅ Found {len(players)} players: {players}")
+        players = collections['history'].distinct('player')
+        debug_log.append(f"[OK] Found {len(players)} players: {players}")
     except Exception as e:
-        debug_log.append(f"❌ Error getting players: {str(e)}")
+        debug_log.append(f"[X] Error getting players: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e),
@@ -250,7 +378,7 @@ def create_kc_snapshot():
         }), 500
 
     if not players:
-        debug_log.append("⚠️ No players in history!")
+        debug_log.append("[!] No players in history!")
         return jsonify({
             'success': False,
             'message': 'No players found in drop history',
@@ -263,22 +391,22 @@ def create_kc_snapshot():
 
     for player in players:
         player_debug = []
-        player_debug.append(f"📥 Fetching KC for: {player}")
+        player_debug.append(f"[*] Fetching KC for: {player}")
 
-        kc_data, fetch_debug = fetch_osrs_highscores(player)  # Now returns tuple
+        kc_data, fetch_debug = fetch_osrs_highscores(player)  # Returns tuple
         player_debug.extend(fetch_debug)  # Add all fetch debug info
 
         if kc_data:
-            player_debug.append(f"✅ Got {len(kc_data)} boss KCs")
+            player_debug.append(f"[OK] Got {len(kc_data)} boss KCs")
 
             try:
-                result = kc_collection.insert_one({
+                result = collections['kc'].insert_one({
                     'player': player,
                     'timestamp': datetime.utcnow(),
                     'snapshot_type': snapshot_type,
                     'bosses': kc_data
                 })
-                player_debug.append(f"💾 SAVED to MongoDB! ID: {result.inserted_id}")
+                player_debug.append(f"[OK] SAVED to MongoDB! ID: {result.inserted_id}")
                 results.append({
                     'player': player,
                     'success': True,
@@ -286,7 +414,7 @@ def create_kc_snapshot():
                     'debug': player_debug
                 })
             except Exception as e:
-                player_debug.append(f"❌ MongoDB save failed: {str(e)}")
+                player_debug.append(f"[X] MongoDB save failed: {str(e)}")
                 results.append({
                     'player': player,
                     'success': False,
@@ -294,7 +422,7 @@ def create_kc_snapshot():
                     'debug': player_debug
                 })
         else:
-            player_debug.append(f"❌ No KC data")
+            player_debug.append(f"[X] No KC data")
             results.append({
                 'player': player,
                 'success': False,
@@ -305,7 +433,7 @@ def create_kc_snapshot():
         debug_log.extend(player_debug)
 
     successful = sum(1 for r in results if r.get('success'))
-    debug_log.append(f"📊 FINAL: {successful}/{len(results)} succeeded")
+    debug_log.append(f"[*] FINAL: {successful}/{len(results)} succeeded")
 
     return jsonify({
         'success': True,
@@ -322,9 +450,14 @@ def get_player_kc(player_name):
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Get all snapshots for this player
-        snapshots = list(kc_collection.find(
+        snapshots = list(collections['kc'].find(
             {'player': player_name},
             sort=[('timestamp', -1)]
         ))
@@ -335,13 +468,13 @@ def get_player_kc(player_name):
             snapshot['timestamp'] = snapshot['timestamp'].isoformat()
 
         # Get starting snapshot
-        start_snapshot = kc_collection.find_one(
+        start_snapshot = collections['kc'].find_one(
             {'player': player_name, 'snapshot_type': 'start'},
             sort=[('timestamp', 1)]
         )
 
         # Get current snapshot
-        current_snapshot = kc_collection.find_one(
+        current_snapshot = collections['kc'].find_one(
             {'player': player_name},
             sort=[('timestamp', -1)]
         )
@@ -375,6 +508,11 @@ def get_boss_leaderboard(boss_name):
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Get latest snapshot for each player
         pipeline = [
@@ -392,7 +530,7 @@ def get_boss_leaderboard(boss_name):
             {'$sort': {'kc': -1}}
         ]
 
-        results = list(kc_collection.aggregate(pipeline))
+        results = list(collections['kc'].aggregate(pipeline))
 
         # Convert to simple format
         leaderboard = []
@@ -417,6 +555,11 @@ def get_all_kc():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Get latest snapshot for each player
         pipeline = [
@@ -427,7 +570,7 @@ def get_all_kc():
             }}
         ]
 
-        results = list(kc_collection.aggregate(pipeline))
+        results = list(collections['kc'].aggregate(pipeline))
 
         all_kc = {}
         for result in results:
@@ -449,21 +592,26 @@ def get_kc_effort():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Get all players
-        players = kc_collection.distinct('player')
+        players = collections['kc'].distinct('player')
 
         effort_results = []
 
         for player in players:
             # Get bingo start snapshot
-            start_snapshot = kc_collection.find_one({
+            start_snapshot = collections['kc'].find_one({
                 'player': player,
                 'snapshot_type': 'start'
             }, sort=[('timestamp', -1)])
 
             # Get latest current snapshot
-            current_snapshot = kc_collection.find_one({
+            current_snapshot = collections['kc'].find_one({
                 'player': player,
                 'snapshot_type': 'current'
             }, sort=[('timestamp', -1)])
@@ -515,8 +663,13 @@ def get_players():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
-        players = history_collection.distinct('player')
+        players = collections['history'].distinct('player')
         return jsonify({'players': players})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -528,6 +681,11 @@ def save_kc():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     data = request.json
     player = data.get('player')
     bosses = data.get('bosses')
@@ -537,7 +695,7 @@ def save_kc():
         return jsonify({'success': False, 'error': 'Missing player or bosses'}), 400
 
     try:
-        result = kc_collection.insert_one({
+        result = collections['kc'].insert_one({
             'player': player,
             'timestamp': datetime.utcnow(),
             'snapshot_type': snapshot_type,
@@ -552,8 +710,7 @@ def save_kc():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-
-# Initialize KC collection
+# Legacy KC collection reference (kept for backward compatibility)
 if USE_MONGODB:
     kc_collection = db['kc_snapshots']
 def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
@@ -588,11 +745,15 @@ def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
         return False
 
 
-def load_bingo_data():
+def load_bingo_data(tenant_id=None):
     """Load bingo board data from MongoDB or file"""
     if USE_MONGODB:
         try:
-            board = bingo_collection.find_one({'type': 'current_board'})
+            # Get tenant-specific collection
+            collections = get_tenant_collections(tenant_id)
+            bingo_coll = collections['bingo']
+
+            board = bingo_coll.find_one({'type': 'current_board'})
             if board:
                 # Remove MongoDB _id field
                 board.pop('_id', None)
@@ -631,17 +792,21 @@ def load_bingo_data():
     }
 
 
-def save_bingo_data(data):
+def save_bingo_data(data, tenant_id=None):
     """Save bingo board data to MongoDB or file"""
     if USE_MONGODB:
         try:
+            # Get tenant-specific collection
+            collections = get_tenant_collections(tenant_id)
+            bingo_coll = collections['bingo']
+
             data['type'] = 'current_board'
-            bingo_collection.replace_one(
+            bingo_coll.replace_one(
                 {'type': 'current_board'},
                 data,
                 upsert=True
             )
-            print("✅ Saved to MongoDB")
+            print("[OK] Saved to MongoDB")
             return
         except Exception as e:
             print(f"Error saving to MongoDB: {e}")
@@ -654,7 +819,31 @@ def save_bingo_data(data):
 @app.route('/bingo', methods=['GET'])
 def get_bingo():
     """Get current bingo board state"""
-    return jsonify(load_bingo_data())
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    return jsonify(load_bingo_data(tenant_id))
+
+
+@app.route('/tenant', methods=['GET'])
+def get_tenant_info():
+    """Get current tenant information"""
+    tenant = get_tenant_from_request()
+
+    if not tenant:
+        return jsonify({
+            'error': 'No tenant found',
+            'using_default': True
+        }), 404
+
+    # Return safe tenant info (no API key)
+    return jsonify({
+        'tenant_id': tenant['tenant_id'],
+        'name': tenant['name'],
+        'subdomain': tenant['subdomain'],
+        'plan': tenant['plan'],
+        'features': tenant.get('settings', {}).get('features', []),
+        'is_founder': tenant.get('is_founder', False)
+    })
 
 
 @app.route('/login', methods=['POST'])
@@ -681,31 +870,37 @@ def record_drop():
     value_string = data.get('value_string', '')  #Original value text (e.g., "2.95M")
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
+    # Get tenant from request
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     # Check if within event window
-    if not is_within_event_window():
-        event_config = bingo_collection.find_one({'_id': 'event_config'})
+    if not is_within_event_window(tenant_id=tenant_id):
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
         event_name = event_config.get('eventName', 'Event') if event_config else 'Event'
-        print(f"⏱️  Drop rejected: Outside event window ({event_name})")
+        print(f"[!] Drop rejected: Outside event window ({event_name})")
         return jsonify({
             'success': False,
             'message': f'Drop rejected: Outside {event_name} event window'
         })
 
     print(f"\n{'=' * 60}")
-    print(f"📥 Received drop from Discord bot:")
+    print(f"[DROP] Received from Discord bot:")
+    print(f"   Tenant: {tenant['name'] if tenant else 'default'}")
     print(f"   Player: {player_name}")
     print(f"   Item: {item_name}")
     print(f"   Type: {drop_type}")
-    print(f"   Value: {value_string} ({value:,.0f} gp)")  #Show value
+    print(f"   Value: {value_string} ({value:,.0f} gp)")
     print(f"{'=' * 60}")
 
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
-    # Save to history (no deduplication - track both separately)
+    # Save to tenant's history collection
     if USE_MONGODB:
         try:
-            history_collection.insert_one({
+            collections['history'].insert_one({
                 'player': player_name,
                 'item': item_name,
                 'drop_type': drop_type,
@@ -715,16 +910,16 @@ def record_drop():
                 'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
                                                                                                     str) else timestamp
             })
-            print(f"💾 Saved to history collection (type: {drop_type})")
+            print(f"[OK] Saved to history collection (type: {drop_type})")
         except Exception as e:
-            print(f"❌ Error saving to history: {e}")
+            print(f"[X] Error saving to history: {e}")
 
-    # Check tiles for completion
-    bingo_data = load_bingo_data()
+    # Check tiles for completion (using tenant's bingo data)
+    bingo_data = load_bingo_data(tenant_id)
     updated = False
     completed_tiles = []
 
-    print(f"🔍 Checking {len(bingo_data['tiles'])} tiles...")
+    print(f"[*] Checking {len(bingo_data['tiles'])} tiles...")
 
     for index, tile in enumerate(bingo_data['tiles']):
         if not tile['items']:
@@ -796,8 +991,8 @@ def record_drop():
                     break
 
     if updated:
-        save_bingo_data(bingo_data)
-        print(f"✅ Saved updated board data")
+        save_bingo_data(bingo_data, tenant_id)
+        print(f"[OK] Saved updated board data")
         print(f"{'=' * 60}\n")
         return jsonify({
             'success': True,
@@ -806,7 +1001,7 @@ def record_drop():
             'duplicate': False
         })
 
-    print(f"❌ No matching tiles found or already completed")
+    print(f"[X] No matching tiles found or already completed")
     print(f"{'=' * 60}\n")
     return jsonify({
         'success': False,
@@ -823,26 +1018,31 @@ def manual_drop():
 
     # Verify admin password
     if password != ADMIN_PASSWORD:
-        print(f"❌ Unauthorized manual drop attempt")
+        print(f"[X] Unauthorized manual drop attempt")
         return jsonify({'error': 'Unauthorized'}), 401
+
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
 
     player_name = data.get('playerName')  # Note: playerName, not player
     item_name = data.get('itemName')  # Note: itemName, not item
 
     if not player_name or not item_name:
-        print(f"❌ Missing data. Received: {data}")
+        print(f"[X] Missing data. Received: {data}")
         return jsonify({'error': 'Missing player or item'}), 400
 
     print(f"\n{'=' * 60}")
-    print(f"📥 Manual drop entry:")
+    print(f"[MANUAL DROP]")
     print(f"   Player: {player_name}")
     print(f"   Item: {item_name}")
     print(f"{'=' * 60}")
 
-    # Save to history ONLY (no tile checking)
+    # Save to tenant's history collection (no tile checking)
     if USE_MONGODB:
         try:
-            history_collection.insert_one({
+            collections['history'].insert_one({
                 'player': player_name,
                 'item': item_name,
                 'drop_type': 'loot',
@@ -851,14 +1051,14 @@ def manual_drop():
                 'value_string': '',
                 'timestamp': datetime.utcnow()
             })
-            print(f"💾 Saved to history collection")
+            print(f"[OK] Saved to history collection")
             print(f"{'=' * 60}\n")
             return jsonify({
                 'success': True,
                 'message': f'Added {item_name} to {player_name}\'s history'
             })
         except Exception as e:
-            print(f"❌ Error saving to history: {e}")
+            print(f"[X] Error saving to history: {e}")
             return jsonify({'error': f'Failed to save: {str(e)}'}), 500
     else:
         return jsonify({'error': 'MongoDB not available'}), 503
@@ -875,13 +1075,18 @@ def record_history_only():
     value = data.get('value', 0)
     value_string = data.get('value_string', '')
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     if not player_name or not item_name:
         return jsonify({'error': 'Missing player or item'}), 400
 
-    # Save to history (no deduplication - track both Collection Log and Loot Drop)
+    # Save to tenant's history collection
     if USE_MONGODB:
         try:
-            history_collection.insert_one({
+            collections['history'].insert_one({
                 'player': player_name,
                 'item': item_name,
                 'drop_type': drop_type,
@@ -910,17 +1115,22 @@ def record_death():
     npc = data.get('npc')
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
+    # Get tenant from request
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     npc_text = f" to {npc}" if npc else ""
-    print(f"\n💀 Death recorded: {player_name}{npc_text}")
+    print(f"\n[DEATH] {player_name}{npc_text}")
 
     if not player_name:
         return jsonify({'error': 'Missing player name'}), 400
 
     # Check if within event window
-    if not is_within_event_window():
-        event_config = bingo_collection.find_one({'_id': 'event_config'})
+    if not is_within_event_window(tenant_id=tenant_id):
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
         event_name = event_config.get('eventName', 'Event') if event_config else 'Event'
-        print(f"⏱️  Death rejected: Outside event window ({event_name})")
+        print(f"[!] Death rejected: Outside event window ({event_name})")
         return jsonify({
             'success': False,
             'message': f'Death rejected: Outside {event_name} event window'
@@ -928,7 +1138,7 @@ def record_death():
 
     if USE_MONGODB:
         try:
-            deaths_collection.insert_one({
+            collections['deaths'].insert_one({
                 'player': player_name,
                 'npc': npc,
                 'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
@@ -950,11 +1160,16 @@ def cleanup_death_markdown():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         import re
 
         # Get all deaths with NPC names
-        deaths = list(deaths_collection.find({'npc': {'$exists': True, '$ne': None}}))
+        deaths = list(collections['deaths'].find({'npc': {'$exists': True, '$ne': None}}))
 
         updated_count = 0
 
@@ -983,7 +1198,7 @@ def cleanup_death_markdown():
 
             # Only update if it changed and result is not empty
             if cleaned_npc != original_npc and cleaned_npc:
-                deaths_collection.update_one(
+                collections['deaths'].update_one(
                     {'_id': death['_id']},
                     {'$set': {'npc': cleaned_npc}}
                 )
@@ -1006,18 +1221,23 @@ def get_deaths():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
-        # ⭐ FIX: Sort by timestamp BEFORE grouping
+        # Sort by timestamp BEFORE grouping
         pipeline = [
             {
-                '$sort': {'timestamp': -1}  # ← Sort newest first
+                '$sort': {'timestamp': -1}  # Sort newest first
             },
             {
                 '$group': {
                     '_id': '$player',
                     'deaths': {'$sum': 1},
-                    'last_death': {'$first': '$timestamp'},  # ← First = most recent
-                    'last_npc': {'$first': '$npc'}  # ← Get NPC from most recent death
+                    'last_death': {'$first': '$timestamp'},  # First = most recent
+                    'last_npc': {'$first': '$npc'}  # Get NPC from most recent death
                 }
             },
             {
@@ -1025,7 +1245,7 @@ def get_deaths():
             }
         ]
 
-        results = list(deaths_collection.aggregate(pipeline))
+        results = list(collections['deaths'].aggregate(pipeline))
 
         # Format results
         death_stats = []
@@ -1056,6 +1276,11 @@ def get_deaths_by_npc():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Aggregate deaths by NPC
         pipeline = [
@@ -1081,8 +1306,8 @@ def get_deaths_by_npc():
                 '$limit': 50  # Top 50 most deadly NPCs
             }
         ]
-        
-        results = list(deaths_collection.aggregate(pipeline))
+
+        results = list(collections['deaths'].aggregate(pipeline))
         
         # Format results
         npc_stats = []
@@ -1111,9 +1336,14 @@ def get_rank_history():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Get all rank snapshots, sorted by date
-        history = list(rank_history_collection.find(
+        history = list(collections['rank_history'].find(
             {},
             {'_id': 0}  # Exclude MongoDB ID
         ).sort('timestamp', -1).limit(100))  # Last 100 snapshots
@@ -1132,6 +1362,11 @@ def save_rank_snapshot():
     """Save current rank data (called from frontend)"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
+
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
 
     try:
         data = request.json
@@ -1154,21 +1389,21 @@ def save_rank_snapshot():
 
         # Check if we already have a snapshot from today
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        existing = rank_history_collection.find_one({
+        existing = collections['rank_history'].find_one({
             'timestamp': {'$gte': today_start}
         })
 
         if existing:
             # Update today's snapshot
-            rank_history_collection.update_one(
+            collections['rank_history'].update_one(
                 {'_id': existing['_id']},
                 {'$set': snapshot}
             )
-            print(f"📊 Updated today's rank snapshot")
+            print(f"[OK] Updated today's rank snapshot")
         else:
             # Insert new snapshot
-            rank_history_collection.insert_one(snapshot)
-            print(f"📊 Saved new rank snapshot")
+            collections['rank_history'].insert_one(snapshot)
+            print(f"[OK] Saved new rank snapshot")
 
         return jsonify({'success': True})
 
@@ -1181,14 +1416,19 @@ def get_history():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         # Get query parameters
         player = request.args.get('player')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
-        drop_type = request.args.get('type')  # NEW: 'loot' or 'collection_log'
-        min_value = request.args.get('minValue')  # NEW: minimum value filter
-        search = request.args.get('search')  # NEW: item name search
+        drop_type = request.args.get('type')  # 'loot' or 'collection_log'
+        min_value = request.args.get('minValue')  # minimum value filter
+        search = request.args.get('search')  # item name search
         limit = int(request.args.get('limit', 100))
 
         # Build query
@@ -1202,20 +1442,20 @@ def get_history():
             if end_date:
                 query['timestamp']['$lte'] = datetime.fromisoformat(end_date)
 
-        # NEW: Drop type filter
+        # Drop type filter
         if drop_type:
             query['drop_type'] = drop_type
 
-        # NEW: Minimum value filter
+        # Minimum value filter
         if min_value:
             query['value'] = {'$gte': int(min_value)}
 
-        # NEW: Item search filter (case-insensitive)
+        # Item search filter (case-insensitive)
         if search:
             query['item'] = {'$regex': search, '$options': 'i'}
 
-        # Fetch history
-        history = list(history_collection.find(query).sort('timestamp', -1).limit(limit))
+        # Fetch history from tenant collection
+        history = list(collections['history'].find(query).sort('timestamp', -1).limit(limit))
 
         # Format results (remove MongoDB _id)
         for item in history:
@@ -1246,17 +1486,22 @@ def shuffle_board():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         data = request.json
         password = data.get('password')
 
         # Verify admin password
         if password != ADMIN_PASSWORD:
-            print(f"❌ Unauthorized shuffle attempt")
+            print(f"[X] Unauthorized shuffle attempt")
             return jsonify({'error': 'Unauthorized'}), 401
 
-        # Get current board
-        bingo_doc = bingo_collection.find_one({'_id': 'current_board'})
+        # Get current board from tenant collection
+        bingo_doc = collections['bingo'].find_one({'type': 'current_board'})
         if not bingo_doc:
             return jsonify({'error': 'No board found'}), 404
 
@@ -1271,12 +1516,12 @@ def shuffle_board():
         random.shuffle(tiles)
 
         # Update the board with shuffled tiles
-        bingo_collection.update_one(
-            {'_id': 'current_board'},
+        collections['bingo'].update_one(
+            {'type': 'current_board'},
             {'$set': {'tiles': tiles}}
         )
 
-        print(f"🔀 Board shuffled successfully - {len(tiles)} tiles reordered")
+        print(f"[OK] Board shuffled successfully - {len(tiles)} tiles reordered")
 
         return jsonify({
             'success': True,
@@ -1285,7 +1530,7 @@ def shuffle_board():
         })
 
     except Exception as e:
-        print(f"❌ Error shuffling board: {e}")
+        print(f"[X] Error shuffling board: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -1299,9 +1544,14 @@ def get_event_config():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
-        # Get event config from MongoDB
-        event_config = bingo_collection.find_one({'_id': 'event_config'})
+        # Get event config from tenant's bingo collection
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
 
         if not event_config:
             # No event configured - return empty config
@@ -1328,13 +1578,18 @@ def set_event_config():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
     try:
         data = request.json
         password = data.get('password')
 
         # Verify admin password
         if password != ADMIN_PASSWORD:
-            print(f"❌ Unauthorized event config attempt")
+            print(f"[X] Unauthorized event config attempt")
             return jsonify({'error': 'Unauthorized'}), 401
 
         enabled = data.get('enabled', False)
@@ -1358,7 +1613,7 @@ def set_event_config():
             except Exception as e:
                 return jsonify({'error': f'Invalid date format: {str(e)}'}), 400
 
-        # Save event config
+        # Save event config to tenant's bingo collection
         event_config = {
             '_id': 'event_config',
             'enabled': enabled,
@@ -1367,13 +1622,13 @@ def set_event_config():
             'eventName': event_name
         }
 
-        bingo_collection.replace_one(
+        collections['bingo'].replace_one(
             {'_id': 'event_config'},
             event_config,
             upsert=True
         )
 
-        print(f"⏱️  Event config updated: {event_name} ({start_date} to {end_date}, enabled={enabled})")
+        print(f"[OK] Event config updated: {event_name} ({start_date} to {end_date}, enabled={enabled})")
 
         return jsonify({
             'success': True,
@@ -1382,15 +1637,16 @@ def set_event_config():
         })
 
     except Exception as e:
-        print(f"❌ Error setting event config: {e}")
+        print(f"[X] Error setting event config: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-def is_within_event_window(timestamp=None):
+def is_within_event_window(timestamp=None, tenant_id=None):
     """Check if a timestamp is within the current event window"""
     try:
-        # Get event config
-        event_config = bingo_collection.find_one({'_id': 'event_config'})
+        # Get tenant's bingo collection for event config
+        collections = get_tenant_collections(tenant_id)
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
 
         # If no event or event disabled, allow all
         if not event_config or not event_config.get('enabled', False):
@@ -1423,7 +1679,7 @@ def is_within_event_window(timestamp=None):
         return start <= check_time <= end
 
     except Exception as e:
-        print(f"⚠️  Error checking event window: {e}")
+        print(f"[!] Error checking event window: {e}")
         # On error, allow the action (fail open)
         return True
 
@@ -1433,6 +1689,11 @@ def get_deaths_by_player_npc():
     """Get detailed death statistics: how many times each player died to each NPC"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
+
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
 
     try:
         # Aggregate to get death counts per player per NPC
@@ -1454,7 +1715,7 @@ def get_deaths_by_player_npc():
             }
         ]
 
-        results = list(deaths_collection.aggregate(pipeline))
+        results = list(collections['deaths'].aggregate(pipeline))
 
         # Format as: {player: {npc: death_count}}
         player_npc_deaths = {}
@@ -1484,8 +1745,12 @@ def manual_override():
 
     # Verify admin password
     if password != ADMIN_PASSWORD:
-        print(f"❌ Unauthorized manual override attempt")
+        print(f"[X] Unauthorized manual override attempt")
         return jsonify({'error': 'Unauthorized'}), 401
+
+    # Get tenant
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
 
     tile_index = data.get('tileIndex')
     player_name = data.get('playerName')
@@ -1494,7 +1759,7 @@ def manual_override():
     if tile_index is None or not player_name or not action:
         return jsonify({'error': 'Missing required fields'}), 400
 
-    bingo_data = load_bingo_data()
+    bingo_data = load_bingo_data(tenant_id)
 
     if tile_index < 0 or tile_index >= len(bingo_data['tiles']):
         return jsonify({'error': 'Invalid tile index'}), 400
@@ -1504,8 +1769,8 @@ def manual_override():
     if action == 'add':
         if player_name not in tile['completedBy']:
             tile['completedBy'].append(player_name)
-            save_bingo_data(bingo_data)
-            print(f"✅ Manual override: Added {player_name} to tile {tile_index + 1}")
+            save_bingo_data(bingo_data, tenant_id)
+            print(f"[OK] Manual override: Added {player_name} to tile {tile_index + 1}")
             return jsonify({
                 'success': True,
                 'message': f'Added {player_name} to tile {tile_index + 1}'
@@ -1519,8 +1784,8 @@ def manual_override():
     elif action == 'remove':
         if player_name in tile['completedBy']:
             tile['completedBy'].remove(player_name)
-            save_bingo_data(bingo_data)
-            print(f"✅ Manual override: Removed {player_name} from tile {tile_index + 1}")
+            save_bingo_data(bingo_data, tenant_id)
+            print(f"[OK] Manual override: Removed {player_name} from tile {tile_index + 1}")
             return jsonify({
                 'success': True,
                 'message': f'Removed {player_name} from tile {tile_index + 1}'
