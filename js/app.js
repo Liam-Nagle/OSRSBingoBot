@@ -5216,142 +5216,45 @@ async function loadAnalyticsWithFilters() {
 
                 // Show loading state
                 document.getElementById('groupName').textContent = 'Unsociables';
-                document.getElementById('groupRank').textContent = 'Overall: Fetching...';
-                document.getElementById('groupPrestige').textContent = 'Prestige: Fetching...';
-                document.getElementById('groupXP').textContent = 'Total XP: Please wait 2-3 min...';
+                document.getElementById('groupRank').textContent = 'Overall: Loading...';
+                document.getElementById('groupPrestige').textContent = 'Prestige: Loading...';
+                document.getElementById('groupXP').textContent = 'Total XP: Loading...';
 
-                console.log('🛡️ Fetching GIM highscore via backend proxy (this will take 2-3 minutes)...');
+                console.log('📊 Fetching latest GIM rank data from backend...');
 
-                const groupName = 'unsociables';
+                // Fetch latest rank snapshot (updated hourly by GitHub Actions)
+                const response = await fetch(`${API_URL}/rank/latest`);
 
-                let overallRank = null;
-                let totalXp = null;
-                let prestigeCount = 0;
-                let found = false;
-
-                // Search through pages (max 150)
-                for (let page = 1; page <= 150; page++) {
-                    if (found) break;
-
-                    const url = `${API_URL}/api/gim-proxy?page=${page}&groupSize=5`;
-
-                    try {
-                        console.log(`📄 Fetching page ${page}...`);
-
-                        const response = await fetch(url);
-
-                        if (!response.ok) {
-                            console.error(`Page ${page} returned ${response.status}`);
-
-                            // If we get blocked, stop trying
-                            if (response.status === 403) {
-                                console.error('❌ Blocked by Cloudflare - stopping');
-                                throw new Error('Blocked by Cloudflare');
-                            }
-                            continue;
-                        }
-
-                        const html = await response.text();
-
-                        // Parse the HTML
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(html, 'text/html');
-
-                        // Find tbody
-                        const tbody = doc.querySelector('tbody');
-                        if (!tbody) {
-                            console.warn(`No tbody on page ${page}`);
-                            continue;
-                        }
-
-                        const rows = tbody.querySelectorAll('tr');
-
-                        for (const row of rows) {
-                            const cells = row.querySelectorAll('td');
-                            if (cells.length < 4) continue;
-
-                            // Cell 0: Rank
-                            const rankText = cells[0].textContent.trim().replace(',', '');
-                            const rank = parseInt(rankText);
-                            if (isNaN(rank)) continue;
-
-                            // Cell 1: Group name
-                            const nameCell = cells[1];
-                            const hasStar = nameCell.querySelector('img') !== null;
-                            const cleanName = nameCell.textContent.trim().toLowerCase();
-
-                            // Cell 3: XP
-                            const xpText = cells[3].textContent.trim().replace(/,/g, '');
-                            const xp = parseInt(xpText);
-
-                            // Check if this is our group
-                            if (cleanName.includes(groupName)) {
-                                console.log(`✅ FOUND: ${cleanName} at rank #${rank}`);
-
-                                overallRank = rank;
-                                totalXp = xp;
-                                found = true;
-
-                                if (hasStar) {
-                                    prestigeCount += 1;
-                                    console.log(`⭐ Group has PRESTIGE!`);
-                                } else {
-                                    console.log(`❌ Group does NOT have prestige`);
-                                }
-
-                                break;
-                            }
-
-                            // Count prestige groups before us
-                            if (hasStar && !found) {
-                                prestigeCount++;
-                            }
-                        }
-
-                        // Progress indicator every 10 pages
-                        if (page % 10 === 0 && !found) {
-                            console.log(`💤 Scanned ${page * 20} groups, found ${prestigeCount} prestige groups...`);
-                        }
-
-                        // Longer delay to avoid rate limiting (1-2 seconds)
-                        if (!found) {
-                            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
-                        }
-
-                    } catch (error) {
-                        console.error(`Error fetching page ${page}:`, error);
-
-                        // If it's a network/blocking error, stop trying
-                        if (error.message.includes('Blocked')) {
-                            throw error;
-                        }
-                        continue;
-                    }
+                if (!response.ok) {
+                    throw new Error('Failed to fetch GIM data from backend');
                 }
 
-                if (!found) {
-                    throw new Error('Group not found in top 3000');
+                const result = await response.json();
+
+                if (!result.success || !result.data) {
+                    throw new Error('No GIM data available');
                 }
 
-                const prestigeRank = prestigeCount > 0 ? prestigeCount : null;
+                const gimData = result.data;
 
-                console.log('📊 RESULTS:');
-                console.log(`   Overall: #${overallRank.toLocaleString()}`);
-                if (prestigeRank) {
-                    console.log(`   Prestige: #${prestigeRank.toLocaleString()} ⭐`);
+                console.log('✅ GIM data loaded from cache');
+                console.log(`   Last updated: ${gimData.last_updated}`);
+                console.log(`   Overall: #${gimData.overall_rank.toLocaleString()}`);
+                if (gimData.prestige_rank) {
+                    console.log(`   Prestige: #${gimData.prestige_rank.toLocaleString()} ⭐`);
                 }
-                console.log(`   XP: ${totalXp.toLocaleString()}`);
+                console.log(`   XP: ${gimData.total_xp.toLocaleString()}`);
 
-                // Cache the results
+                // Format data for display
                 const cacheData = {
-                    overallRank,
-                    prestigeRank,
-                    totalXp,
+                    overallRank: gimData.overall_rank,
+                    prestigeRank: gimData.prestige_rank,
+                    totalXp: gimData.total_xp,
                     timestamp: Date.now()
                 };
 
+                // Cache in localStorage
                 localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-                console.log('💾 Cached data for 1 hour');
 
                 // Display the data
                 displayGimData(cacheData);

@@ -1834,6 +1834,48 @@ def get_tenant_info():
     })
 
 
+@app.route('/rank/latest', methods=['GET'])
+def get_latest_rank():
+    """Get the most recent rank snapshot (for quick widget loading)"""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    # Get tenant collections
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        # Get the most recent snapshot
+        latest = collections['rank_history'].find_one(
+            {},
+            {'_id': 0},
+            sort=[('timestamp', -1)]
+        )
+
+        if not latest:
+            return jsonify({
+                'error': 'No rank data available',
+                'message': 'No rank snapshots found. Data will be available after first fetch.'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'overall_rank': latest.get('rank'),
+                'prestige_rank': latest.get('prestigeRank'),
+                'total_xp': latest.get('totalXp'),
+                'last_updated': latest.get('timestamp').isoformat() if latest.get('timestamp') else None
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Failed to fetch latest rank',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/gim-proxy', methods=['GET'])
 def gim_proxy():
     """
