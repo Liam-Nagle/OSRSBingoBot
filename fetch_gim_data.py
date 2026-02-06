@@ -6,6 +6,7 @@ Run this script periodically via GitHub Actions or cron.
 
 import os
 import sys
+import gzip
 from datetime import datetime
 from urllib.parse import quote
 
@@ -73,7 +74,14 @@ def fetch_gim_data():
                     return None
                 continue
 
-            html = response.text
+            # Decompress if gzip-encoded
+            try:
+                html = gzip.decompress(response.content).decode('utf-8')
+                if page == 1:
+                    print(f'✅ Decompressed gzip content')
+            except:
+                # If not gzipped, use text directly
+                html = response.text
 
             # Debug: Print first page HTML structure (only once)
             if page == 1:
