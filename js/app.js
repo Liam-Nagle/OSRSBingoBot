@@ -5223,7 +5223,7 @@ async function loadAnalyticsWithFilters() {
                 console.log('🛡️ Fetching GIM highscore via CORS proxy (this will take 2-3 minutes)...');
 
                 const groupName = 'unsociables';
-                const proxyUrl = 'https://cors.sh/';
+                const proxyUrl = 'https://api.allorigins.win/get?url=';
                 const baseUrl = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page=';
 
                 let overallRank = null;
@@ -5235,7 +5235,7 @@ async function loadAnalyticsWithFilters() {
                 for (let page = 1; page <= 150; page++) {
                     if (found) break;
 
-                    const url = proxyUrl + baseUrl + page;
+                    const url = proxyUrl + encodeURIComponent(baseUrl + page);
 
                     try {
                         console.log(`📄 Fetching page ${page}...`);
@@ -5253,7 +5253,9 @@ async function loadAnalyticsWithFilters() {
                             continue;
                         }
 
-                        const html = await response.text();
+                        // AllOrigins returns JSON with contents field
+                        const data = await response.json();
+                        const html = data.contents;
 
                         // Parse the HTML
                         const parser = new DOMParser();
