@@ -6,7 +6,6 @@ Run this script periodically via GitHub Actions or cron.
 
 import os
 import sys
-import gzip
 from datetime import datetime
 from urllib.parse import quote
 
@@ -74,40 +73,21 @@ def fetch_gim_data():
                     return None
                 continue
 
-            # Debug response on first page
-            if page == 1:
-                print(f'📝 Response headers: {dict(response.headers)}')
-                print(f'📝 Content-Type: {response.headers.get("Content-Type")}')
-                print(f'📝 Content-Encoding: {response.headers.get("Content-Encoding")}')
-                print(f'📝 Content length: {len(response.content)} bytes')
-
-            # Get HTML text (requests should auto-decode)
+            # Get HTML text (requests auto-decodes)
             html = response.text
-
-            # Debug: Print first page HTML structure (only once)
-            if page == 1:
-                print(f'📝 First 500 chars of HTML: {html[:500]}')
-                print(f'📝 Looking for table elements...')
 
             # Parse HTML with BeautifulSoup
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html, 'html.parser')
 
-            # Debug: Check what we got
-            if page == 1:
-                print(f'📝 Found {len(soup.find_all("table"))} table(s)')
-                print(f'📝 Found {len(soup.find_all("tr"))} tr(s)')
-                print(f'📝 Found {len(soup.find_all("tbody"))} tbody(s)')
-
-            # Find table - try both with and without tbody
+            # Find table
             tbody = soup.find('tbody')
             if not tbody:
-                # Try finding table directly
+                # Try finding table directly if no tbody
                 table = soup.find('table')
                 if table:
                     tbody = table
                 else:
-                    print(f'⚠️ No table found on page {page}')
                     continue
 
             rows = tbody.find_all('tr')

@@ -5509,12 +5509,8 @@ async function loadAnalyticsWithFilters() {
 
             document.getElementById('groupXP').textContent = `Total XP: ${formatXp(data.totalXp)}`;
 
-            // Auto-save rank snapshot
-            saveRankSnapshot({
-                rank: data.overallRank,
-                prestigeRank: data.prestigeRank,
-                totalXp: data.totalXp
-            });
+            // Note: Rank snapshots are now saved by GitHub Actions hourly
+            // Frontend only displays cached data, doesn't save
         }
 
                 // Helper functions to create chart configs
