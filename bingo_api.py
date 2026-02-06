@@ -1829,6 +1829,35 @@ def get_tenant_info():
     })
 
 
+@app.route('/api/gim-proxy', methods=['GET'])
+def gim_proxy():
+    """
+    Proxy endpoint for fetching GIM highscores.
+    Bypasses CORS issues by fetching server-side.
+    """
+    page = request.args.get('page', '1')
+    group_size = request.args.get('groupSize', '5')
+
+    url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={group_size}&page={page}'
+
+    try:
+        response = requests.get(url, timeout=10)
+
+        if response.status_code == 200:
+            return response.text, 200, {'Content-Type': 'text/html'}
+        else:
+            return jsonify({
+                'error': f'Failed to fetch page {page}',
+                'status': response.status_code
+            }), response.status_code
+
+    except requests.RequestException as e:
+        return jsonify({
+            'error': 'Request failed',
+            'message': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print(f"🚀 Bingo API Server running on port {port}")
@@ -1836,5 +1865,6 @@ if __name__ == '__main__':
     print(f"History imports to: /history-only endpoint")
     print(f"Deaths tracked at: /death endpoint")
     print(f"Website can fetch data from: /bingo, /history, /deaths, /deaths/by-npc endpoints")
+    print(f"GIM proxy available at: /api/gim-proxy")
     print()
     app.run(host='0.0.0.0', port=port, debug=False)
