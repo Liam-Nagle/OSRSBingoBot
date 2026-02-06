@@ -1872,15 +1872,22 @@ def gim_proxy():
         if response.status_code == 200:
             return response.text, 200, {'Content-Type': 'text/html'}
         else:
+            print(f'❌ RuneScape returned {response.status_code} for page {page}')
+            print(f'Response content: {response.text[:500]}')
             return jsonify({
                 'error': f'Failed to fetch page {page}',
-                'status': response.status_code
+                'status': response.status_code,
+                'using_cloudscraper': HAS_CLOUDSCRAPER
             }), response.status_code
 
-    except requests.RequestException as e:
+    except Exception as e:
+        print(f'❌ Exception in gim_proxy: {str(e)}')
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'error': 'Request failed',
-            'message': str(e)
+            'message': str(e),
+            'using_cloudscraper': HAS_CLOUDSCRAPER
         }), 500
 
 
