@@ -7,6 +7,11 @@ from pymongo import MongoClient
 import requests
 import random
 from datetime import datetime
+try:
+    import cloudscraper
+    HAS_CLOUDSCRAPER = True
+except ImportError:
+    HAS_CLOUDSCRAPER = False
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
@@ -1833,7 +1838,7 @@ def get_tenant_info():
 def gim_proxy():
     """
     Proxy endpoint for fetching GIM highscores.
-    Bypasses CORS issues by fetching server-side.
+    Bypasses CORS and Cloudflare protection by fetching server-side.
     """
     page = request.args.get('page', '1')
     group_size = request.args.get('groupSize', '5')
@@ -1841,7 +1846,28 @@ def gim_proxy():
     url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={group_size}&page={page}'
 
     try:
-        response = requests.get(url, timeout=10)
+        if HAS_CLOUDSCRAPER:
+            # Use cloudscraper to bypass Cloudflare
+            scraper = cloudscraper.create_scraper(
+                browser={
+                    'browser': 'chrome',
+                    'platform': 'windows',
+                    'desktop': True
+                }
+            )
+            response = scraper.get(url, timeout=10)
+        else:
+            # Fallback to requests with browser-like headers
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+            response = requests.get(url, headers=headers, timeout=10)
 
         if response.status_code == 200:
             return response.text, 200, {'Content-Type': 'text/html'}
