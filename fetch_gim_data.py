@@ -21,19 +21,12 @@ MAX_PAGES = 150
 def fetch_gim_data():
     """Fetch GIM highscore data from RuneScape"""
     print(f'🔍 Searching for group: {GROUP_NAME}')
-    print(f'Using cloudscraper: {HAS_CLOUDSCRAPER}')
 
-    # Create scraper/session
-    if HAS_CLOUDSCRAPER:
-        scraper = cloudscraper.create_scraper(
-            browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
-        )
-    else:
-        import requests
-        scraper = requests.Session()
-        scraper.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        })
+    # Use corsproxy.io (works in GitHub Actions since there's no CORS restriction)
+    import requests
+    scraper = requests.Session()
+    PROXY_URL = 'https://corsproxy.io/?'
+    print(f'Using corsproxy.io (no CORS issues in GitHub Actions!)')
 
     overall_rank = None
     total_xp = None
@@ -45,7 +38,8 @@ def fetch_gim_data():
         if found:
             break
 
-        url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={GROUP_SIZE}&page={page}'
+        base_url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={GROUP_SIZE}&page={page}'
+        url = PROXY_URL + base_url
 
         try:
             print(f'📄 Fetching page {page}...')

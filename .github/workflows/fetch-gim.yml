@@ -21,7 +21,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install cloudscraper requests
+          pip install requests
 
       - name: Fetch GIM data
         run: |
