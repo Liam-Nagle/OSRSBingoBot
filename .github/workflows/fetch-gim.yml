@@ -1,0 +1,36 @@
+name: Fetch GIM Highscores
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  fetch-gim:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install cloudscraper requests
+
+      - name: Fetch GIM data
+        run: |
+          python fetch_gim_data.py
+
+      - name: Success notification
+        if: success()
+        run: echo "✅ GIM data fetched successfully"
+
+      - name: Failure notification
+        if: failure()
+        run: echo "❌ Failed to fetch GIM data"
