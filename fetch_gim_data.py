@@ -29,11 +29,11 @@ def fetch_gim_data():
     scraper = requests.Session()
 
     # Add browser-like headers to avoid being blocked as a bot
+    # NOTE: Removed Accept-Encoding to avoid compression issues with corsproxy.io
     scraper.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
         'DNT': '1',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
@@ -74,14 +74,15 @@ def fetch_gim_data():
                     return None
                 continue
 
-            # Decompress if gzip-encoded
-            try:
-                html = gzip.decompress(response.content).decode('utf-8')
-                if page == 1:
-                    print(f'✅ Decompressed gzip content')
-            except:
-                # If not gzipped, use text directly
-                html = response.text
+            # Debug response on first page
+            if page == 1:
+                print(f'📝 Response headers: {dict(response.headers)}')
+                print(f'📝 Content-Type: {response.headers.get("Content-Type")}')
+                print(f'📝 Content-Encoding: {response.headers.get("Content-Encoding")}')
+                print(f'📝 Content length: {len(response.content)} bytes')
+
+            # Get HTML text (requests should auto-decode)
+            html = response.text
 
             # Debug: Print first page HTML structure (only once)
             if page == 1:
