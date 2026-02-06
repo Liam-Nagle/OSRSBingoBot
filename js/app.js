@@ -5223,7 +5223,7 @@ async function loadAnalyticsWithFilters() {
                 console.log('🛡️ Fetching GIM highscore via CORS proxy (this will take 2-3 minutes)...');
 
                 const groupName = 'unsociables';
-                const proxyUrl = 'https://corsproxy.io/?';
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
                 const baseUrl = 'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize=5&page=';
 
                 let overallRank = null;
