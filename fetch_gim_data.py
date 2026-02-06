@@ -75,15 +75,31 @@ def fetch_gim_data():
 
             html = response.text
 
+            # Debug: Print first page HTML structure (only once)
+            if page == 1:
+                print(f'📝 First 500 chars of HTML: {html[:500]}')
+                print(f'📝 Looking for table elements...')
+
             # Parse HTML with BeautifulSoup
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html, 'html.parser')
 
-            # Find tbody
+            # Debug: Check what we got
+            if page == 1:
+                print(f'📝 Found {len(soup.find_all("table"))} table(s)')
+                print(f'📝 Found {len(soup.find_all("tr"))} tr(s)')
+                print(f'📝 Found {len(soup.find_all("tbody"))} tbody(s)')
+
+            # Find table - try both with and without tbody
             tbody = soup.find('tbody')
             if not tbody:
-                print(f'⚠️ No tbody found on page {page}')
-                continue
+                # Try finding table directly
+                table = soup.find('table')
+                if table:
+                    tbody = table
+                else:
+                    print(f'⚠️ No table found on page {page}')
+                    continue
 
             rows = tbody.find_all('tr')
 
