@@ -75,71 +75,40 @@ def fetch_gim_data():
 
             html = response.text
 
-            # Parse HTML (simple text parsing)
-            from html.parser import HTMLParser
+            # Parse HTML with BeautifulSoup
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
 
-            class GIMParser(HTMLParser):
-                def __init__(self):
-                    super().__init__()
-                    self.in_tbody = False
-                    self.in_tr = False
-                    self.in_td = False
-                    self.td_count = 0
-                    self.current_row = {}
-                    self.rows = []
+            # Find tbody
+            tbody = soup.find('tbody')
+            if not tbody:
+                print(f'⚠️ No tbody found on page {page}')
+                continue
 
-                def handle_starttag(self, tag, attrs):
-                    if tag == 'tbody':
-                        self.in_tbody = True
-                    elif tag == 'tr' and self.in_tbody:
-                        self.in_tr = True
-                        self.current_row = {'has_star': False}
-                        self.td_count = 0
-                    elif tag == 'td' and self.in_tr:
-                        self.in_td = True
-                        self.td_count += 1
-                    elif tag == 'img' and self.in_td:
-                        # Prestige star
-                        self.current_row['has_star'] = True
+            rows = tbody.find_all('tr')
 
-                def handle_endtag(self, tag):
-                    if tag == 'tbody':
-                        self.in_tbody = False
-                    elif tag == 'tr':
-                        if self.in_tr and len(self.current_row) > 1:
-                            self.rows.append(self.current_row)
-                        self.in_tr = False
-                    elif tag == 'td':
-                        self.in_td = False
-
-                def handle_data(self, data):
-                    if self.in_td:
-                        data = data.strip()
-                        if data:
-                            if self.td_count == 1:  # Rank
-                                self.current_row['rank'] = data.replace(',', '')
-                            elif self.td_count == 2:  # Name
-                                self.current_row['name'] = data
-                            elif self.td_count == 4:  # XP
-                                self.current_row['xp'] = data.replace(',', '')
-
-            parser = GIMParser()
-            parser.feed(html)
-
-            # Process rows
-            for row in parser.rows:
-                if 'rank' not in row or 'name' not in row or 'xp' not in row:
+            for row in rows:
+                cells = row.find_all('td')
+                if len(cells) < 4:
                     continue
 
                 try:
-                    rank = int(row['rank'])
-                    xp = int(row['xp'])
-                    name = row['name'].lower()
-                    has_star = row['has_star']
+                    # Cell 0: Rank
+                    rank_text = cells[0].get_text(strip=True).replace(',', '')
+                    rank = int(rank_text)
+
+                    # Cell 1: Group name
+                    name_cell = cells[1]
+                    has_star = name_cell.find('img') is not None
+                    clean_name = name_cell.get_text(strip=True).lower()
+
+                    # Cell 3: XP
+                    xp_text = cells[3].get_text(strip=True).replace(',', '')
+                    xp = int(xp_text)
 
                     # Check if this is our group
-                    if GROUP_NAME in name:
-                        print(f'✅ FOUND: {name} at rank #{rank}')
+                    if GROUP_NAME in clean_name:
+                        print(f'✅ FOUND: {clean_name} at rank #{rank}')
                         overall_rank = rank
                         total_xp = xp
                         found = True
@@ -152,7 +121,7 @@ def fetch_gim_data():
                     if has_star and not found:
                         prestige_count += 1
 
-                except (ValueError, KeyError):
+                except (ValueError, IndexError, AttributeError) as e:
                     continue
 
             # Progress indicator
