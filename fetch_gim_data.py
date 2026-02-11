@@ -6,6 +6,7 @@ Run this script periodically via GitHub Actions or cron.
 
 import os
 import sys
+import time
 from datetime import datetime
 from urllib.parse import quote
 
@@ -64,14 +65,36 @@ def fetch_gim_data():
 
         try:
             print(f'📄 Fetching page {page}...')
-            response = scraper.get(url, timeout=30)
+
+            # Retry logic for 503 errors
+            max_retries = 3
+            retry_delay = 2  # Start with 2 seconds
+
+            for attempt in range(max_retries):
+                response = scraper.get(url, timeout=30)
+
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 503:
+                    if attempt < max_retries - 1:
+                        print(f'⏳ Page {page} returned 503, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})')
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print(f'❌ Page {page} returned 503 after {max_retries} attempts')
+                        continue
+                elif response.status_code == 403:
+                    print(f'❌ Page {page} returned 403 - Blocked by Cloudflare')
+                    return None
+                else:
+                    print(f'❌ Page {page} returned {response.status_code}')
+                    break
 
             if response.status_code != 200:
-                print(f'❌ Page {page} returned {response.status_code}')
-                if response.status_code == 403:
-                    print('Blocked by Cloudflare - stopping')
-                    return None
                 continue
+
+            # Add delay between successful requests to avoid rate limiting
+            time.sleep(0.5)
 
             # Get HTML text (requests auto-decodes)
             html = response.text
