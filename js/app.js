@@ -207,11 +207,23 @@
             localStorage.setItem('lastViewedPlayer', currentPlayer || '');
             renderBoard();
             updateFavoriteButton();
+            updatePlayerStats();
 
             // Refresh bonus overlay if it's visible
             if (bonusOverlayVisible) {
                 showBonusOverlay();
             }
+        }
+
+        function viewAsPlayer(player) {
+            const select = document.getElementById('playerSelect');
+            if (currentPlayer === player) {
+                // Toggle off — go back to everyone
+                select.value = '';
+            } else {
+                select.value = player;
+            }
+            changePlayer();
         }
 
         function toggleFavorite() {
@@ -1460,7 +1472,7 @@
                 if (stats.lines.diagonals.length > 0) lineText.push(`${stats.lines.diagonals.length} diagonal${stats.lines.diagonals.length > 1 ? 's' : ''}`);
 
                 return `
-                    <div class="player-card ${rankClass} ${isCurrentView}">
+                    <div class="player-card ${rankClass} ${isCurrentView}" onclick="viewAsPlayer('${player.replace(/'/g, "\\'")}')" style="cursor: pointer;" title="Click to filter board by ${player}">
                         ${rankEmoji ? `<div class="player-rank">${rankEmoji}</div>` : ''}
                         <div class="player-name">${player}</div>
                         <div class="player-score">${stats.points.toLocaleString()} points</div>
