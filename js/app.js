@@ -4190,10 +4190,9 @@ async function loadAnalyticsWithFilters() {
         async function openKCModal() {
             document.getElementById('kcModal').classList.add('active');
 
-            // Show admin controls and admin-only tabs if admin
+            // Show admin controls if admin
             if (isAdmin) {
                 document.getElementById('kcAdminControls').style.display = 'block';
-                document.getElementById('kcTabContribution').style.display = 'inline-block';
             }
 
             // Show loading state in Overview tab
@@ -4265,7 +4264,7 @@ async function loadAnalyticsWithFilters() {
             renderKCOverview(_kcCurrentData);
             renderKCLeaderboards(_kcCurrentData);
             renderKCDetails(_kcMode);
-            if (isAdmin) renderKCBossContribution(_kcCurrentData);
+            renderKCBossContribution(_kcCurrentData);
         }
 
         function switchKCMode(mode) {
