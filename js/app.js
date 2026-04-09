@@ -4181,12 +4181,19 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        // KC global state
+        let _kcAllData = {};
+        let _kcEffortData = {};
+        let _kcMode = 'bingo';
+        let _kcCurrentData = {};
+
         async function openKCModal() {
             document.getElementById('kcModal').classList.add('active');
 
-            // Show admin controls if admin
+            // Show admin controls and admin-only tabs if admin
             if (isAdmin) {
                 document.getElementById('kcAdminControls').style.display = 'block';
+                document.getElementById('kcTabContribution').style.display = 'inline-block';
             }
 
             // Show loading state in Overview tab
@@ -4232,14 +4239,54 @@ async function loadAnalyticsWithFilters() {
 
         async function loadKCData() {
             try {
-                const response = await fetch(`${API_URL}/kc/all`);
-                const data = await response.json();
-
-                renderKCOverview(data);
-                renderKCLeaderboards(data);
-                renderKCEffort(data);
+                const [allResp, effortResp] = await Promise.all([
+                    fetch(`${API_URL}/kc/all`),
+                    fetch(`${API_URL}/kc/effort`)
+                ]);
+                _kcAllData = await allResp.json();
+                _kcEffortData = await effortResp.json();
+                _renderAllKCTabs();
             } catch (error) {
                 console.error('Failed to load KC data:', error);
+            }
+        }
+
+        function effortToKCFormat(effortData) {
+            const result = {};
+            if (!effortData || !effortData.success || !effortData.players) return result;
+            effortData.players.forEach(p => {
+                result[p.player] = { bosses: p.effort || {}, timestamp: p.current_timestamp };
+            });
+            return result;
+        }
+
+        function _renderAllKCTabs() {
+            _kcCurrentData = _kcMode === 'bingo' ? effortToKCFormat(_kcEffortData) : _kcAllData;
+            renderKCOverview(_kcCurrentData);
+            renderKCLeaderboards(_kcCurrentData);
+            renderKCDetails(_kcMode);
+            if (isAdmin) renderKCBossContribution(_kcCurrentData);
+        }
+
+        function switchKCMode(mode) {
+            _kcMode = mode;
+            document.getElementById('kcModeBingo').classList.toggle('active', mode === 'bingo');
+            document.getElementById('kcModeAlltime').classList.toggle('active', mode === 'alltime');
+            const label = document.getElementById('kcModeLabel');
+            if (label) label.textContent = mode === 'bingo' ? 'Gains since bingo start' : 'Total account KC';
+            _renderAllKCTabs();
+        }
+
+        function renderKCDetails(mode) {
+            const bingoView = document.getElementById('detailsBingoView');
+            const alltimeView = document.getElementById('detailsAlltimeView');
+            if (!bingoView || !alltimeView) return;
+            bingoView.style.display = mode === 'bingo' ? 'block' : 'none';
+            alltimeView.style.display = mode === 'alltime' ? 'block' : 'none';
+            if (mode === 'bingo') {
+                renderKCEffort();
+            } else {
+                renderKCOverall(_kcAllData);
             }
         }
 
@@ -4325,7 +4372,7 @@ async function loadAnalyticsWithFilters() {
             let html = `
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; margin-bottom: 10px; font-weight: bold;">Select Boss:</label>
-                    <select id="bossLeaderboardSelect" onchange="updateBossLeaderboard(this.value, ${JSON.stringify(data).replace(/"/g, '&quot;')})" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ddd; background: white; color: #333; font-size: 14px;">
+                    <select id="bossLeaderboardSelect" onchange="updateBossLeaderboard(this.value)" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ddd; background: white; color: #333; font-size: 14px;">
                         <option value="">-- Select a Boss --</option>
             `;
 
@@ -4345,32 +4392,97 @@ async function loadAnalyticsWithFilters() {
             console.log('KC Leaderboards rendered successfully');
         }
 
-        window.updateBossLeaderboard = function(boss, dataStr) {
-            const container = document.getElementById('bossLeaderboardContent');
+        function renderKCOverall(data) {
+            const container = document.getElementById('detailsAlltimeView');
             if (!container) return;
 
+            if (!data || Object.keys(data).length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No KC data available</div>';
+                return;
+            }
+
+            // Collect all players and all bosses that have at least one kill
+            const players = Object.keys(data).sort();
+            const bossSet = new Set();
+            players.forEach(p => {
+                if (data[p].bosses) Object.keys(data[p].bosses).forEach(b => bossSet.add(b));
+            });
+            const bosses = Array.from(bossSet).sort();
+
+            // Sort players by total KC descending
+            const playerTotals = {};
+            players.forEach(p => {
+                playerTotals[p] = bosses.reduce((sum, b) => sum + (data[p].bosses?.[b] || 0), 0);
+            });
+            const sortedPlayers = [...players].sort((a, b) => playerTotals[b] - playerTotals[a]);
+
+            // Build header row
+            let headerCells = '<th>Boss</th>';
+            sortedPlayers.forEach(p => { headerCells += `<th>${p}</th>`; });
+
+            // Build boss rows (only bosses where at least one player has KC > 0)
+            let bodyRows = '';
+            bosses.forEach(boss => {
+                const hasKC = sortedPlayers.some(p => (data[p].bosses?.[boss] || 0) > 0);
+                if (!hasKC) return;
+
+                let cells = `<td class="overall-boss-name">${boss}</td>`;
+                sortedPlayers.forEach(p => {
+                    const kc = data[p].bosses?.[boss] || 0;
+                    cells += kc > 0
+                        ? `<td class="overall-kc-cell overall-kc-has">${kc.toLocaleString()}</td>`
+                        : `<td class="overall-kc-cell overall-kc-empty">-</td>`;
+                });
+                bodyRows += `<tr>${cells}</tr>`;
+            });
+
+            // Build total row
+            let totalCells = '<td class="overall-boss-name overall-total-label">Total KC</td>';
+            sortedPlayers.forEach(p => {
+                totalCells += `<td class="overall-kc-cell overall-kc-total">${playerTotals[p].toLocaleString()}</td>`;
+            });
+
+            container.innerHTML = `
+                <p style="color: #888; font-size: 13px; margin: 0 0 12px 0;">
+                    Total boss KC on each account at last data fetch — not limited to this bingo.
+                </p>
+                <div class="overall-kc-scroll">
+                    <table class="overall-kc-table">
+                        <thead>
+                            <tr>${headerCells}</tr>
+                        </thead>
+                        <tbody>
+                            ${bodyRows}
+                            <tr class="overall-total-row">${totalCells}</tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        window.updateBossLeaderboard = function(boss) {
+            const container = document.getElementById('bossLeaderboardContent');
+            if (!container) return;
             if (!boss) {
                 container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">Please select a boss</div>';
                 return;
             }
+            updateBossLeaderboardWithData(boss, _kcCurrentData);
+        };
 
-            // Parse data
-            let data;
-            try {
-                data = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr;
-            } catch (e) {
-                // If parsing fails, fetch fresh data
-                fetch(`${API_URL}/kc/all`)
-                    .then(r => r.json())
-                    .then(freshData => updateBossLeaderboardWithData(boss, freshData))
-                    .catch(err => {
-                        console.error('Failed to fetch KC data:', err);
-                        container.innerHTML = '<div style="text-align: center; color: #8b1a1a; padding: 40px;">❌ Failed to load leaderboard</div>';
-                    });
-                return;
-            }
-
-            updateBossLeaderboardWithData(boss, data);
+        // Notable drop rates for common bosses: boss name -> { item, rate, label }
+        const BOSS_NOTABLE_DROPS = {
+            'Corrupted Gauntlet': { item: 'Enhanced crystal weapon seed', rate: 400, label: 'Enhanced' },
+            'The Gauntlet': { item: 'Enhanced crystal weapon seed', rate: 2000, label: 'Enhanced' },
+            'Zulrah': { item: 'Tanzanite mutagen', rate: 6500, label: 'Mutagen' },
+            'Vorkath': { item: 'Jar of decay', rate: 3000, label: 'Jar of Decay' },
+            'Cerberus': { item: 'Jar of souls', rate: 2000, label: 'Jar of Souls' },
+            'Kraken': { item: 'Jar of dirt', rate: 1000, label: 'Jar of Dirt' },
+            'Thermonuclear Smoke Devil': { item: 'Jar of smoke', rate: 1000, label: 'Jar of Smoke' },
+            'Alchemical Hydra': { item: 'Jar of chemicals', rate: 3000, label: 'Jar of Chemicals' },
+            'Chaos Elemental': { item: 'Pet chaos elemental', rate: 300, label: 'Pet' },
+            'King Black Dragon': { item: 'Prince black dragon', rate: 3000, label: 'Prince' },
+            'Scorpia': { item: "Scorpia's offspring", rate: 2016, label: 'Offspring' },
         };
 
         function updateBossLeaderboardWithData(boss, data) {
@@ -4378,13 +4490,9 @@ async function loadAnalyticsWithFilters() {
             if (!container) return;
 
             const leaderboard = [];
-
             Object.entries(data).forEach(([player, playerData]) => {
                 if (playerData.bosses && playerData.bosses[boss]) {
-                    leaderboard.push({
-                        player: player,
-                        kc: playerData.bosses[boss]
-                    });
+                    leaderboard.push({ player, kc: playerData.bosses[boss] });
                 }
             });
 
@@ -4400,12 +4508,8 @@ async function loadAnalyticsWithFilters() {
                 const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
                 html += `
                     <div style="display: flex; justify-content: space-between; padding: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.03); border-radius: 4px;">
-                        <span style="font-size: 16px;">
-                            ${medal} #${index + 1} ${entry.player}
-                        </span>
-                        <span style="color: #4CAF50; font-weight: bold; font-size: 16px;">
-                            ${entry.kc.toLocaleString()} KC
-                        </span>
+                        <span style="font-size: 16px;">${medal} #${index + 1} ${entry.player}</span>
+                        <span style="color: #4CAF50; font-weight: bold; font-size: 16px;">${entry.kc.toLocaleString()} KC</span>
                     </div>
                 `;
             });
@@ -4413,7 +4517,124 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = html;
         }
 
-        async function renderKCEffort(data) {
+        // ── Admin-only Boss Contribution (Excel-style spreadsheet) ──────────────
+
+        function renderKCBossContribution(data) {
+            const container = document.getElementById('kcTabContentContribution');
+            if (!container) return;
+
+            if (!data || Object.keys(data).length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No KC data available</div>';
+                return;
+            }
+
+            const allBosses = new Set();
+            Object.values(data).forEach(pd => {
+                if (pd.bosses) Object.keys(pd.bosses).forEach(b => allBosses.add(b));
+            });
+            const sortedBosses = Array.from(allBosses).sort();
+
+            let html = `
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold;">Select Boss:</label>
+                    <select id="bossContributionSelect" onchange="updateBossContribution(this.value)"
+                            style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ddd; background: white; color: #333; font-size: 14px;">
+                        <option value="">-- Select a Boss --</option>
+            `;
+            sortedBosses.forEach(b => { html += `<option value="${b}">${b}</option>`; });
+            html += `
+                    </select>
+                </div>
+                <div id="bossContributionContent" style="margin-top: 20px;">
+                    <div style="text-align: center; color: #666; padding: 40px;">Select a boss to view contribution breakdown</div>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        window.updateBossContribution = function(boss) {
+            if (!boss) return;
+            updateBossContributionWithData(boss, _kcCurrentData);
+        };
+
+        function updateBossContributionWithData(boss, data) {
+            const container = document.getElementById('bossContributionContent');
+            if (!container) return;
+
+            const leaderboard = [];
+            Object.entries(data).forEach(([player, playerData]) => {
+                if (playerData.bosses && playerData.bosses[boss]) {
+                    leaderboard.push({ player, kc: playerData.bosses[boss] });
+                }
+            });
+
+            leaderboard.sort((a, b) => b.kc - a.kc);
+
+            if (leaderboard.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #666; padding: 40px;">No one has KC for ${boss}</div>`;
+                return;
+            }
+
+            const totalKC = leaderboard.reduce((sum, e) => sum + e.kc, 0);
+
+            const rowClass = (i) => i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : '';
+
+            let rows = '';
+            leaderboard.forEach((entry, i) => {
+                const pct = totalKC > 0 ? ((entry.kc / totalKC) * 100).toFixed(2) : '0.00';
+                rows += `
+                    <tr class="${rowClass(i)}">
+                        <td>${entry.player}</td>
+                        <td>${entry.kc.toLocaleString()}</td>
+                        <td>${pct}%</td>
+                    </tr>
+                `;
+            });
+
+            container.innerHTML = `
+                <table class="boss-contribution-table">
+                    <thead>
+                        <tr><th>Username</th><th>KC</th><th>% Contribution</th></tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                        <tr class="rank-total">
+                            <td>Total</td>
+                            <td>${totalKC.toLocaleString()}</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+
+            // Drop rate stats only in All Time mode
+            const notableDrop = _kcMode === 'alltime' ? BOSS_NOTABLE_DROPS[boss] : null;
+            if (notableDrop) {
+                const expectedDrops = (totalKC / notableDrop.rate).toFixed(4);
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'boss-drop-stats';
+                statsDiv.innerHTML = `
+                    <table>
+                        <tr><td>Expected ${notableDrop.label}</td><td>${expectedDrops}</td></tr>
+                        <tr><td>Actual ${notableDrop.label}</td><td id="actualDropVal">...</td></tr>
+                    </table>
+                `;
+                container.appendChild(statsDiv);
+
+                fetch(`${API_URL}/kc/notable-drops?item=${encodeURIComponent(notableDrop.item)}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        const el = document.getElementById('actualDropVal');
+                        if (el) el.textContent = d.count ?? 0;
+                    })
+                    .catch(() => {
+                        const el = document.getElementById('actualDropVal');
+                        if (el) el.textContent = '?';
+                    });
+            }
+        }
+
+        async function renderKCEffort() {
             const playerContainer = document.getElementById('effortPlayerView');
             const bossContainer = document.getElementById('effortBossView');
 

@@ -1538,6 +1538,171 @@
             font-weight: bold;
         }
 
+        /* KC Mode Toggle Buttons */
+        .kc-mode-btn {
+            padding: 8px 18px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 20px;
+            background: transparent;
+            color: rgba(255,255,255,0.6);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .kc-mode-btn:hover {
+            border-color: rgba(255,255,255,0.5);
+            color: white;
+        }
+
+        .kc-mode-btn.active {
+            background: #4CAF50;
+            border-color: #4CAF50;
+            color: white;
+        }
+
+        /* Boss Contribution Spreadsheet Table */
+        .boss-contribution-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            background: white;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .boss-contribution-table thead tr {
+            background: #2d5a2d;
+            color: white;
+        }
+
+        .boss-contribution-table th {
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: bold;
+            border-right: 1px solid rgba(255,255,255,0.2);
+            cursor: default;
+        }
+
+        .boss-contribution-table th:last-child { border-right: none; }
+
+        .boss-contribution-table td {
+            padding: 9px 14px;
+            border-bottom: 1px solid #ddd;
+            color: #222;
+        }
+
+        .boss-contribution-table tr.rank-gold td { background: #FFD700; }
+        .boss-contribution-table tr.rank-silver td { background: #C0C0C0; }
+        .boss-contribution-table tr.rank-bronze td { background: #CD7F32; color: white; }
+        .boss-contribution-table tr.rank-total td {
+            background: #b8e6b8;
+            font-weight: bold;
+            border-top: 2px solid #4CAF50;
+            border-bottom: none;
+        }
+
+        .boss-drop-stats {
+            margin-top: 12px;
+            background: white;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .boss-drop-stats table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .boss-drop-stats td {
+            padding: 8px 14px;
+            border-bottom: 1px solid #eee;
+            color: #222;
+        }
+
+        .boss-drop-stats td:last-child { font-weight: bold; }
+        .boss-drop-stats tr:last-child td { border-bottom: none; }
+
+        /* Overall KC Matrix Table */
+        .overall-kc-scroll {
+            overflow-x: auto;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .overall-kc-table {
+            border-collapse: collapse;
+            font-size: 13px;
+            background: white;
+            min-width: 100%;
+            white-space: nowrap;
+        }
+
+        .overall-kc-table thead tr {
+            background: #2d5a2d;
+            color: white;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .overall-kc-table th {
+            padding: 9px 14px;
+            text-align: left;
+            font-weight: bold;
+            border-right: 1px solid rgba(255,255,255,0.15);
+        }
+
+        .overall-kc-table th:first-child {
+            position: sticky;
+            left: 0;
+            background: #2d5a2d;
+            z-index: 2;
+        }
+
+        .overall-kc-table th:last-child { border-right: none; }
+
+        .overall-kc-table tbody tr:hover td { background: #f0f7f0; }
+
+        .overall-boss-name {
+            padding: 7px 14px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            border-right: 2px solid #ccc;
+            font-weight: 500;
+            position: sticky;
+            left: 0;
+            background: white;
+            z-index: 1;
+        }
+
+        .overall-kc-cell {
+            padding: 7px 14px;
+            text-align: right;
+            border-bottom: 1px solid #eee;
+            border-right: 1px solid #eee;
+            color: #333;
+        }
+
+        .overall-kc-has { color: #2d6a2d; font-weight: 600; }
+        .overall-kc-empty { color: #bbb; }
+
+        .overall-total-row td {
+            background: #b8e6b8 !important;
+            font-weight: bold;
+            border-top: 2px solid #4CAF50;
+        }
+
+        .overall-total-label {
+            background: #b8e6b8 !important;
+        }
+
+        .overall-kc-total { color: #1a5c1a; }
+
         /* Loading State */
         .loading-message {
             text-align: center;

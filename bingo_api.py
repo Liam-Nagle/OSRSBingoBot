@@ -233,8 +233,11 @@ def fetch_osrs_highscores(player_name):
         boss_mapping = {
             'abyssal_sire': 'Abyssal Sire',
             'alchemical_hydra': 'Alchemical Hydra',
+            'amoxliatl': 'Amoxliatl',
+            'araxxor': 'Araxxor',
             'artio': 'Artio',
             'barrows_chests': 'Barrows Chests',
+            'brutus': 'Brutus',
             'bryophyta': 'Bryophyta',
             'callisto': 'Callisto',
             'calvarion': "Cal'varion",
@@ -250,6 +253,7 @@ def fetch_osrs_highscores(player_name):
             'dagannoth_rex': 'Dagannoth Rex',
             'dagannoth_supreme': 'Dagannoth Supreme',
             'deranged_archaeologist': 'Deranged Archaeologist',
+            'doom_of_mokhaiotl': 'Doom of Mokhaiotl',
             'duke_sucellus': 'Duke Sucellus',
             'general_graardor': 'General Graardor',
             'giant_mole': 'Giant Mole',
@@ -269,11 +273,15 @@ def fetch_osrs_highscores(player_name):
             'phantom_muspah': 'Phantom Muspah',
             'sarachnis': 'Sarachnis',
             'scorpia': 'Scorpia',
+            'scurrius': 'Scurrius',
             'skotizo': 'Skotizo',
+            'shellbane_gryphon': 'Shellbane Gryphon',
+            'sol_heredit': 'Sol Heredit',
             'spindel': 'Spindel',
             'tempoross': 'Tempoross',
             'the_gauntlet': 'The Gauntlet',
             'the_corrupted_gauntlet': 'The Corrupted Gauntlet',
+            'the_hueycoatl': 'The Hueycoatl',
             'the_leviathan': 'The Leviathan',
             'the_whisperer': 'The Whisperer',
             'the_royal_titans': 'Royal Titans',
@@ -289,6 +297,7 @@ def fetch_osrs_highscores(player_name):
             'vetion': "Vet'ion",
             'vorkath': 'Vorkath',
             'wintertodt': 'Wintertodt',
+            'yama': 'Yama',
             'zalcano': 'Zalcano',
             'zulrah': 'Zulrah'
         }
@@ -588,6 +597,23 @@ def get_all_kc():
             }
 
         return jsonify(all_kc)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/kc/notable-drops', methods=['GET'])
+def get_notable_drops():
+    """Count actual drops of a notable item (e.g. Enhanced crystal weapon seed) from drop history"""
+    item_name = request.args.get('item', '')
+    if not item_name:
+        return jsonify({'error': 'Missing item parameter'}), 400
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        count = collections['history'].count_documents({'item': {'$regex': f'^{item_name}$', '$options': 'i'}})
+        return jsonify({'item': item_name, 'count': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

@@ -573,47 +573,43 @@ Dragon warhammer"></textarea>
                 </button>
             </div>
 
+            <!-- Mode Toggle -->
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
+                <button onclick="switchKCMode('bingo')" id="kcModeBingo" class="kc-mode-btn active">🏁 Current Bingo</button>
+                <button onclick="switchKCMode('alltime')" id="kcModeAlltime" class="kc-mode-btn">📈 All Time</button>
+                <span id="kcModeLabel" style="font-size: 12px; color: #8b7355; margin-left: 8px;">Gains since bingo start</span>
+            </div>
+
             <!-- Tabs -->
             <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid rgba(255,255,255,0.1);">
-                <button onclick="showKCTab('overview')" id="kcTabOverview" class="kc-tab active">
-                    Overview
-                </button>
-                <button onclick="showKCTab('leaderboards')" id="kcTabLeaderboards" class="kc-tab">
-                    Leaderboards
-                </button>
-                <button onclick="showKCTab('effort')" id="kcTabEffort" class="kc-tab">
-                    Effort
-                </button>
+                <button onclick="showKCTab('overview')" id="kcTabOverview" class="kc-tab active">Overview</button>
+                <button onclick="showKCTab('leaderboards')" id="kcTabLeaderboards" class="kc-tab">Leaderboards</button>
+                <button onclick="showKCTab('details')" id="kcTabDetails" class="kc-tab">Effort</button>
+                <!-- Admin only -->
+                <button onclick="showKCTab('contribution')" id="kcTabContribution" class="kc-tab" style="display:none;">📊 Boss Contribution</button>
             </div>
 
             <!-- Tab Contents -->
-            <div id="kcTabContentOverview" class="kc-tab-content">
-                <!-- Current KC for all players -->
+            <div id="kcTabContentOverview" class="kc-tab-content"></div>
+
+            <div id="kcTabContentLeaderboards" class="kc-tab-content" style="display: none;"></div>
+
+            <div id="kcTabContentDetails" class="kc-tab-content" style="display: none;">
+                <!-- Current Bingo: effort player/boss view -->
+                <div id="detailsBingoView">
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+                        <button onclick="showEffortView('player')" id="effortViewPlayer" class="kc-tab active">👤 Player View</button>
+                        <button onclick="showEffortView('boss')" id="effortViewBoss" class="kc-tab">🎯 Boss View</button>
+                    </div>
+                    <div id="effortPlayerView"></div>
+                    <div id="effortBossView" style="display: none;"></div>
+                </div>
+                <!-- All Time: full boss x player matrix -->
+                <div id="detailsAlltimeView" style="display: none;"></div>
             </div>
 
-            <div id="kcTabContentLeaderboards" class="kc-tab-content" style="display: none;">
-                <!-- Boss leaderboards -->
-            </div>
-
-            <div id="kcTabContentEffort" class="kc-tab-content" style="display: none;">
-                <!-- View Toggle Buttons -->
-                <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
-                    <button onclick="showEffortView('player')" id="effortViewPlayer" class="kc-tab active">
-                        👤 Player View
-                    </button>
-                    <button onclick="showEffortView('boss')" id="effortViewBoss" class="kc-tab">
-                        🎯 Boss View
-                    </button>
-                </div>
-
-                <!-- Content containers -->
-                <div id="effortPlayerView">
-                    <!-- Player-focused effort data -->
-                </div>
-                <div id="effortBossView" style="display: none;">
-                    <!-- Boss-focused effort leaderboards -->
-                </div>
-            </div>
+            <!-- Admin-only Boss Contribution tab content -->
+            <div id="kcTabContentContribution" class="kc-tab-content" style="display: none;"></div>
         </div>
     </div>
 
