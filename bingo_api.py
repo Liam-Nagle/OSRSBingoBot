@@ -229,6 +229,9 @@ def fetch_osrs_highscores(player_name):
 
         boss_data = {}
 
+        # Bosses excluded from all tracking and display
+        EXCLUDED_BOSSES = {'Brutus'}
+
         # WiseOldMan uses different keys for bosses - map them to our format
         boss_mapping = {
             'abyssal_sire': 'Abyssal Sire',
@@ -237,7 +240,6 @@ def fetch_osrs_highscores(player_name):
             'araxxor': 'Araxxor',
             'artio': 'Artio',
             'barrows_chests': 'Barrows Chests',
-            'brutus': 'Brutus',
             'bryophyta': 'Bryophyta',
             'callisto': 'Callisto',
             'calvarion': "Cal'varion",
@@ -304,6 +306,8 @@ def fetch_osrs_highscores(player_name):
 
         # Extract KC from snapshot
         for wom_key, display_name in boss_mapping.items():
+            if display_name in EXCLUDED_BOSSES:
+                continue
             if wom_key in bosses_data:
                 kc = bosses_data[wom_key].get('kills', 0)
                 if kc and kc > 0:
@@ -586,12 +590,13 @@ def get_all_kc():
 
         results = list(collections['kc'].aggregate(pipeline))
 
+        _excluded = {'Brutus'}
         all_kc = {}
         for result in results:
             player = result['_id']
             snapshot = result['latest_snapshot']
             all_kc[player] = {
-                'bosses': snapshot['bosses'],
+                'bosses': {k: v for k, v in snapshot['bosses'].items() if k not in _excluded},
                 'timestamp': snapshot['timestamp'].isoformat(),
                 'snapshot_type': snapshot['snapshot_type']
             }
@@ -654,8 +659,11 @@ def get_kc_effort():
             start_bosses = start_snapshot.get('bosses', {})
             current_bosses = current_snapshot.get('bosses', {})
 
+            _excluded = {'Brutus'}
             effort = {}
             for boss, current_kc in current_bosses.items():
+                if boss in _excluded:
+                    continue
                 start_kc = start_bosses.get(boss, 0)
                 gain = current_kc - start_kc
                 if gain > 0:
