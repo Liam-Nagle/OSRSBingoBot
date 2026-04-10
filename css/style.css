@@ -1541,10 +1541,10 @@
         /* KC Mode Toggle Buttons */
         .kc-mode-btn {
             padding: 8px 18px;
-            border: 2px solid rgba(255,255,255,0.2);
+            border: 2px solid rgba(0,0,0,0.2);
             border-radius: 20px;
             background: transparent;
-            color: rgba(255,255,255,0.6);
+            color: rgba(0,0,0,0.6);
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
@@ -1552,8 +1552,8 @@
         }
 
         .kc-mode-btn:hover {
-            border-color: rgba(255,255,255,0.5);
-            color: white;
+            border-color: rgba(0,0,0,0.5);
+            color: black;
         }
 
         .kc-mode-btn.active {

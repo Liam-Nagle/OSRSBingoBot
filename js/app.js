@@ -5592,6 +5592,14 @@ async function loadAnalyticsWithFilters() {
                         : '<span style="color: #8b7355;">No change</span>';
                 }
 
+                // Compute peak ranks (lowest number = best rank)
+                const peakRankRecord = history.reduce((best, h) => h.rank < best.rank ? h : best, history[0]);
+                const peakPrestigeRecord = history.reduce((best, h) => h.prestigeRank < best.prestigeRank ? h : best, history[0]);
+                document.getElementById('peakRank').textContent = peakRankRecord.rank.toLocaleString();
+                document.getElementById('peakRankDate').textContent = new Date(peakRankRecord.timestamp).toLocaleDateString();
+                document.getElementById('peakPrestige').textContent = peakPrestigeRecord.prestigeRank.toLocaleString();
+                document.getElementById('peakPrestigeDate').textContent = new Date(peakPrestigeRecord.timestamp).toLocaleDateString();
+
                 // Render chart
                 renderRankHistoryChart(history);
 
