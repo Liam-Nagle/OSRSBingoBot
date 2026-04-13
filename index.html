@@ -907,20 +907,23 @@ Dragon warhammer"></textarea>
 
     <!-- Drilldown Results Panel (appears on top of analytics) -->
     <div id="drilldownPanel" class="modal" style="z-index: 10003;">
-        <div class="modal-content" style="max-width: 860px; width: 92vw; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; padding: 24px 28px 20px;">
-            <button onclick="closeDrilldownPanel()" class="close-btn">✕</button>
+        <div class="modal-content" style="max-width: 900px; width: 94vw; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: 10px;">
 
-            <!-- Header -->
-            <div style="flex-shrink: 0; padding-right: 36px; margin-bottom: 14px;">
-                <h2 id="drilldownPanelTitle" style="color: #2c1810; margin: 0 0 4px 0; font-size: 20px; font-weight: bold;"></h2>
-                <div id="drilldownPanelMeta" style="font-size: 13px; color: #666; font-weight: 500;"></div>
+            <!-- Header banner -->
+            <div style="background: linear-gradient(135deg, #2c1810 0%, #4a2c1a 100%); padding: 20px 52px 16px 24px; flex-shrink: 0; position: relative;">
+                <button onclick="closeDrilldownPanel()" class="close-btn" style="color: rgba(255,255,255,0.7); top: 14px; right: 14px;">✕</button>
+                <h2 id="drilldownPanelTitle" style="color: #ffcc33; margin: 0 0 5px 0; font-size: 19px; font-weight: bold;"></h2>
+                <div id="drilldownPanelMeta" style="color: rgba(255,255,255,0.75); font-size: 13px;"></div>
             </div>
 
-            <!-- Active Filters -->
-            <div id="drilldownPanelFilters" style="flex-shrink: 0; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 7px;"></div>
+            <!-- Active Filters bar -->
+            <div id="drilldownFiltersBar" style="background: #f5ede0; border-bottom: 1px solid #e0c89a; padding: 10px 20px; flex-shrink: 0; display: none;">
+                <span style="font-size: 11px; font-weight: bold; color: #8B6914; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 8px;">Filters</span>
+                <div id="drilldownPanelFilters" style="display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle;"></div>
+            </div>
 
             <!-- Drop list -->
-            <div id="drilldownPanelContent" style="overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+            <div id="drilldownPanelContent" style="overflow-y: auto; flex: 1; padding: 14px 18px; display: flex; flex-direction: column; gap: 7px; background: #faf6f0;">
             </div>
         </div>
     </div>

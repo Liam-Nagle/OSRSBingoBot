@@ -1883,129 +1883,156 @@
             analyticsCharts = {};
         }
 
-        // Open a compact drilldown panel on top of analytics showing filtered drops
+        // Open a drilldown panel showing filtered drops when a chart bar/point is clicked
         async function openHistoryFromChart({ dateStart = null, dateEnd = null, player = null, itemSearch = null, dayOfWeek = null, hour = null } = {}) {
             const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
             const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-            // Build human-readable title
-            const titleParts = [];
-            if (player) titleParts.push(`by ${player}`);
-            if (dayOfWeek !== null) titleParts.push(`on ${dayNames[dayOfWeek]}s`);
-            if (hour !== null) {
-                const h = hour;
-                const label = h === 0 ? '12AM' : h < 12 ? `${h}AM` : h === 12 ? '12PM' : `${h - 12}PM`;
-                titleParts.push(`at ${label}`);
-            }
-            if (dateStart && dateEnd) {
+            // --- Build title from the chart dimension that was clicked ---
+            let titleIcon = '📊';
+            let titleText = 'Drops';
+            if (dayOfWeek !== null)       { titleIcon = '📅'; titleText = `Drops on ${dayNames[dayOfWeek]}s`; }
+            else if (hour !== null)       { const lbl = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour-12} PM`; titleIcon = '🕐'; titleText = `Drops at ${lbl}`; }
+            else if (player)              { titleIcon = '👤'; titleText = `Drops by ${player}`; }
+            else if (itemSearch)          { titleIcon = '🎯'; titleText = `Drops — "${itemSearch}"`; }
+            else if (dateStart && dateEnd) {
                 if (dateStart === dateEnd) {
                     const d = new Date(dateStart + 'T12:00:00');
-                    titleParts.push(`on ${d.getDate()} ${monthNames[d.getMonth()]} ${d.getFullYear()}`);
+                    titleIcon = '📆'; titleText = `Drops on ${d.getDate()} ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
                 } else {
                     const ds = new Date(dateStart + 'T12:00:00');
-                    titleParts.push(`in ${monthNames[ds.getMonth()]} ${ds.getFullYear()}`);
+                    titleIcon = '📆'; titleText = `Drops in ${monthNames[ds.getMonth()]} ${ds.getFullYear()}`;
                 }
             }
-            if (itemSearch) titleParts.push(`— "${itemSearch}"`);
-
-            const title = `📊 Drops ${titleParts.join(' ')}`.trim();
 
             // Show panel immediately with loading state
-            document.getElementById('drilldownPanelTitle').textContent = title;
-            document.getElementById('drilldownPanelMeta').textContent = '';
-            document.getElementById('drilldownPanelContent').innerHTML = '<div style="text-align:center;padding:30px;color:#666;">Loading...</div>';
+            document.getElementById('drilldownPanelTitle').textContent = `${titleIcon}  ${titleText}`;
+            document.getElementById('drilldownPanelMeta').textContent = 'Loading…';
+            document.getElementById('drilldownPanelContent').innerHTML = '';
+            document.getElementById('drilldownFiltersBar').style.display = 'none';
+            document.getElementById('drilldownPanelFilters').innerHTML = '';
             document.getElementById('drilldownPanel').classList.add('active');
 
-            // Read current analytics filters
-            const analyticsType = document.getElementById('analyticsTypeFilter')?.value || '';
-            const analyticsValue = parseInt(document.getElementById('analyticsValueFilter')?.value || '0');
+            // --- Read current analytics filters ---
+            const analyticsType   = document.getElementById('analyticsTypeFilter')?.value || '';
+            const analyticsValue  = parseInt(document.getElementById('analyticsValueFilter')?.value || '0');
             const analyticsSearch = document.getElementById('analyticsSearchFilter')?.value || '';
 
-            // Build API query
+            // --- Build filter chips ---
+            const chips = [];
+
+            // Context chip — what dimension was clicked
+            if (dayOfWeek !== null)        chips.push({ label: `📅 ${dayNames[dayOfWeek]}s`, color: '#1565C0', bg: '#E3F2FD' });
+            else if (hour !== null)        { const lbl = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour-12} PM`; chips.push({ label: `🕐 ${lbl}`, color: '#1565C0', bg: '#E3F2FD' }); }
+            else if (player)               chips.push({ label: `👤 ${player}`, color: '#6A1B9A', bg: '#F3E5F5' });
+            else if (itemSearch)           chips.push({ label: `🎯 "${itemSearch}"`, color: '#BF360C', bg: '#FBE9E7' });
+            else if (dateStart && dateEnd) chips.push({ label: titleText.replace('Drops ', ''), color: '#1565C0', bg: '#E3F2FD' });
+
+            // Analytics filter chips
+            if (analyticsType)    chips.push({ label: analyticsType === 'loot' ? '📦 Loot only' : '📗 Collection Log only', color: '#E65100', bg: '#FFF3E0' });
+            if (analyticsValue > 0) {
+                const fmt = analyticsValue >= 1_000_000 ? `${analyticsValue/1_000_000}M+` : `${analyticsValue/1_000}K+`;
+                chips.push({ label: `💰 ≥${fmt}`, color: '#2E7D32', bg: '#E8F5E9' });
+            }
+            if (analyticsSelectedPlayers.length === 1 && !player) chips.push({ label: `👤 ${analyticsSelectedPlayers[0]}`, color: '#6A1B9A', bg: '#F3E5F5' });
+            if (analyticsSelectedPlayers.length > 1)  chips.push({ label: `👥 ${analyticsSelectedPlayers.length} players`, color: '#6A1B9A', bg: '#F3E5F5' });
+            if (analyticsSearch && !itemSearch)        chips.push({ label: `🔍 "${analyticsSearch}"`, color: '#BF360C', bg: '#FBE9E7' });
+
+            if (chips.length > 0) {
+                const filtersBar = document.getElementById('drilldownFiltersBar');
+                const filtersEl  = document.getElementById('drilldownPanelFilters');
+                filtersEl.innerHTML = chips.map(c =>
+                    `<span style="display:inline-flex;align-items:center;background:${c.bg};color:${c.color};border:1px solid ${c.color}40;padding:3px 9px;border-radius:12px;font-size:12px;font-weight:600;">${c.label}</span>`
+                ).join('');
+                filtersBar.style.display = 'block';
+            }
+
+            // --- Fetch data ---
             const params = new URLSearchParams({ limit: 1000 });
-            if (analyticsType) params.append('type', analyticsType);
+            if (analyticsType)  params.append('type', analyticsType);
             if (analyticsValue > 0) params.append('minValue', analyticsValue);
             const effectiveSearch = itemSearch || analyticsSearch;
             if (effectiveSearch) params.append('search', effectiveSearch);
 
-            // Player: chart-specific player, or the single selected analytics player
             const singleAnalyticsPlayer = analyticsSelectedPlayers.length === 1 ? analyticsSelectedPlayers[0] : null;
             const targetPlayer = player || singleAnalyticsPlayer;
             if (targetPlayer) params.append('player', targetPlayer);
-
             if (dateStart) params.append('start_date', `${dateStart}T00:00:00Z`);
-            if (dateEnd) params.append('end_date', `${dateEnd}T23:59:59Z`);
+            if (dateEnd)   params.append('end_date',   `${dateEnd}T23:59:59Z`);
 
             try {
                 const response = await fetch(`${API_URL}/history?${params}`);
                 const data = await response.json();
-
                 let drops = (data.history || []).map(d => ({ ...d, timestamp: new Date(d.timestamp) }));
 
                 // Client-side filters (day-of-week and hour have no API equivalent)
                 if (dayOfWeek !== null) drops = drops.filter(d => d.timestamp.getDay() === dayOfWeek);
-                if (hour !== null) drops = drops.filter(d => d.timestamp.getHours() === hour);
-                // Multi-player filter when several analytics players are selected
-                if (analyticsSelectedPlayers.length > 1) {
-                    drops = drops.filter(d => analyticsSelectedPlayers.includes(d.player));
-                }
+                if (hour !== null)      drops = drops.filter(d => d.timestamp.getHours() === hour);
+                if (analyticsSelectedPlayers.length > 1) drops = drops.filter(d => analyticsSelectedPlayers.includes(d.player));
 
-                // Build context line
-                const filterCtx = [];
-                if (analyticsType) filterCtx.push(analyticsType === 'loot' ? 'Loot only' : 'Collection Log only');
-                if (analyticsValue > 0) {
-                    const fmt = analyticsValue >= 1000000 ? `${analyticsValue / 1000000}M+` : `${analyticsValue / 1000}K+`;
-                    filterCtx.push(`≥${fmt}`);
-                }
-                if (analyticsSelectedPlayers.length > 1) filterCtx.push(`Players: ${analyticsSelectedPlayers.join(', ')}`);
-
+                // --- Meta line ---
+                const totalValue = drops.reduce((sum, d) => sum + (d.value || 0), 0);
+                const totalFmt = totalValue >= 1_000_000 ? `${(totalValue/1_000_000).toFixed(1)}M gp` : totalValue >= 1_000 ? `${(totalValue/1_000).toFixed(0)}K gp` : `${totalValue.toLocaleString()} gp`;
                 const metaEl = document.getElementById('drilldownPanelMeta');
-                metaEl.innerHTML = `<strong style="color:#2c1810;">${drops.length} drop${drops.length !== 1 ? 's' : ''}</strong>${filterCtx.length ? ' &nbsp;·&nbsp; <span style="color:#8B6914;">' + filterCtx.join(' · ') + '</span>' : ''}`;
+                metaEl.innerHTML = `<strong style="color:#ffcc33;">${drops.length}</strong> drop${drops.length !== 1 ? 's' : ''}` +
+                    (totalValue > 0 ? `&nbsp; · &nbsp;Total value: <strong style="color:#a8d8a8;">${totalFmt}</strong>` : '');
 
                 if (drops.length === 0) {
-                    document.getElementById('drilldownPanelContent').innerHTML = '<div style="text-align:center;padding:30px;color:#666;">No drops found for this selection.</div>';
+                    document.getElementById('drilldownPanelContent').innerHTML =
+                        '<div style="text-align:center;padding:50px 20px;color:#888;"><div style="font-size:36px;margin-bottom:12px;">🔍</div>No drops match this selection.</div>';
                     return;
                 }
 
-                let html = '';
-                drops.forEach(record => {
-                    const timeAgo = getTimeAgo(record.timestamp);
-                    const dateStr = record.timestamp.toLocaleDateString();
-                    const timeStr = record.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                    let valueDisplay = '';
+                // --- Render drop rows ---
+                const content = document.getElementById('drilldownPanelContent');
+                content.innerHTML = drops.map(record => {
                     const v = record.value || 0;
-                    if (v > 0) {
-                        if (v >= 1000000) valueDisplay = `<span style="color:#4CAF50;font-weight:bold;margin-left:6px;">(${(v / 1000000).toFixed(2)}M gp)</span>`;
-                        else if (v >= 1000) valueDisplay = `<span style="color:#4CAF50;font-weight:bold;margin-left:6px;">(${(v / 1000).toFixed(0)}K gp)</span>`;
-                        else valueDisplay = `<span style="color:#4CAF50;font-weight:bold;margin-left:6px;">(${v.toLocaleString()} gp)</span>`;
-                    }
+                    const isCL = record.drop_type === 'collection_log';
 
-                    const clBadge = record.drop_type === 'collection_log'
-                        ? '<span style="background:#4CAF50;color:white;padding:1px 5px;border-radius:3px;font-size:10px;margin-left:5px;font-weight:bold;">CL</span>'
+                    // Left border & value badge colour tiers
+                    let borderColor, valueBg, valueColor;
+                    if (isCL)          { borderColor = '#2E7D32'; valueBg = '#E8F5E9'; valueColor = '#2E7D32'; }
+                    else if (v >= 10_000_000) { borderColor = '#F9A825'; valueBg = '#FFF8E1'; valueColor = '#F57F17'; }
+                    else if (v >= 1_000_000)  { borderColor = '#7B1FA2'; valueBg = '#F3E5F5'; valueColor = '#6A1B9A'; }
+                    else if (v >= 100_000)    { borderColor = '#1565C0'; valueBg = '#E3F2FD'; valueColor = '#1565C0'; }
+                    else                      { borderColor = '#bbb';    valueBg = null;      valueColor = '#666'; }
+
+                    const valueFmt = v >= 1_000_000 ? `${(v/1_000_000).toFixed(2)}M` : v >= 1_000 ? `${(v/1_000).toFixed(0)}K` : v > 0 ? v.toLocaleString() : null;
+                    const valueTag = valueFmt
+                        ? `<span style="background:${valueBg || '#f5f5f5'};color:${valueColor};border:1px solid ${borderColor}40;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold;white-space:nowrap;">${valueFmt} gp</span>`
+                        : '';
+                    const clTag = isCL
+                        ? `<span style="background:#2E7D32;color:white;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:bold;">CL</span>`
                         : '';
 
-                    html += `
-                        <div style="background:white;padding:9px 12px;border-radius:5px;margin-bottom:7px;border-left:4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};">
-                            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                                <div style="flex:1;min-width:0;">
-                                    <strong style="color:#ffcc33;background:#2c1810;padding:2px 7px;border-radius:3px;font-size:12px;">${record.player}</strong>
-                                    <span style="color:#555;margin:0 6px;font-size:12px;">→</span>
-                                    <strong style="color:#cd8b2d;font-size:13px;">${record.item}</strong>
-                                    ${clBadge}${valueDisplay}
-                                </div>
-                                <div style="text-align:right;font-size:10px;color:#888;white-space:nowrap;flex-shrink:0;">
-                                    <div>${timeAgo}</div>
-                                    <div>${dateStr} ${timeStr}</div>
-                                </div>
-                            </div>
-                        </div>`;
-                });
+                    const dateStr = record.timestamp.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                    const timeStr = record.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const source  = record.source ? `<span style="color:#888;font-size:11px;">📍 ${record.source}</span>` : '';
 
-                document.getElementById('drilldownPanelContent').innerHTML = html;
+                    return `<div style="background:white;border-radius:7px;border-left:4px solid ${borderColor};box-shadow:0 1px 3px rgba(0,0,0,0.06);padding:10px 14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+                            <div style="flex:1;min-width:0;">
+                                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+                                    <span style="background:#2c1810;color:#ffcc33;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:bold;">${record.player}</span>
+                                    <span style="color:#bbb;font-size:12px;">→</span>
+                                    <span style="color:#2c1810;font-size:13px;font-weight:600;">${record.item}</span>
+                                    ${clTag}${valueTag}
+                                </div>
+                                ${source}
+                            </div>
+                            <div style="text-align:right;font-size:11px;color:#aaa;white-space:nowrap;flex-shrink:0;line-height:1.5;">
+                                <div>${dateStr}</div>
+                                <div>${timeStr}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+
             } catch (err) {
                 console.error('Drilldown error:', err);
-                document.getElementById('drilldownPanelContent').innerHTML = '<div style="text-align:center;padding:30px;color:#8b1a1a;">❌ Failed to load drops.</div>';
+                document.getElementById('drilldownPanelContent').innerHTML =
+                    '<div style="text-align:center;padding:40px;color:#8b1a1a;">❌ Failed to load drops.</div>';
+                document.getElementById('drilldownPanelMeta').textContent = '';
             }
         }
 
@@ -5462,6 +5489,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                       {
+                version: "v2.9.0",
+                date: "2025-04-13",
+                title: "Personal Bests and more details analytics",
+                changes: [
+                    { type: "feature", text: "Added a personal best section to keep track of PB's" },
+                    { type: "feature", text: "More details to analytics. Click on info within charts to see an item breakdown" },
+                ]
+            },
                         {
                 version: "v2.8.2",
                 date: "2025-04-10",
