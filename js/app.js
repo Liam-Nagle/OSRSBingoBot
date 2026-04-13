@@ -5524,10 +5524,20 @@ async function loadAnalyticsWithFilters() {
                 }
             }
 
-            container.innerHTML = renderPBTable(records);
+            // When filtered, show the columns for whatever wasn't used as the filter
+            const showPartyCol = !!invocVal && !sizeVal;   // filtered by invoc only → show party size
+            const showInvocCol = isTOA(boss) && (!!sizeVal && !invocVal);  // filtered by party only → show invoc
+            const showBothCols = isTOA(boss) && !sizeVal && !invocVal;    // no filter, single group → show both
+
+            container.innerHTML = renderPBTable(records, {
+                showParty: showPartyCol || showBothCols,
+                showInvoc: showInvocCol || showBothCols
+            });
         };
 
-        function renderPBTable(records) {
+        function renderPBTable(records, opts) {
+            const showParty = opts && opts.showParty;
+            const showInvoc = opts && opts.showInvoc;
             const sorted = [...records].sort((a, b) => a.time_seconds - b.time_seconds);
             const medals = ['🥇', '🥈', '🥉'];
             const rowClass = i => i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : '';
@@ -5536,14 +5546,20 @@ async function loadAnalyticsWithFilters() {
             sorted.forEach((pb, i) => {
                 const medal = medals[i] || `#${i + 1}`;
                 const date = pb.timestamp ? new Date(pb.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+                const partyCell = showParty ? `<td>${pbSizeLabel(pb.party_size || 1)}</td>` : '';
+                const invocCell = showInvoc ? `<td>${pb.invocation_level != null ? pb.invocation_level : '—'}</td>` : '';
                 rows += `
                     <tr class="${rowClass(i)}">
                         <td style="text-align:center;font-size:15px;">${medal}</td>
                         <td style="font-weight:bold;font-family:monospace;">${pb.time_string || '—'}</td>
                         <td>${pb.player}</td>
+                        ${partyCell}${invocCell}
                         <td style="color:#666;font-size:12px;">${date}</td>
                     </tr>`;
             });
+
+            const partyHeader = showParty ? '<th>Party</th>' : '';
+            const invocHeader = showInvoc ? '<th>Invoc</th>' : '';
 
             return `
                 <table class="boss-contribution-table">
@@ -5551,6 +5567,7 @@ async function loadAnalyticsWithFilters() {
                         <th style="width:36px;"></th>
                         <th>Time</th>
                         <th>Player</th>
+                        ${partyHeader}${invocHeader}
                         <th>Date</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
