@@ -325,34 +325,44 @@ def parse_pb_embed(embed, message):
 
 def send_pb_to_api(player_name, boss_name, time_seconds, time_string, party_size=1, invocation_level=None, timestamp=None):
     """Send personal best to bingo board API"""
-    try:
-        response = requests.post(
-            f"{BINGO_API_BASE}/pb",
-            headers={'Content-Type': 'application/json', 'X-API-Key': DROP_API_KEY},
-            json={
-                'player': player_name,
-                'boss': boss_name,
-                'time_seconds': time_seconds,
-                'time_string': time_string,
-                'party_size': party_size,
-                'invocation_level': invocation_level,
-                'timestamp': timestamp or datetime.utcnow().isoformat()
-            },
-            timeout=5
-        )
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('duplicate'):
-                return False, True
-            if result.get('success'):
-                print(f"🏆 PB saved: {player_name} - {boss_name} {time_string}"
-                      + (f" @ invoc {invocation_level}" if invocation_level else "")
-                      + f" (party {party_size})")
-                return True, False
-        else:
-            print(f"⚠️  PB API returned status {response.status_code}")
-    except Exception as e:
-        print(f"❌ PB API error: {e}")
+    payload = {
+        'player': player_name,
+        'boss': boss_name,
+        'time_seconds': time_seconds,
+        'time_string': time_string,
+        'party_size': party_size,
+        'invocation_level': invocation_level,
+        'timestamp': timestamp or datetime.utcnow().isoformat()
+    }
+    headers = {'Content-Type': 'application/json', 'X-API-Key': DROP_API_KEY}
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                f"{BINGO_API_BASE}/pb",
+                headers=headers,
+                json=payload,
+                timeout=15
+            )
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('duplicate'):
+                    return False, True
+                if result.get('success'):
+                    print(f"🏆 PB saved: {player_name} - {boss_name} {time_string}"
+                          + (f" @ invoc {invocation_level}" if invocation_level else "")
+                          + f" (party {party_size})")
+                    return True, False
+            elif response.status_code in (502, 503, 504):
+                print(f"⚠️  PB API {response.status_code} on attempt {attempt + 1}, retrying...")
+                time.sleep(3 * (attempt + 1))
+                continue
+            else:
+                print(f"⚠️  PB API returned status {response.status_code}")
+                break
+        except Exception as e:
+            print(f"❌ PB API error (attempt {attempt + 1}): {e}")
+            if attempt < 2:
+                time.sleep(3 * (attempt + 1))
     return False, False
 
 
@@ -967,50 +977,83 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
     scanned = 0
     PROGRESS_EVERY = 5000
 
+    last_message_id = None
+    remaining = limit
+    done = False
+
     try:
-        async for message in target_channel.history(limit=limit):
-            scanned += 1
+        while not done and remaining > 0:
+            batch_size = min(remaining, 100)
+            retries = 0
+            messages = []
 
-            # Periodic progress edit so the user knows it hasn't stalled
-            if scanned % PROGRESS_EVERY == 0:
+            while retries < 5:
                 try:
-                    await progress_msg.edit(content=(
-                        f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
-                        f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
-                        f"🏆 {imported_count} imported &nbsp;·&nbsp; 🔁 {duplicates} duplicates"
-                    ))
-                except Exception:
-                    pass  # Don't crash if the edit fails for any reason
+                    kwargs = {'limit': batch_size}
+                    if last_message_id:
+                        kwargs['before'] = discord.Object(id=last_message_id)
+                    messages = [m async for m in target_channel.history(**kwargs)]
+                    break
+                except discord.HTTPException as e:
+                    if e.status in (502, 503, 504):
+                        retries += 1
+                        wait = 5 * retries
+                        print(f"⚠️  Discord {e.status} on history fetch, retry {retries}/5 in {wait}s...")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
 
-            if not (message.webhook_id and message.embeds):
-                continue
+            if not messages:
+                done = True
+                break
 
-            embed = message.embeds[0]
-            if not embed.title or "personal best" not in embed.title.lower():
-                continue
+            for message in messages:
+                scanned += 1
+                remaining -= 1
+                last_message_id = message.id
 
-            pb_data = parse_pb_embed(embed, message)
+                if scanned % PROGRESS_EVERY == 0:
+                    try:
+                        await progress_msg.edit(content=(
+                            f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
+                            f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
+                            f"🏆 {imported_count} imported &nbsp;·&nbsp; 🔁 {duplicates} duplicates"
+                        ))
+                    except Exception:
+                        pass
 
-            if not pb_data or not pb_data['player'] or pb_data['time_seconds'] is None:
-                skipped += 1
-                continue
+                if not (message.webhook_id and message.embeds):
+                    continue
 
-            success, is_dup = send_pb_to_api(
-                player_name=pb_data['player'],
-                boss_name=pb_data['boss'],
-                time_seconds=pb_data['time_seconds'],
-                time_string=pb_data['time_string'],
-                party_size=pb_data['party_size'],
-                invocation_level=pb_data.get('invocation_level'),
-                timestamp=pb_data['timestamp']
-            )
+                embed = message.embeds[0]
+                if not embed.title or "personal best" not in embed.title.lower():
+                    continue
 
-            if success:
-                imported_count += 1
-            elif is_dup:
-                duplicates += 1
+                pb_data = parse_pb_embed(embed, message)
 
-            await asyncio.sleep(0.05)
+                if not pb_data or not pb_data['player'] or pb_data['time_seconds'] is None:
+                    skipped += 1
+                    continue
+
+                success, is_dup = send_pb_to_api(
+                    player_name=pb_data['player'],
+                    boss_name=pb_data['boss'],
+                    time_seconds=pb_data['time_seconds'],
+                    time_string=pb_data['time_string'],
+                    party_size=pb_data['party_size'],
+                    invocation_level=pb_data.get('invocation_level'),
+                    timestamp=pb_data['timestamp']
+                )
+
+                if success:
+                    imported_count += 1
+                elif is_dup:
+                    duplicates += 1
+
+                await asyncio.sleep(0.05)
+
+            if len(messages) < batch_size:
+                done = True
 
         summary = f"✅ **PB Import Complete!**\n"
         summary += f"📨 Messages scanned: {scanned:,}\n"
