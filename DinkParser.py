@@ -989,12 +989,14 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
     skipped = 0
     scanned = 0
     PROGRESS_EVERY = 5000
+    collected_pbs = []  # Collect all PBs first so we can infer party sizes
 
     last_message_id = None
     remaining = limit
     done = False
 
     try:
+        # ── Pass 1: scan messages and collect PB data ──────────────────────
         while not done and remaining > 0:
             batch_size = min(remaining, 100)
             retries = 0
@@ -1030,7 +1032,7 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                         await progress_msg.edit(content=(
                             f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
                             f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
-                            f"🏆 {imported_count} imported &nbsp;·&nbsp; 🔁 {duplicates} duplicates"
+                            f"🔍 {len(collected_pbs)} found so far..."
                         ))
                     except Exception:
                         pass
@@ -1056,25 +1058,76 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                     skipped += 1
                     continue
 
-                success, is_dup = send_pb_to_api(
-                    player_name=pb_data['player'],
-                    boss_name=pb_data['boss'],
-                    time_seconds=pb_data['time_seconds'],
-                    time_string=pb_data['time_string'],
-                    party_size=pb_data['party_size'],
-                    invocation_level=pb_data.get('invocation_level'),
-                    timestamp=pb_data['timestamp']
-                )
-
-                if success:
-                    imported_count += 1
-                elif is_dup:
-                    duplicates += 1
-
-                await asyncio.sleep(0.05)
+                collected_pbs.append(pb_data)
+                await asyncio.sleep(0.02)
 
             if len(messages) < batch_size:
                 done = True
+
+        # ── Pass 2: infer party sizes from grouped PBs ────────────────────
+        # If multiple players get the exact same boss+time within 5 minutes,
+        # they were in the same raid party. Use the largest explicit party_size
+        # seen in the group, or fall back to the group's player count.
+        PARTY_WINDOW_SECONDS = 300  # 5 minutes
+
+        # Build a lookup: (boss_lower, time_string) -> list of pb_data indices
+        from collections import defaultdict
+        time_groups = defaultdict(list)
+        for idx, pb in enumerate(collected_pbs):
+            if pb['boss']:
+                key = (pb['boss'].lower(), pb['time_string'])
+                time_groups[key].append(idx)
+
+        for key, indices in time_groups.items():
+            if len(indices) < 2:
+                continue
+            # Check they all fall within the time window
+            timestamps = []
+            for idx in indices:
+                try:
+                    timestamps.append(datetime.fromisoformat(collected_pbs[idx]['timestamp'].replace('Z', '+00:00')))
+                except Exception:
+                    timestamps.append(None)
+
+            valid = [ts for ts in timestamps if ts is not None]
+            if not valid:
+                continue
+            window_ok = (max(valid) - min(valid)).total_seconds() <= PARTY_WINDOW_SECONDS
+
+            if window_ok:
+                explicit_size = max(
+                    (collected_pbs[idx].get('party_size') or 1) for idx in indices
+                )
+                inferred_size = max(explicit_size, len(indices))
+                for idx in indices:
+                    if (collected_pbs[idx].get('party_size') or 1) < inferred_size:
+                        collected_pbs[idx]['party_size'] = inferred_size
+                        print(f"[PartyInfer] {collected_pbs[idx]['player']} {key[0]} {key[1]} → party {inferred_size}")
+
+        # ── Pass 3: send all collected PBs to API ─────────────────────────
+        await progress_msg.edit(content=(
+            f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
+            f"📨 **{scanned:,}** messages scanned &nbsp;·&nbsp; "
+            f"💾 Saving {len(collected_pbs)} PBs to database..."
+        ))
+
+        for pb_data in collected_pbs:
+            success, is_dup = send_pb_to_api(
+                player_name=pb_data['player'],
+                boss_name=pb_data['boss'],
+                time_seconds=pb_data['time_seconds'],
+                time_string=pb_data['time_string'],
+                party_size=pb_data['party_size'],
+                invocation_level=pb_data.get('invocation_level'),
+                timestamp=pb_data['timestamp']
+            )
+
+            if success:
+                imported_count += 1
+            elif is_dup:
+                duplicates += 1
+
+            await asyncio.sleep(0.05)
 
         summary = f"✅ **PB Import Complete!**\n"
         summary += f"📨 Messages scanned: {scanned:,}\n"
