@@ -249,10 +249,6 @@ def parse_pb_embed(embed, message):
         'invocation_level': None
     }
 
-    # Boss name from embed author (Dink "Completion Count" format puts boss in author.name)
-    if embed.author and embed.author.name:
-        pb_info['boss'] = embed.author.name.strip()
-
     if embed.description:
         desc = embed.description
 

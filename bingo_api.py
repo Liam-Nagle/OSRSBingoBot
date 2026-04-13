@@ -1852,6 +1852,8 @@ def get_personal_bests():
         # Keep the best time per (player, boss, party_size, invocation_level) group
         best = {}
         for rec in all_records:
+            if not rec.get('boss') or not rec.get('player'):
+                continue
             key = (
                 rec['player'].lower(),
                 rec['boss'].lower(),
