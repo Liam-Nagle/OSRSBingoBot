@@ -767,12 +767,15 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
 
     if channel_id:
         try:
-            target_channel = bot.get_channel(int(channel_id))
-            if not target_channel:
-                await ctx.send(f"❌ Could not find channel with ID: {channel_id}")
-                return
+            target_channel = await bot.fetch_channel(int(channel_id))
         except ValueError:
             await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+        except discord.NotFound:
+            await ctx.send(f"❌ Channel not found: {channel_id}")
+            return
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to access that channel.")
             return
     else:
         target_channel = ctx.channel
@@ -860,12 +863,15 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
 
     if channel_id:
         try:
-            target_channel = bot.get_channel(int(channel_id))
-            if not target_channel:
-                await ctx.send(f"❌ Could not find channel with ID: {channel_id}")
-                return
+            target_channel = await bot.fetch_channel(int(channel_id))
         except ValueError:
             await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+        except discord.NotFound:
+            await ctx.send(f"❌ Channel not found: {channel_id}")
+            return
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to access that channel.")
             return
     else:
         target_channel = ctx.channel
@@ -937,12 +943,15 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
     """
     if channel_id:
         try:
-            target_channel = bot.get_channel(int(channel_id))
-            if not target_channel:
-                await ctx.send(f"❌ Could not find channel with ID: {channel_id}")
-                return
+            target_channel = await bot.fetch_channel(int(channel_id))
         except ValueError:
             await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+        except discord.NotFound:
+            await ctx.send(f"❌ Channel not found: {channel_id}")
+            return
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to access that channel.")
             return
     else:
         target_channel = ctx.channel
