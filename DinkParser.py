@@ -777,15 +777,31 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
     else:
         target_channel = ctx.channel
 
-    await ctx.send(f"🔍 Importing drop history from {target_channel.mention} (last {limit} messages)...\n"
-                   f"⚠️ **History only** - tiles will NOT be marked as complete.\n"
-                   f"This may take a while!")
+    progress_msg = await ctx.send(
+        f"🔍 Importing drop history from {target_channel.mention}...\n"
+        f"⚠️ **History only** — tiles will NOT be marked as complete.\n"
+        f"📨 Scanning up to **{limit:,}** messages — I'll update every 5,000."
+    )
 
     imported_count = 0
     duplicates = 0
+    scanned = 0
+    PROGRESS_EVERY = 5000
 
     try:
         async for message in target_channel.history(limit=limit):
+            scanned += 1
+
+            if scanned % PROGRESS_EVERY == 0:
+                try:
+                    await progress_msg.edit(content=(
+                        f"🔍 Importing drop history from {target_channel.mention}...\n"
+                        f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
+                        f"📥 {imported_count} imported &nbsp;·&nbsp; 🔁 {duplicates} duplicates"
+                    ))
+                except Exception:
+                    pass
+
             if message.webhook_id and message.embeds:
                 embed = message.embeds[0]
 
@@ -815,13 +831,14 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                             await asyncio.sleep(0.1)
 
         summary = f"✅ **History Import Complete!**\n"
+        summary += f"📨 Messages scanned: {scanned:,}\n"
         summary += f"📥 Imported: {imported_count} drops\n"
         if duplicates > 0:
             summary += f"🔁 Deduplicated: {duplicates} (Loot Drop + Collection Log pairs)\n"
         summary += f"\n✅ History populated! Check Analytics → View History"
 
-        await ctx.send(summary)
-        print(f"📊 History import complete: {imported_count} drops imported, {duplicates} deduplicated")
+        await progress_msg.edit(content=summary)
+        print(f"📊 History import complete: {scanned} scanned, {imported_count} drops imported, {duplicates} deduplicated")
 
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to read message history!")
@@ -853,13 +870,29 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
     else:
         target_channel = ctx.channel
 
-    await ctx.send(f"💀 Importing death history from {target_channel.mention} (last {limit} messages)...\n"
-                   f"This may take a while!")
+    progress_msg = await ctx.send(
+        f"💀 Importing death history from {target_channel.mention}...\n"
+        f"📨 Scanning up to **{limit:,}** messages — I'll update every 5,000."
+    )
 
     imported_count = 0
+    scanned = 0
+    PROGRESS_EVERY = 5000
 
     try:
         async for message in target_channel.history(limit=limit):
+            scanned += 1
+
+            if scanned % PROGRESS_EVERY == 0:
+                try:
+                    await progress_msg.edit(content=(
+                        f"💀 Importing death history from {target_channel.mention}...\n"
+                        f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
+                        f"💀 {imported_count} imported"
+                    ))
+                except Exception:
+                    pass
+
             if message.webhook_id and message.embeds:
                 embed = message.embeds[0]
 
@@ -879,11 +912,12 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
                         await asyncio.sleep(0.05)
 
         summary = f"✅ **Death Import Complete!**\n"
+        summary += f"📨 Messages scanned: {scanned:,}\n"
         summary += f"💀 Imported: {imported_count} deaths\n"
-        summary += f"\n Check your bingo board → 💀 Deaths button"
+        summary += f"\nCheck your bingo board → 💀 Deaths button"
 
-        await ctx.send(summary)
-        print(f"💀 Death import complete: {imported_count} deaths imported")
+        await progress_msg.edit(content=summary)
+        print(f"💀 Death import complete: {scanned} scanned, {imported_count} deaths imported")
 
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to read message history!")
@@ -897,9 +931,9 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
     Scan channel history for Personal Best notifications and backfill the PB tracker.
 
     Usage:
-      !import_pbs                    - Scan current channel (last 5000 messages)
-      !import_pbs 123456789          - Scan a specific channel by ID
-      !import_pbs 123456789 10000    - Scan last 10000 messages
+      !import_pbs                      - Scan current channel (last 5000 messages)
+      !import_pbs 123456789            - Scan a specific channel by ID
+      !import_pbs 123456789 50000      - Scan last 50000 messages
     """
     if channel_id:
         try:
@@ -913,35 +947,42 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
     else:
         target_channel = ctx.channel
 
-    await ctx.send(
-        f"🏆 Scanning {target_channel.mention} for Personal Best notifications (last {limit} messages)...\n"
-        f"This may take a while!"
+    progress_msg = await ctx.send(
+        f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
+        f"📨 Scanning up to **{limit:,}** messages — I'll update every 5,000."
     )
 
     imported_count = 0
     duplicates = 0
     skipped = 0
+    scanned = 0
+    PROGRESS_EVERY = 5000
 
     try:
         async for message in target_channel.history(limit=limit):
+            scanned += 1
+
+            # Periodic progress edit so the user knows it hasn't stalled
+            if scanned % PROGRESS_EVERY == 0:
+                try:
+                    await progress_msg.edit(content=(
+                        f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
+                        f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
+                        f"🏆 {imported_count} imported &nbsp;·&nbsp; 🔁 {duplicates} duplicates"
+                    ))
+                except Exception:
+                    pass  # Don't crash if the edit fails for any reason
+
             if not (message.webhook_id and message.embeds):
                 continue
 
             embed = message.embeds[0]
-            if not embed.title:
-                continue
-
-            if "personal best" not in embed.title.lower():
+            if not embed.title or "personal best" not in embed.title.lower():
                 continue
 
             pb_data = parse_pb_embed(embed, message)
 
-            if not pb_data or not pb_data['player']:
-                skipped += 1
-                continue
-
-            if pb_data['time_seconds'] is None:
-                # No time found - skip (can't rank without a time)
+            if not pb_data or not pb_data['player'] or pb_data['time_seconds'] is None:
                 skipped += 1
                 continue
 
@@ -963,14 +1004,15 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
             await asyncio.sleep(0.05)
 
         summary = f"✅ **PB Import Complete!**\n"
-        summary += f"🏆 Imported: {imported_count} personal bests\n"
+        summary += f"📨 Messages scanned: {scanned:,}\n"
+        summary += f"🏆 Imported: {imported_count} personal best{'' if imported_count == 1 else 's'}\n"
         if duplicates > 0:
-            summary += f"🔁 Skipped (already recorded): {duplicates}\n"
+            summary += f"🔁 Already recorded: {duplicates}\n"
         if skipped > 0:
-            summary += f"⚠️ Skipped (no time found): {skipped}\n"
+            summary += f"⚠️ Skipped (no time data): {skipped}\n"
 
-        await ctx.send(summary)
-        print(f"🏆 PB import complete: {imported_count} imported, {duplicates} duplicates, {skipped} skipped")
+        await progress_msg.edit(content=summary)
+        print(f"🏆 PB import complete: {scanned} scanned, {imported_count} imported, {duplicates} duplicates, {skipped} skipped")
 
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to read message history!")
