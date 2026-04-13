@@ -249,6 +249,10 @@ def parse_pb_embed(embed, message):
         'invocation_level': None
     }
 
+    # Boss name from embed author (Dink "Completion Count" format puts boss in author.name)
+    if embed.author and embed.author.name:
+        pb_info['boss'] = embed.author.name.strip()
+
     if embed.description:
         desc = embed.description
 
@@ -257,8 +261,11 @@ def parse_pb_embed(embed, message):
         if player_match:
             pb_info['player'] = player_match.group(1).strip()
 
-        # Time - bold (**MM:SS.ss**) preferred, then bare time
-        time_match = re.search(r'\*\*(\d+:\d{2}(?::\d{2})?(?:\.\d+)?)\*\*', desc)
+        # Time - "personal best [time] of MM:SS" (Dink Completion Count format) preferred,
+        # then bold (**MM:SS**), then bare time anywhere
+        time_match = re.search(r'personal best(?:\s+time)? of (\d+:\d{2}(?::\d{2})?(?:\.\d+)?)', desc, re.IGNORECASE)
+        if not time_match:
+            time_match = re.search(r'\*\*(\d+:\d{2}(?::\d{2})?(?:\.\d+)?)\*\*', desc)
         if not time_match:
             time_match = re.search(r'\b(\d+:\d{2}(?::\d{2})?(?:\.\d+)?)\b', desc)
         if time_match:
@@ -275,13 +282,20 @@ def parse_pb_embed(embed, message):
         if party_match:
             pb_info['party_size'] = int(party_match.group(1))
 
-        # Boss name from description: "personal best in X", "completed X", "new best at X"
-        boss_match = re.search(
-            r'(?:personal best in|new best in|new best at|completed|achievement in)\s+(?:the\s+)?(.+?)(?:\s+with|\s*:|\s+in\s+|\.|$)',
-            desc, re.IGNORECASE
-        )
-        if boss_match:
-            pb_info['boss'] = boss_match.group(1).strip()
+        # Boss name from description: "has defeated {boss} with..." (Dink Completion Count format)
+        if not pb_info['boss']:
+            defeated_match = re.search(r'has defeated (.+?)(?:\s+with\s|\n|$)', desc, re.IGNORECASE)
+            if defeated_match:
+                pb_info['boss'] = defeated_match.group(1).strip()
+
+        # Boss name fallback from description: "personal best in X", "completed X"
+        if not pb_info['boss']:
+            boss_match = re.search(
+                r'(?:personal best in|new best in|new best at|completed|achievement in)\s+(?:the\s+)?(.+?)(?:\s+with|\s*:|\s+in\s+|\.|$)',
+                desc, re.IGNORECASE
+            )
+            if boss_match:
+                pb_info['boss'] = boss_match.group(1).strip()
 
     # Boss name fallback: title suffix after " - " (e.g. "Personal Best - Tombs of Amascut")
     if not pb_info['boss'] and embed.title:
@@ -513,8 +527,11 @@ async def on_message(message):
 
             save_drop_to_file(drop_data)
 
-    # Check for Personal Best notification
-    elif embed.title and "personal best" in embed.title.lower():
+    # Check for Personal Best notification (title "Personal Best" or Dink's "Completion Count" with PB in description)
+    elif embed.title and (
+        "personal best" in embed.title.lower()
+        or ("completion count" in embed.title.lower() and "personal best" in (embed.description or '').lower())
+    ):
         pb_data = parse_pb_embed(embed, message)
         if pb_data and pb_data['player'] and pb_data['time_seconds'] is not None:
             print(f"\n{'=' * 50}")
@@ -809,8 +826,8 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                 try:
                     await progress_msg.edit(content=(
                         f"🔍 Importing drop history from {target_channel.mention}...\n"
-                        f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
-                        f"📥 {imported_count} imported &nbsp;·&nbsp; 🔁 {duplicates} duplicates"
+                        f"📨 **{scanned:,} / {limit:,}** messages scanned\n"
+                        f"📥 {imported_count} imported\n 🔁 {duplicates} duplicates"
                     ))
                 except Exception:
                     pass
@@ -1026,7 +1043,15 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                     continue
 
                 embed = message.embeds[0]
-                if not embed.title or "personal best" not in embed.title.lower():
+                if not embed.title:
+                    continue
+                title_lower = embed.title.lower()
+                desc_lower = (embed.description or '').lower()
+                is_pb = (
+                    "personal best" in title_lower
+                    or ("completion count" in title_lower and "personal best" in desc_lower)
+                )
+                if not is_pb:
                     continue
 
                 pb_data = parse_pb_embed(embed, message)
