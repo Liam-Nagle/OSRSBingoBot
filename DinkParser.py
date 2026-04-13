@@ -119,6 +119,243 @@ def send_death_to_api(player_name, npc=None, timestamp=None):
         return False
 
 
+def extract_invocation_from_image(image_url):
+    """
+    Download the Dink game screenshot and OCR the top-left corner for the TOA invocation level.
+
+    In OSRS, the invocation level is shown as white text in the top-left of the game window
+    e.g. "Level: 315". We crop that region, isolate white pixels to cut out the dark
+    background noise, then run RapidOCR (pure Python, no system binaries needed).
+    Returns int or None.
+    """
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        from PIL import Image, ImageFilter
+        import io
+        import numpy as np
+    except ImportError as e:
+        print(f"⚠️  OCR dependencies not installed ({e}) - invocation level will not be read from image")
+        return None
+
+    try:
+        resp = requests.get(image_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content)).convert('RGB')
+    except Exception as e:
+        print(f"⚠️  Could not download embed image for OCR: {e}")
+        return None
+
+    w, h = img.size
+
+    def isolate_white(pil_img):
+        """
+        Keep only near-white pixels (OSRS invocation level text colour).
+        Everything else becomes black so the dark background doesn't confuse the OCR.
+        """
+        arr = np.array(pil_img, dtype=np.uint8)
+        mask = (arr[:, :, 0] > 180) & (arr[:, :, 1] > 180) & (arr[:, :, 2] > 180)
+        out = np.zeros_like(arr)
+        out[mask] = [255, 255, 255]
+        return Image.fromarray(out, mode='RGB')
+
+    def run_ocr(pil_img):
+        """Scale 4x (NEAREST preserves pixel-font edges) then run RapidOCR."""
+        cw, ch = pil_img.size
+        pil_img = pil_img.resize((cw * 4, ch * 4), Image.NEAREST)
+        pil_img = pil_img.filter(ImageFilter.SHARPEN)
+        engine = RapidOCR()
+        result, _ = engine(np.array(pil_img))
+        # result is a list of [box, text, confidence] or None
+        if not result:
+            return ''
+        return ' '.join(item[1] for item in result)
+
+    def find_invoc(text):
+        """Match 'Level 315' or 'Level: 315'. Valid TOA range is 0–595."""
+        m = re.search(r'[Ll]evel\s*:?\s*(\d{1,3})\b', text)
+        if m:
+            val = int(m.group(1))
+            if 0 <= val <= 595:
+                return val
+        return None
+
+    # Attempt 1: tight top-left crop with white pixel isolation
+    # (~15% width, ~12% height) — this is where OSRS shows the invocation level
+    crop_w = max(int(w * 0.15), 80)
+    crop_h = max(int(h * 0.12), 40)
+    top_left = img.crop((0, 0, crop_w, crop_h))
+    text = run_ocr(isolate_white(top_left))
+    print(f"[OCR attempt 1 - top-left white] {text.strip()!r}")
+    result = find_invoc(text)
+    if result is not None:
+        return result
+
+    # Attempt 2: wider crop in case the game window is a different resolution
+    crop_w2 = max(int(w * 0.22), 120)
+    crop_h2 = max(int(h * 0.18), 60)
+    top_left2 = img.crop((0, 0, crop_w2, crop_h2))
+    text = run_ocr(isolate_white(top_left2))
+    print(f"[OCR attempt 2 - wider top-left white] {text.strip()!r}")
+    result = find_invoc(text)
+    if result is not None:
+        return result
+
+    # Attempt 3: wider crop without colour filter (catches any edge cases)
+    text = run_ocr(top_left2)
+    print(f"[OCR attempt 3 - wider top-left no filter] {text.strip()!r}")
+    result = find_invoc(text)
+    if result is not None:
+        return result
+
+    print("⚠️  OCR could not find invocation level in embed image")
+    return None
+
+
+def parse_time_to_seconds(time_str):
+    """Convert OSRS time string (H:MM:SS or MM:SS or MM:SS.ss) to total seconds"""
+    time_str = time_str.strip()
+    # H:MM:SS.ss
+    match = re.match(r'^(\d+):(\d{2}):(\d{2})(?:\.(\d+))?$', time_str)
+    if match:
+        h = int(match.group(1))
+        m = int(match.group(2))
+        s = int(match.group(3))
+        cs = int(match.group(4) or 0)
+        return h * 3600 + m * 60 + s + cs / 100
+    # MM:SS.ss or MM:SS
+    match = re.match(r'^(\d+):(\d{2})(?:\.(\d+))?$', time_str)
+    if match:
+        m = int(match.group(1))
+        s = int(match.group(2))
+        cs = int(match.group(3) or 0)
+        return m * 60 + s + cs / 100
+    return None
+
+
+def parse_pb_embed(embed, message):
+    """Parse a Personal Best or raid completion embed from Dink.
+
+    Handles two cases:
+      1. Explicit PB notification: title contains 'Personal Best'
+      2. Any raid/boss completion that includes a time field
+    """
+    pb_info = {
+        'timestamp': message.created_at.isoformat(),
+        'player': None,
+        'boss': None,
+        'time_string': None,
+        'time_seconds': None,
+        'party_size': 1,
+        'invocation_level': None
+    }
+
+    if embed.description:
+        desc = embed.description
+
+        # Player name - "PlayerName has..."
+        player_match = re.search(r'^(.+?)\s+has\b', desc, re.MULTILINE)
+        if player_match:
+            pb_info['player'] = player_match.group(1).strip()
+
+        # Time - bold (**MM:SS.ss**) preferred, then bare time
+        time_match = re.search(r'\*\*(\d+:\d{2}(?::\d{2})?(?:\.\d+)?)\*\*', desc)
+        if not time_match:
+            time_match = re.search(r'\b(\d+:\d{2}(?::\d{2})?(?:\.\d+)?)\b', desc)
+        if time_match:
+            pb_info['time_string'] = time_match.group(1)
+            pb_info['time_seconds'] = parse_time_to_seconds(pb_info['time_string'])
+
+        # Invocation level (TOA specific): "invocation level of 350"
+        inv_match = re.search(r'invocation level of (\d+)', desc, re.IGNORECASE)
+        if inv_match:
+            pb_info['invocation_level'] = int(inv_match.group(1))
+
+        # Party size from description: "party of 2" or "party size: 2"
+        party_match = re.search(r'party(?:\s+size)?(?:\s+of)?\s*:?\s*(\d+)', desc, re.IGNORECASE)
+        if party_match:
+            pb_info['party_size'] = int(party_match.group(1))
+
+        # Boss name from description: "personal best in X", "completed X", "new best at X"
+        boss_match = re.search(
+            r'(?:personal best in|new best in|new best at|completed|achievement in)\s+(?:the\s+)?(.+?)(?:\s+with|\s*:|\s+in\s+|\.|$)',
+            desc, re.IGNORECASE
+        )
+        if boss_match:
+            pb_info['boss'] = boss_match.group(1).strip()
+
+    # Boss name fallback: title suffix after " - " (e.g. "Personal Best - Tombs of Amascut")
+    if not pb_info['boss'] and embed.title:
+        parts = embed.title.split(' - ', 1)
+        if len(parts) == 2:
+            pb_info['boss'] = parts[1].strip()
+
+    # Parse embed fields
+    for field in embed.fields:
+        field_name = (field.name or '').strip()
+        field_value = (field.value or '').strip()
+
+        if re.search(r'party\s*size', field_name, re.IGNORECASE):
+            size_match = re.search(r'(\d+)', field_value)
+            if size_match:
+                pb_info['party_size'] = int(size_match.group(1))
+
+        # Some Dink versions put the time in a field
+        if re.search(r'\btime\b|\bduration\b', field_name, re.IGNORECASE) and pb_info['time_seconds'] is None:
+            t_match = re.search(r'(\d+:\d{2}(?::\d{2})?(?:\.\d+)?)', field_value)
+            if t_match:
+                pb_info['time_string'] = t_match.group(1)
+                pb_info['time_seconds'] = parse_time_to_seconds(pb_info['time_string'])
+
+    # For TOA, try to read invocation level from the embedded game screenshot via OCR.
+    # The invocation level only appears in the game UI image, not in any embed text field.
+    is_toa = pb_info['boss'] and re.search(r'tombs?\s+of\s+amascut|toa', pb_info['boss'], re.IGNORECASE)
+    if is_toa and pb_info['invocation_level'] is None:
+        image_url = None
+        if embed.image and embed.image.url:
+            image_url = embed.image.url
+        elif embed.thumbnail and embed.thumbnail.url:
+            image_url = embed.thumbnail.url
+
+        if image_url:
+            print(f"[OCR] Attempting to read invocation level from image: {image_url[:80]}...")
+            pb_info['invocation_level'] = extract_invocation_from_image(image_url)
+
+    return pb_info if pb_info['player'] else None
+
+
+def send_pb_to_api(player_name, boss_name, time_seconds, time_string, party_size=1, invocation_level=None, timestamp=None):
+    """Send personal best to bingo board API"""
+    try:
+        response = requests.post(
+            f"{BINGO_API_BASE}/pb",
+            headers={'Content-Type': 'application/json', 'X-API-Key': DROP_API_KEY},
+            json={
+                'player': player_name,
+                'boss': boss_name,
+                'time_seconds': time_seconds,
+                'time_string': time_string,
+                'party_size': party_size,
+                'invocation_level': invocation_level,
+                'timestamp': timestamp or datetime.utcnow().isoformat()
+            },
+            timeout=5
+        )
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('duplicate'):
+                return False, True
+            if result.get('success'):
+                print(f"🏆 PB saved: {player_name} - {boss_name} {time_string}"
+                      + (f" @ invoc {invocation_level}" if invocation_level else "")
+                      + f" (party {party_size})")
+                return True, False
+        else:
+            print(f"⚠️  PB API returned status {response.status_code}")
+    except Exception as e:
+        print(f"❌ PB API error: {e}")
+    return False, False
+
+
 def parse_value(value_str):
     """Convert value strings like '2.95M' to numbers"""
     if value_str.startswith('http') or value_str.startswith('HTTP'):
@@ -217,6 +454,7 @@ async def on_ready():
     print('Commands available:')
     print('  !import_history [channel_id] [limit] - Import drop history')
     print('  !import_deaths [channel_id] [limit] - Import death history')
+    print('  !import_pbs [channel_id] [limit] - Import personal best history')
     print('  !stats [player] - Show drop statistics')
 
 
@@ -264,6 +502,29 @@ async def on_message(message):
                     )
 
             save_drop_to_file(drop_data)
+
+    # Check for Personal Best notification
+    elif embed.title and "personal best" in embed.title.lower():
+        pb_data = parse_pb_embed(embed, message)
+        if pb_data and pb_data['player'] and pb_data['time_seconds'] is not None:
+            print(f"\n{'=' * 50}")
+            print(f"🏆 PERSONAL BEST DETECTED!")
+            print(f"Player: {pb_data['player']}")
+            print(f"Boss: {pb_data['boss']}")
+            print(f"Time: {pb_data['time_string']}")
+            if pb_data.get('invocation_level') is not None:
+                print(f"Invocation: {pb_data['invocation_level']}")
+            print(f"Party Size: {pb_data['party_size']}")
+            print(f"{'=' * 50}\n")
+            send_pb_to_api(
+                player_name=pb_data['player'],
+                boss_name=pb_data['boss'],
+                time_seconds=pb_data['time_seconds'],
+                time_string=pb_data['time_string'],
+                party_size=pb_data['party_size'],
+                invocation_level=pb_data.get('invocation_level'),
+                timestamp=pb_data['timestamp']
+            )
 
     # Check for Player Death
     elif embed.title and "Player Death" in embed.title:
@@ -629,6 +890,94 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
     except Exception as e:
         await ctx.send(f"❌ Error during import: {str(e)}")
         print(f"Death import error: {e}")
+
+@bot.command()
+async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
+    """
+    Scan channel history for Personal Best notifications and backfill the PB tracker.
+
+    Usage:
+      !import_pbs                    - Scan current channel (last 5000 messages)
+      !import_pbs 123456789          - Scan a specific channel by ID
+      !import_pbs 123456789 10000    - Scan last 10000 messages
+    """
+    if channel_id:
+        try:
+            target_channel = bot.get_channel(int(channel_id))
+            if not target_channel:
+                await ctx.send(f"❌ Could not find channel with ID: {channel_id}")
+                return
+        except ValueError:
+            await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+    else:
+        target_channel = ctx.channel
+
+    await ctx.send(
+        f"🏆 Scanning {target_channel.mention} for Personal Best notifications (last {limit} messages)...\n"
+        f"This may take a while!"
+    )
+
+    imported_count = 0
+    duplicates = 0
+    skipped = 0
+
+    try:
+        async for message in target_channel.history(limit=limit):
+            if not (message.webhook_id and message.embeds):
+                continue
+
+            embed = message.embeds[0]
+            if not embed.title:
+                continue
+
+            if "personal best" not in embed.title.lower():
+                continue
+
+            pb_data = parse_pb_embed(embed, message)
+
+            if not pb_data or not pb_data['player']:
+                skipped += 1
+                continue
+
+            if pb_data['time_seconds'] is None:
+                # No time found - skip (can't rank without a time)
+                skipped += 1
+                continue
+
+            success, is_dup = send_pb_to_api(
+                player_name=pb_data['player'],
+                boss_name=pb_data['boss'],
+                time_seconds=pb_data['time_seconds'],
+                time_string=pb_data['time_string'],
+                party_size=pb_data['party_size'],
+                invocation_level=pb_data.get('invocation_level'),
+                timestamp=pb_data['timestamp']
+            )
+
+            if success:
+                imported_count += 1
+            elif is_dup:
+                duplicates += 1
+
+            await asyncio.sleep(0.05)
+
+        summary = f"✅ **PB Import Complete!**\n"
+        summary += f"🏆 Imported: {imported_count} personal bests\n"
+        if duplicates > 0:
+            summary += f"🔁 Skipped (already recorded): {duplicates}\n"
+        if skipped > 0:
+            summary += f"⚠️ Skipped (no time found): {skipped}\n"
+
+        await ctx.send(summary)
+        print(f"🏆 PB import complete: {imported_count} imported, {duplicates} duplicates, {skipped} skipped")
+
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to read message history!")
+    except Exception as e:
+        await ctx.send(f"❌ Error during PB import: {str(e)}")
+        print(f"PB import error: {e}")
+
 
 # Run the bot
 if __name__ == "__main__":

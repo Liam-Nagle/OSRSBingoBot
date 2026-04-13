@@ -79,6 +79,7 @@
                 <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
                 <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
                 <button id="deathsBtn" onclick="openDeathsModal()" class="secondary">💀 Deaths</button>
+                <button id="pbsBtn" onclick="openPBsModal()" class="secondary">🏆 Personal Bests</button>
                 <button onclick="openChangelogModal()" class="secondary">📝 Changelog</button>
 
                 <!-- Login Button (Shows when not admin) -->
@@ -790,6 +791,28 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
+    <!-- Personal Bests Modal -->
+    <div class="modal" id="pbsModal">
+        <div class="modal-content" style="max-width: 1000px; max-height: 90vh; overflow-y: auto;">
+            <button onclick="closePBsModal()" class="close-btn">✕</button>
+            <h2>🏆 Personal Bests</h2>
+            <p style="color: #666; margin-bottom: 20px;">Fastest recorded times per boss, grouped by category</p>
+
+            <!-- Loading -->
+            <div id="pbsLoading" style="text-align:center; padding:60px;">
+                <div style="font-size:48px; margin-bottom:20px;">⏳</div>
+                <div style="color:#2c1810; font-weight:bold; font-size:18px;">Loading personal bests...</div>
+            </div>
+
+            <!-- Content -->
+            <div id="pbsContent" style="display:none;"></div>
+
+            <div class="modal-buttons" style="margin-top:20px;">
+                <button class="btn-save" onclick="loadPBs()">🔄 Refresh</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Player KC Detail Modal -->
     <div class="modal" id="playerKCDetailModal">
         <div class="modal-content" style="max-width: 600px; max-height: 80vh;">
@@ -882,10 +905,30 @@ Dragon warhammer"></textarea>
     </div>
 
 
+    <!-- Drilldown Results Panel (appears on top of analytics) -->
+    <div id="drilldownPanel" class="modal" style="z-index: 10003;">
+        <div class="modal-content" style="max-width: 860px; width: 92vw; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; padding: 24px 28px 20px;">
+            <button onclick="closeDrilldownPanel()" class="close-btn">✕</button>
+
+            <!-- Header -->
+            <div style="flex-shrink: 0; padding-right: 36px; margin-bottom: 14px;">
+                <h2 id="drilldownPanelTitle" style="color: #2c1810; margin: 0 0 4px 0; font-size: 20px; font-weight: bold;"></h2>
+                <div id="drilldownPanelMeta" style="font-size: 13px; color: #666; font-weight: 500;"></div>
+            </div>
+
+            <!-- Active Filters -->
+            <div id="drilldownPanelFilters" style="flex-shrink: 0; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 7px;"></div>
+
+            <!-- Drop list -->
+            <div id="drilldownPanelContent" style="overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
+            </div>
+        </div>
+    </div>
+
     <!-- Chart.js Library (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
     <!-- External JavaScript -->
-    <script src="js/app.js?v=2.1"></script>
+    <script src="js/app.js?v=2.2"></script>
 </body>
 </html>

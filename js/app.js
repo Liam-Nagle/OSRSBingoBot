@@ -1729,6 +1729,8 @@
                              data-player="${record.player}"
                              data-type="${record.drop_type || 'loot'}"
                              data-item="${record.item}"
+                             data-dayofweek="${timestamp.getDay()}"
+                             data-hour="${timestamp.getHours()}"
                              data-value="${record.value || 0}">
                             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
                                 <div style="flex: 1;">
@@ -1879,6 +1881,136 @@
                 if (chart) chart.destroy();
             });
             analyticsCharts = {};
+        }
+
+        // Open a compact drilldown panel on top of analytics showing filtered drops
+        async function openHistoryFromChart({ dateStart = null, dateEnd = null, player = null, itemSearch = null, dayOfWeek = null, hour = null } = {}) {
+            const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+            // Build human-readable title
+            const titleParts = [];
+            if (player) titleParts.push(`by ${player}`);
+            if (dayOfWeek !== null) titleParts.push(`on ${dayNames[dayOfWeek]}s`);
+            if (hour !== null) {
+                const h = hour;
+                const label = h === 0 ? '12AM' : h < 12 ? `${h}AM` : h === 12 ? '12PM' : `${h - 12}PM`;
+                titleParts.push(`at ${label}`);
+            }
+            if (dateStart && dateEnd) {
+                if (dateStart === dateEnd) {
+                    const d = new Date(dateStart + 'T12:00:00');
+                    titleParts.push(`on ${d.getDate()} ${monthNames[d.getMonth()]} ${d.getFullYear()}`);
+                } else {
+                    const ds = new Date(dateStart + 'T12:00:00');
+                    titleParts.push(`in ${monthNames[ds.getMonth()]} ${ds.getFullYear()}`);
+                }
+            }
+            if (itemSearch) titleParts.push(`— "${itemSearch}"`);
+
+            const title = `📊 Drops ${titleParts.join(' ')}`.trim();
+
+            // Show panel immediately with loading state
+            document.getElementById('drilldownPanelTitle').textContent = title;
+            document.getElementById('drilldownPanelMeta').textContent = '';
+            document.getElementById('drilldownPanelContent').innerHTML = '<div style="text-align:center;padding:30px;color:#666;">Loading...</div>';
+            document.getElementById('drilldownPanel').classList.add('active');
+
+            // Read current analytics filters
+            const analyticsType = document.getElementById('analyticsTypeFilter')?.value || '';
+            const analyticsValue = parseInt(document.getElementById('analyticsValueFilter')?.value || '0');
+            const analyticsSearch = document.getElementById('analyticsSearchFilter')?.value || '';
+
+            // Build API query
+            const params = new URLSearchParams({ limit: 1000 });
+            if (analyticsType) params.append('type', analyticsType);
+            if (analyticsValue > 0) params.append('minValue', analyticsValue);
+            const effectiveSearch = itemSearch || analyticsSearch;
+            if (effectiveSearch) params.append('search', effectiveSearch);
+
+            // Player: chart-specific player, or the single selected analytics player
+            const singleAnalyticsPlayer = analyticsSelectedPlayers.length === 1 ? analyticsSelectedPlayers[0] : null;
+            const targetPlayer = player || singleAnalyticsPlayer;
+            if (targetPlayer) params.append('player', targetPlayer);
+
+            if (dateStart) params.append('start_date', `${dateStart}T00:00:00Z`);
+            if (dateEnd) params.append('end_date', `${dateEnd}T23:59:59Z`);
+
+            try {
+                const response = await fetch(`${API_URL}/history?${params}`);
+                const data = await response.json();
+
+                let drops = (data.history || []).map(d => ({ ...d, timestamp: new Date(d.timestamp) }));
+
+                // Client-side filters (day-of-week and hour have no API equivalent)
+                if (dayOfWeek !== null) drops = drops.filter(d => d.timestamp.getDay() === dayOfWeek);
+                if (hour !== null) drops = drops.filter(d => d.timestamp.getHours() === hour);
+                // Multi-player filter when several analytics players are selected
+                if (analyticsSelectedPlayers.length > 1) {
+                    drops = drops.filter(d => analyticsSelectedPlayers.includes(d.player));
+                }
+
+                // Build context line
+                const filterCtx = [];
+                if (analyticsType) filterCtx.push(analyticsType === 'loot' ? 'Loot only' : 'Collection Log only');
+                if (analyticsValue > 0) {
+                    const fmt = analyticsValue >= 1000000 ? `${analyticsValue / 1000000}M+` : `${analyticsValue / 1000}K+`;
+                    filterCtx.push(`≥${fmt}`);
+                }
+                if (analyticsSelectedPlayers.length > 1) filterCtx.push(`Players: ${analyticsSelectedPlayers.join(', ')}`);
+
+                const metaEl = document.getElementById('drilldownPanelMeta');
+                metaEl.innerHTML = `<strong style="color:#2c1810;">${drops.length} drop${drops.length !== 1 ? 's' : ''}</strong>${filterCtx.length ? ' &nbsp;·&nbsp; <span style="color:#8B6914;">' + filterCtx.join(' · ') + '</span>' : ''}`;
+
+                if (drops.length === 0) {
+                    document.getElementById('drilldownPanelContent').innerHTML = '<div style="text-align:center;padding:30px;color:#666;">No drops found for this selection.</div>';
+                    return;
+                }
+
+                let html = '';
+                drops.forEach(record => {
+                    const timeAgo = getTimeAgo(record.timestamp);
+                    const dateStr = record.timestamp.toLocaleDateString();
+                    const timeStr = record.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    let valueDisplay = '';
+                    const v = record.value || 0;
+                    if (v > 0) {
+                        if (v >= 1000000) valueDisplay = `<span style="color:#4CAF50;font-weight:bold;margin-left:6px;">(${(v / 1000000).toFixed(2)}M gp)</span>`;
+                        else if (v >= 1000) valueDisplay = `<span style="color:#4CAF50;font-weight:bold;margin-left:6px;">(${(v / 1000).toFixed(0)}K gp)</span>`;
+                        else valueDisplay = `<span style="color:#4CAF50;font-weight:bold;margin-left:6px;">(${v.toLocaleString()} gp)</span>`;
+                    }
+
+                    const clBadge = record.drop_type === 'collection_log'
+                        ? '<span style="background:#4CAF50;color:white;padding:1px 5px;border-radius:3px;font-size:10px;margin-left:5px;font-weight:bold;">CL</span>'
+                        : '';
+
+                    html += `
+                        <div style="background:white;padding:9px 12px;border-radius:5px;margin-bottom:7px;border-left:4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};">
+                            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                                <div style="flex:1;min-width:0;">
+                                    <strong style="color:#ffcc33;background:#2c1810;padding:2px 7px;border-radius:3px;font-size:12px;">${record.player}</strong>
+                                    <span style="color:#555;margin:0 6px;font-size:12px;">→</span>
+                                    <strong style="color:#cd8b2d;font-size:13px;">${record.item}</strong>
+                                    ${clBadge}${valueDisplay}
+                                </div>
+                                <div style="text-align:right;font-size:10px;color:#888;white-space:nowrap;flex-shrink:0;">
+                                    <div>${timeAgo}</div>
+                                    <div>${dateStr} ${timeStr}</div>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+
+                document.getElementById('drilldownPanelContent').innerHTML = html;
+            } catch (err) {
+                console.error('Drilldown error:', err);
+                document.getElementById('drilldownPanelContent').innerHTML = '<div style="text-align:center;padding:30px;color:#8b1a1a;">❌ Failed to load drops.</div>';
+            }
+        }
+
+        function closeDrilldownPanel() {
+            document.getElementById('drilldownPanel').classList.remove('active');
         }
 
         // Bonus Overlay Toggle
@@ -2074,8 +2206,13 @@
             // Add cursor pointer style
             canvas.style.cursor = 'pointer';
 
-            // Add click handler
-            canvas.onclick = function() {
+            // Only expand when clicking on empty chart space — element clicks are handled by chart's onClick drilldown
+            canvas.onclick = function(e) {
+                const chart = Chart.getChart(canvas);
+                if (chart) {
+                    const elements = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, false);
+                    if (elements.length > 0) return; // drilldown onClick will handle it
+                }
                 expandChart(chartId, chartTitle);
             };
         }
@@ -2134,6 +2271,78 @@
             // Create expanded chart
             const ctx = expandedCanvas.getContext('2d');
             expandedChartInstance = new Chart(ctx, config);
+
+            // Re-attach drilldown click handlers (stripped by JSON cloning)
+            attachDrilldownToExpandedChart(expandedChartInstance, chartId);
+        }
+
+        // Re-attach chart drilldown onClick/onHover after JSON-cloning strips them
+        function attachDrilldownToExpandedChart(chartInstance, chartId) {
+            let clickHandler = null;
+
+            switch (chartId) {
+                case 'dropsPerDayChart':
+                    clickHandler = (elements, chart) => {
+                        if (!elements.length) return;
+                        const label = chart.data.labels[elements[0].index];
+                        const dateStr = window._drilldownDateMap?.[label];
+                        if (dateStr) openHistoryFromChart({ dateStart: dateStr, dateEnd: dateStr });
+                    };
+                    break;
+                case 'dayOfWeekChart':
+                    clickHandler = (elements) => {
+                        if (!elements.length) return;
+                        openHistoryFromChart({ dayOfWeek: elements[0].index });
+                    };
+                    break;
+                case 'hourHeatmapChart':
+                    clickHandler = (elements) => {
+                        if (!elements.length) return;
+                        openHistoryFromChart({ hour: elements[0].index });
+                    };
+                    break;
+                case 'playerActivityChart':
+                    clickHandler = (elements, chart) => {
+                        if (!elements.length) return;
+                        openHistoryFromChart({ player: chart.data.labels[elements[0].index] });
+                    };
+                    break;
+                case 'monthComparisonChart':
+                    clickHandler = (elements, chart) => {
+                        if (!elements.length) return;
+                        const label = chart.data.labels[elements[0].index];
+                        const monthKey = window._drilldownMonthMap?.[label];
+                        if (monthKey) {
+                            const [year, month] = monthKey.split('-');
+                            const startDate = `${year}-${month}-01`;
+                            const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+                            openHistoryFromChart({ dateStart: startDate, dateEnd: `${year}-${month}-${String(lastDay).padStart(2, '0')}` });
+                        }
+                    };
+                    break;
+                case 'topItemsChart': {
+                    const chartTitle = chartInstance.options?.plugins?.title?.text || '';
+                    if (chartTitle.startsWith('Top Items') || chartTitle === '') {
+                        clickHandler = (elements, chart) => {
+                            if (!elements.length) return;
+                            openHistoryFromChart({ itemSearch: chart.data.labels[elements[0].index] });
+                        };
+                    } else {
+                        clickHandler = (elements, chart) => {
+                            if (!elements.length) return;
+                            openHistoryFromChart({ player: chart.data.labels[elements[0].index] });
+                        };
+                    }
+                    break;
+                }
+            }
+
+            if (clickHandler) {
+                chartInstance.options.onClick = (event, elements, chart) => clickHandler(elements, chart);
+                chartInstance.options.onHover = (event, elements) => {
+                    if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                };
+            }
         }
 
         function closeExpandedChart() {
@@ -2769,9 +2978,17 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
 
             const data = last30Days.map(d => dayCounts[d]);
             const labels = last30Days.map(d => {
-                const date = new Date(d);
+                const date = new Date(d + 'T12:00:00');
                 return `${date.getMonth() + 1}/${date.getDate()}`;
             });
+
+            // Build label → date string map for drilldown (also stored globally for expanded chart)
+            const dateMap = {};
+            last30Days.forEach(d => {
+                const date = new Date(d + 'T12:00:00');
+                dateMap[`${date.getMonth() + 1}/${date.getDate()}`] = d;
+            });
+            window._drilldownDateMap = dateMap;
 
             if (analyticsCharts.dropsPerDay) analyticsCharts.dropsPerDay.destroy();
 
@@ -2799,6 +3016,15 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements, chart) => {
+                        if (!elements.length) return;
+                        const label = chart.data.labels[elements[0].index];
+                        const dateStr = dateMap[label];
+                        if (dateStr) openHistoryFromChart({ dateStart: dateStr, dateEnd: dateStr });
                     }
                 }
             });
@@ -2839,6 +3065,13 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements) => {
+                        if (!elements.length) return;
+                        openHistoryFromChart({ dayOfWeek: elements[0].index });
                     }
                 }
             });
@@ -2888,6 +3121,13 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements) => {
+                        if (!elements.length) return;
+                        openHistoryFromChart({ hour: elements[0].index });
                     }
                 }
             });
@@ -2931,6 +3171,14 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements, chart) => {
+                        if (!elements.length) return;
+                        const player = chart.data.labels[elements[0].index];
+                        openHistoryFromChart({ player: player });
                     }
                 }
             });
@@ -2955,6 +3203,14 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                 const [year, month] = m[0].split('-');
                 return `${monthNames[parseInt(month) - 1]} ${year.substring(2)}`;
             });
+
+            // Build label → month key map for drilldown (also stored globally for expanded chart)
+            const monthKeyMap = {};
+            sortedMonths.forEach(m => {
+                const [year, month] = m[0].split('-');
+                monthKeyMap[`${monthNames[parseInt(month) - 1]} ${year.substring(2)}`] = m[0];
+            });
+            window._drilldownMonthMap = monthKeyMap;
 
             if (analyticsCharts.monthComparison) analyticsCharts.monthComparison.destroy();
 
@@ -2981,6 +3237,21 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                         y: {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
+                        }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements, chart) => {
+                        if (!elements.length) return;
+                        const label = chart.data.labels[elements[0].index];
+                        const monthKey = monthKeyMap[label];
+                        if (monthKey) {
+                            const [year, month] = monthKey.split('-');
+                            const startDate = `${year}-${month}-01`;
+                            const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+                            const endDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+                            openHistoryFromChart({ dateStart: startDate, dateEnd: endDate });
                         }
                     }
                 }
@@ -3026,6 +3297,14 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                                 font: { size: 11 }
                             }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements, chart) => {
+                        if (!elements.length) return;
+                        const itemName = chart.data.labels[elements[0].index];
+                        openHistoryFromChart({ itemSearch: itemName });
                     }
                 }
             });
@@ -3374,9 +3653,17 @@ async function loadAnalyticsWithFilters() {
             }
 
             const labels = last30Days.map(d => {
-                const date = new Date(d);
+                const date = new Date(d + 'T12:00:00');
                 return `${date.getMonth() + 1}/${date.getDate()}`;
             });
+
+            // Build label → date string map for drilldown (also stored globally for expanded chart)
+            const dateMap = {};
+            last30Days.forEach(d => {
+                const date = new Date(d + 'T12:00:00');
+                dateMap[`${date.getMonth() + 1}/${date.getDate()}`] = d;
+            });
+            window._drilldownDateMap = dateMap;
 
             // Create datasets for each player
             const datasets = players.map(player => {
@@ -3438,6 +3725,15 @@ async function loadAnalyticsWithFilters() {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements, chart) => {
+                        if (!elements.length) return;
+                        const label = chart.data.labels[elements[0].index];
+                        const dateStr = dateMap[label];
+                        if (dateStr) openHistoryFromChart({ dateStart: dateStr, dateEnd: dateStr });
                     }
                 }
             });
@@ -3562,6 +3858,14 @@ async function loadAnalyticsWithFilters() {
                                 text: `Top Items - ${players[0]}`,
                                 font: { size: 14, weight: 'bold' }
                             }
+                        },
+                        onHover: (event, elements) => {
+                            if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                        },
+                        onClick: (event, elements, chart) => {
+                            if (!elements.length) return;
+                            const itemName = chart.data.labels[elements[0].index];
+                            openHistoryFromChart({ itemSearch: itemName });
                         }
                     }
                 });
@@ -3605,6 +3909,14 @@ async function loadAnalyticsWithFilters() {
                                 text: 'Total Drops by Player',
                                 font: { size: 14, weight: 'bold' }
                             }
+                        },
+                        onHover: (event, elements) => {
+                            if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                        },
+                        onClick: (event, elements, chart) => {
+                            if (!elements.length) return;
+                            const player = chart.data.labels[elements[0].index];
+                            openHistoryFromChart({ player: player });
                         }
                     }
                 });
@@ -3676,6 +3988,13 @@ async function loadAnalyticsWithFilters() {
                                 font: { size: 9 }
                             }
                         }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements) => {
+                        if (!elements.length) return;
+                        openHistoryFromChart({ hour: elements[0].index });
                     }
                 }
             });
@@ -5000,15 +5319,212 @@ async function loadAnalyticsWithFilters() {
         }
 
         // ============================================
+        // PERSONAL BESTS MODAL
+        // ============================================
+
+        function openPBsModal() {
+            document.getElementById('pbsModal').classList.add('active');
+            loadPBs();
+        }
+
+        function closePBsModal() {
+            document.getElementById('pbsModal').classList.remove('active');
+        }
+
+        async function loadPBs() {
+            const loadingDiv = document.getElementById('pbsLoading');
+            const contentDiv = document.getElementById('pbsContent');
+
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+            contentDiv.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_URL}/pbs`);
+                const data = await response.json();
+                const pbs = data.personal_bests || [];
+
+                if (pbs.length === 0) {
+                    contentDiv.innerHTML = '<div style="text-align:center;padding:60px;color:#666;">No personal bests recorded yet.<br><br>Use <strong>!import_pbs</strong> in Discord to backfill from history.</div>';
+                    loadingDiv.style.display = 'none';
+                    contentDiv.style.display = 'block';
+                    return;
+                }
+
+                // Group by boss name
+                const byBoss = {};
+                pbs.forEach(pb => {
+                    const boss = pb.boss || 'Unknown';
+                    if (!byBoss[boss]) byBoss[boss] = [];
+                    byBoss[boss].push(pb);
+                });
+
+                const isTOA = name => /tombs?\s+of\s+amascut|toa/i.test(name);
+
+                let html = '';
+                Object.keys(byBoss).sort().forEach(boss => {
+                    const records = byBoss[boss];
+                    html += `<div style="margin-bottom:28px;">`;
+                    html += `<h3 style="color:#2c1810;margin:0 0 12px 0;font-size:18px;border-bottom:2px solid #cd8b2d;padding-bottom:6px;">🏆 ${boss}</h3>`;
+
+                    if (isTOA(boss)) {
+                        // For TOA: group by (invocation_level, party_size)
+                        const groups = {};
+                        records.forEach(pb => {
+                            const invoc = pb.invocation_level != null ? pb.invocation_level : '?';
+                            const size = pb.party_size || 1;
+                            const key = `${String(invoc).padStart(4,'0')}_${size}`;
+                            if (!groups[key]) groups[key] = { invoc, size, pbs: [] };
+                            groups[key].pbs.push(pb);
+                        });
+
+                        Object.keys(groups).sort().forEach(key => {
+                            const { invoc, size, pbs: groupPbs } = groups[key];
+                            const sizeLabel = size === 1 ? 'Solo' : size === 2 ? 'Duo' : size === 3 ? 'Trio' : `${size}-man`;
+                            const invocLabel = invoc === '?' ? 'Unknown Invocation' : `Invocation ${invoc}`;
+                            html += `<div style="margin-bottom:16px;">`;
+                            html += `<div style="font-weight:bold;color:#8B6914;margin-bottom:8px;font-size:14px;">⚔️ ${sizeLabel} · ${invocLabel}</div>`;
+                            html += renderPBTable(groupPbs);
+                            html += `</div>`;
+                        });
+                    } else {
+                        // For non-TOA: group by party_size
+                        const groups = {};
+                        records.forEach(pb => {
+                            const size = pb.party_size || 1;
+                            if (!groups[size]) groups[size] = [];
+                            groups[size].push(pb);
+                        });
+
+                        const sizes = Object.keys(groups).map(Number).sort((a, b) => a - b);
+                        if (sizes.length === 1 && sizes[0] === 1) {
+                            // Only solo records — skip the size heading
+                            html += renderPBTable(groups[1]);
+                        } else {
+                            sizes.forEach(size => {
+                                const sizeLabel = size === 1 ? 'Solo' : size === 2 ? 'Duo' : size === 3 ? 'Trio' : `${size}-man`;
+                                html += `<div style="margin-bottom:16px;">`;
+                                html += `<div style="font-weight:bold;color:#8B6914;margin-bottom:8px;font-size:14px;">👥 ${sizeLabel}</div>`;
+                                html += renderPBTable(groups[size]);
+                                html += `</div>`;
+                            });
+                        }
+                    }
+
+                    html += `</div>`;
+                });
+
+                contentDiv.innerHTML = html;
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+
+            } catch (err) {
+                console.error('PB load error:', err);
+                contentDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#8b1a1a;">❌ Failed to load personal bests.</div>';
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+            }
+        }
+
+        function renderPBTable(records) {
+            // Sort by time ascending (fastest first)
+            const sorted = [...records].sort((a, b) => a.time_seconds - b.time_seconds);
+            const medals = ['🥇', '🥈', '🥉'];
+
+            let html = '<div style="background:rgba(255,255,255,0.9);border:1px solid #ddd;border-radius:6px;overflow:hidden;">';
+            html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+            html += '<thead><tr style="background:#2c1810;color:white;">';
+            html += '<th style="padding:8px 10px;text-align:left;width:36px;"></th>';
+            html += '<th style="padding:8px 10px;text-align:left;">Time</th>';
+            html += '<th style="padding:8px 10px;text-align:left;">Player</th>';
+            html += '<th style="padding:8px 10px;text-align:left;">Date</th>';
+            html += '</tr></thead><tbody>';
+
+            sorted.forEach((pb, i) => {
+                const medal = medals[i] || `#${i + 1}`;
+                const date = pb.timestamp ? new Date(pb.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+                const rowBg = i === 0 ? 'background:rgba(255,215,0,0.1);' : i % 2 === 0 ? 'background:#fafafa;' : '';
+                html += `<tr style="${rowBg}border-bottom:1px solid #eee;">`;
+                html += `<td style="padding:8px 10px;text-align:center;font-size:16px;">${medal}</td>`;
+                html += `<td style="padding:8px 10px;font-weight:bold;color:#2c1810;font-family:monospace;font-size:14px;">${pb.time_string || '—'}</td>`;
+                html += `<td style="padding:8px 10px;"><span style="background:#2c1810;color:#ffcc33;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:bold;">${pb.player}</span></td>`;
+                html += `<td style="padding:8px 10px;color:#888;font-size:12px;">${date}</td>`;
+                html += `</tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            return html;
+        }
+
+        // ============================================
         // CHANGELOG MODAL
         // ============================================
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+                        {
+                version: "v2.8.2",
+                date: "2025-04-10",
+                title: "Button styling",
+                changes: [
+                    { type: "improvement", text: "Fixed button styling in Boss KC" },
+                ]
+            },
+                       {
+                version: "v2.8.1",
+                date: "2025-04-10",
+                title: "Moo",
+                changes: [
+                    { type: "fix", text: "Removed Brutus from all time 'effort' - It's not a boss." },
+                ]
+            },
+                      {
+                version: "v2.8.0",
+                date: "2025-04-09",
+                title: "Boss KC updates",
+                changes: [
+                    { type: "feature", text: "Added a new all time section for Boss KC" },
+                    { type: "feature", text: "Added a 'contribution' section (Thanks Jordan)" },
+                ]
+            },
+                     {
+                version: "v2.7.0",
+                date: "2025-03-27",
+                title: "Leaderboard filtering",
+                changes: [
+                    { type: "feature", text: "Leaderboard can now be clicked to filter by that player" },
+                ]
+            },
+                                {
+                version: "v2.6.2",
+                date: "2025-02-06",
+                title: "GIM Widget proxy issues",
+                changes: [
+                    { type: "fix", text: "Fixed GIM widget not correctly pulling data. Proxy issue." },
+                    { type: "fix", text: "Moved GIM widget to Github actions for highscore data pulling" },
+                ]
+            },
+                        {
+                version: "v2.6.2",
+                date: "2025-01-26",
+                title: "Event timer and GIM widget improvements.",
+                changes: [
+                    { type: "improvement", text: "More event timer styling and GIM widget styling + positioning." },
+                ]
+            },
+                {
+                version: "v2.6.1",
+                date: "2025-01-21",
+                title: "Event timer added.",
+                changes: [
+                    { type: "fix", text: "Fixed event timer not displaying correctly." },
+                    { type: "improvement", text: "Event timer styling." },
+                ]
+            },
                             {
                 version: "v2.6.0",
                 date: "2025-01-21",
-                title: "Added Boss Breakdown in Deaths statistics",
+                title: "Added an event timer. Configureable on the admin panel",
                 changes: [
                     { type: "feature", text: "Added an event timer. Configure on the admin panel" },
                 ]
@@ -5016,7 +5532,7 @@ async function loadAnalyticsWithFilters() {
                             {
                 version: "v2.5.0",
                 date: "2025-01-21",
-                title: "Added Boss Breakdown in Deaths statistics",
+                title: "Added shuffle functionality",
                 changes: [
                     { type: "feature", text: "Added the ability for admin to shuffle and undo shuffle the bingo board" },
                 ]
@@ -5024,7 +5540,7 @@ async function loadAnalyticsWithFilters() {
                             {
                 version: "v2.4.1",
                 date: "2025-01-13",
-                title: "Added Boss Breakdown in Deaths statistics",
+                title: "Fixed deaths and KC modal",
                 changes: [
                     { type: "fix", text: "Fixed deaths modal with bosses. Wasn't displaying some things correctly" },
                     { type: "fix", text: "Fixed Boss KC modal not having an X button" },
@@ -6052,6 +6568,24 @@ function startEventCountdown(config) {
         // Run this when the page loads
         document.addEventListener('DOMContentLoaded', function() {
             addCloseButtonsToModals();
+
+            // Close any modal by clicking on the backdrop (outside the modal-content box)
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        const closeBtn = this.querySelector('.close-btn');
+                        if (closeBtn) closeBtn.click();
+                    }
+                });
+            });
+
+            // Also handle the expanded chart overlay (uses inline display, not .modal class)
+            const expandedOverlay = document.getElementById('expandedChartOverlay');
+            if (expandedOverlay) {
+                expandedOverlay.addEventListener('click', function(e) {
+                    if (e.target === this) closeExpandedChart();
+                });
+            }
         });
 
         (async () => {

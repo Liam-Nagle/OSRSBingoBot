@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 import requests
@@ -113,7 +114,8 @@ def get_tenant_collections(tenant_id=None):
         'history': db[f'tenant_{subdomain}_history'],
         'deaths': db[f'tenant_{subdomain}_deaths'],
         'rank_history': db[f'tenant_{subdomain}_rank_history'],
-        'kc': db[f'tenant_{subdomain}_kc']
+        'kc': db[f'tenant_{subdomain}_kc'],
+        'personal_bests': db[f'tenant_{subdomain}_personal_bests']
     }
 
 
@@ -1758,6 +1760,116 @@ def get_deaths_by_player_npc():
     except Exception as e:
         return jsonify({'error': f'Failed to get player-NPC deaths: {str(e)}'}), 500
 
+
+
+@app.route('/pb', methods=['POST'])
+def record_pb():
+    """Record a personal best from the Discord bot"""
+    data = request.json
+    player_name = data.get('player')
+    boss_name = data.get('boss')
+    time_seconds = data.get('time_seconds')
+    time_string = data.get('time_string', '')
+    party_size = data.get('party_size', 1)
+    invocation_level = data.get('invocation_level')  # TOA only, None for other bosses
+    timestamp = data.get('timestamp', datetime.utcnow().isoformat())
+
+    if not player_name or not boss_name or time_seconds is None:
+        return jsonify({'error': 'Missing player, boss, or time'}), 400
+
+    # Verify API key
+    api_key = request.headers.get('X-API-Key')
+    if api_key != DROP_API_KEY:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    try:
+        ts = datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp, str) else timestamp
+
+        # Check for exact duplicate (same player, boss, time, party size, invocation, within 10s)
+        existing = collections['personal_bests'].find_one({
+            'player': player_name,
+            'boss': boss_name,
+            'time_seconds': time_seconds,
+            'party_size': party_size,
+            'invocation_level': invocation_level
+        })
+        if existing:
+            return jsonify({'success': True, 'duplicate': True, 'message': 'PB already recorded'})
+
+        collections['personal_bests'].insert_one({
+            'player': player_name,
+            'boss': boss_name,
+            'time_seconds': time_seconds,
+            'time_string': time_string,
+            'party_size': party_size,
+            'invocation_level': invocation_level,
+            'timestamp': ts
+        })
+
+        print(f"[PB] {player_name} - {boss_name} in {time_string}"
+              + (f" @ {invocation_level} invocations" if invocation_level else "")
+              + f" (party: {party_size})")
+
+        return jsonify({'success': True, 'message': f'PB recorded: {player_name} - {boss_name} {time_string}'})
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to save PB: {str(e)}'}), 500
+
+
+@app.route('/pbs', methods=['GET'])
+def get_personal_bests():
+    """
+    Get personal bests.
+    Query params: player, boss
+    Returns the current best (fastest) time per (player, boss, party_size, invocation_level) group.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    player_filter = request.args.get('player')
+    boss_filter = request.args.get('boss')
+
+    try:
+        query = {}
+        if player_filter:
+            query['player'] = {'$regex': f'^{re.escape(player_filter)}$', '$options': 'i'}
+        if boss_filter:
+            query['boss'] = {'$regex': boss_filter, '$options': 'i'}
+
+        all_records = list(collections['personal_bests'].find(query, {'_id': 0}).sort('time_seconds', 1))
+
+        # Keep the best time per (player, boss, party_size, invocation_level) group
+        best = {}
+        for rec in all_records:
+            key = (
+                rec['player'].lower(),
+                rec['boss'].lower(),
+                rec.get('party_size', 1),
+                rec.get('invocation_level')
+            )
+            if key not in best or rec['time_seconds'] < best[key]['time_seconds']:
+                # Convert timestamp to ISO string for JSON serialisation
+                if hasattr(rec.get('timestamp'), 'isoformat'):
+                    rec['timestamp'] = rec['timestamp'].isoformat()
+                best[key] = rec
+
+        result = sorted(best.values(), key=lambda x: (x['boss'].lower(), x.get('invocation_level') or 0, x['time_seconds']))
+
+        return jsonify({'success': True, 'personal_bests': result})
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to fetch PBs: {str(e)}'}), 500
 
 
 @app.route('/manual-override', methods=['POST'])
