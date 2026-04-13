@@ -5358,6 +5358,8 @@ async function loadAnalyticsWithFilters() {
             document.getElementById('pbsModal').classList.remove('active');
         }
 
+        let _pbData = {};  // boss -> list of records, kept in memory for dropdowns
+
         async function loadPBs() {
             const loadingDiv = document.getElementById('pbsLoading');
             const contentDiv = document.getElementById('pbsContent');
@@ -5379,67 +5381,36 @@ async function loadAnalyticsWithFilters() {
                 }
 
                 // Group by boss name
-                const byBoss = {};
+                _pbData = {};
                 pbs.forEach(pb => {
                     const boss = pb.boss || 'Unknown';
-                    if (!byBoss[boss]) byBoss[boss] = [];
-                    byBoss[boss].push(pb);
+                    if (!_pbData[boss]) _pbData[boss] = [];
+                    _pbData[boss].push(pb);
                 });
 
-                const isTOA = name => /tombs?\s+of\s+amascut|toa/i.test(name);
+                const sortedBosses = Object.keys(_pbData).sort();
 
-                let html = '';
-                Object.keys(byBoss).sort().forEach(boss => {
-                    const records = byBoss[boss];
-                    html += `<div style="margin-bottom:28px;">`;
-                    html += `<h3 style="color:#2c1810;margin:0 0 12px 0;font-size:18px;border-bottom:2px solid #cd8b2d;padding-bottom:6px;">🏆 ${boss}</h3>`;
-
-                    if (isTOA(boss)) {
-                        // For TOA: group by (invocation_level, party_size)
-                        const groups = {};
-                        records.forEach(pb => {
-                            const invoc = pb.invocation_level != null ? pb.invocation_level : '?';
-                            const size = pb.party_size || 1;
-                            const key = `${String(invoc).padStart(4,'0')}_${size}`;
-                            if (!groups[key]) groups[key] = { invoc, size, pbs: [] };
-                            groups[key].pbs.push(pb);
-                        });
-
-                        Object.keys(groups).sort().forEach(key => {
-                            const { invoc, size, pbs: groupPbs } = groups[key];
-                            const sizeLabel = size === 1 ? 'Solo' : size === 2 ? 'Duo' : size === 3 ? 'Trio' : `${size}-man`;
-                            const invocLabel = invoc === '?' ? 'Unknown Invocation' : `Invocation ${invoc}`;
-                            html += `<div style="margin-bottom:16px;">`;
-                            html += `<div style="font-weight:bold;color:#8B6914;margin-bottom:8px;font-size:14px;">⚔️ ${sizeLabel} · ${invocLabel}</div>`;
-                            html += renderPBTable(groupPbs);
-                            html += `</div>`;
-                        });
-                    } else {
-                        // For non-TOA: group by party_size
-                        const groups = {};
-                        records.forEach(pb => {
-                            const size = pb.party_size || 1;
-                            if (!groups[size]) groups[size] = [];
-                            groups[size].push(pb);
-                        });
-
-                        const sizes = Object.keys(groups).map(Number).sort((a, b) => a - b);
-                        if (sizes.length === 1 && sizes[0] === 1) {
-                            // Only solo records — skip the size heading
-                            html += renderPBTable(groups[1]);
-                        } else {
-                            sizes.forEach(size => {
-                                const sizeLabel = size === 1 ? 'Solo' : size === 2 ? 'Duo' : size === 3 ? 'Trio' : `${size}-man`;
-                                html += `<div style="margin-bottom:16px;">`;
-                                html += `<div style="font-weight:bold;color:#8B6914;margin-bottom:8px;font-size:14px;">👥 ${sizeLabel}</div>`;
-                                html += renderPBTable(groups[size]);
-                                html += `</div>`;
-                            });
-                        }
-                    }
-
-                    html += `</div>`;
-                });
+                const selectStyle = `width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ddd; background: white; color: #333; font-size: 14px;`;
+                let html = `
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 10px; font-weight: bold;">Select Boss:</label>
+                        <select id="pbBossSelect" onchange="updatePBView()" style="${selectStyle}">
+                            <option value="">-- Select a Boss --</option>`;
+                sortedBosses.forEach(b => { html += `<option value="${b}">${b}</option>`; });
+                html += `
+                        </select>
+                    </div>
+                    <div id="pbPartySizeFilter" style="margin-bottom: 20px; display: none;">
+                        <label style="display: block; margin-bottom: 10px; font-weight: bold;">Party Size:</label>
+                        <select id="pbPartySizeSelect" onchange="renderPBContent()" style="${selectStyle}"></select>
+                    </div>
+                    <div id="pbInvocFilter" style="margin-bottom: 20px; display: none;">
+                        <label style="display: block; margin-bottom: 10px; font-weight: bold;">Invocation Level:</label>
+                        <select id="pbInvocSelect" onchange="renderPBContent()" style="${selectStyle}"></select>
+                    </div>
+                    <div id="pbTableContent" style="margin-top: 20px;">
+                        <div style="text-align: center; color: #666; padding: 40px;">Select a boss to view personal bests</div>
+                    </div>`;
 
                 contentDiv.innerHTML = html;
                 loadingDiv.style.display = 'none';
@@ -5453,34 +5424,137 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        const isTOA = name => /tombs?\s+of\s+amascut|toa/i.test(name);
+        const pbSizeLabel = size => size === 1 ? 'Solo' : size === 2 ? 'Duo' : size === 3 ? 'Trio' : `${size}-man`;
+
+        window.updatePBView = function() {
+            const boss = document.getElementById('pbBossSelect').value;
+            const partySizeFilter = document.getElementById('pbPartySizeFilter');
+            const partySizeSelect = document.getElementById('pbPartySizeSelect');
+            const invocFilter = document.getElementById('pbInvocFilter');
+            const invocSelect = document.getElementById('pbInvocSelect');
+
+            if (!boss) {
+                partySizeFilter.style.display = 'none';
+                invocFilter.style.display = 'none';
+                document.getElementById('pbTableContent').innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">Select a boss to view personal bests</div>';
+                return;
+            }
+
+            const records = _pbData[boss] || [];
+
+            // Party size dropdown — shown for all bosses if more than one size exists
+            const sizes = [...new Set(records.map(pb => pb.party_size || 1))].sort((a, b) => a - b);
+            if (sizes.length > 1) {
+                partySizeSelect.innerHTML = '<option value="">-- All --</option>';
+                sizes.forEach(s => { partySizeSelect.innerHTML += `<option value="${s}">${pbSizeLabel(s)}</option>`; });
+                partySizeFilter.style.display = 'block';
+            } else {
+                partySizeFilter.style.display = 'none';
+            }
+
+            // Invocation dropdown — TOA only
+            if (isTOA(boss)) {
+                const invocs = [...new Set(records.map(pb => pb.invocation_level != null ? pb.invocation_level : '?'))]
+                    .sort((a, b) => (a === '?' ? 1 : b === '?' ? -1 : a - b));
+                invocSelect.innerHTML = '<option value="">-- All --</option>';
+                invocs.forEach(inv => {
+                    const label = inv === '?' ? 'Unknown' : `Invoc ${inv}`;
+                    invocSelect.innerHTML += `<option value="${inv}">${label}</option>`;
+                });
+                invocFilter.style.display = 'block';
+            } else {
+                invocFilter.style.display = 'none';
+            }
+
+            renderPBContent();
+        };
+
+        window.renderPBContent = function() {
+            const boss = document.getElementById('pbBossSelect').value;
+            const sizeVal = document.getElementById('pbPartySizeSelect') ? document.getElementById('pbPartySizeSelect').value : '';
+            const invocVal = document.getElementById('pbInvocSelect') ? document.getElementById('pbInvocSelect').value : '';
+            const container = document.getElementById('pbTableContent');
+            if (!boss || !container) return;
+
+            let records = _pbData[boss] || [];
+
+            // Apply party size filter
+            if (sizeVal) {
+                records = records.filter(pb => (pb.party_size || 1) === Number(sizeVal));
+            }
+
+            // Apply invocation filter (TOA only)
+            if (isTOA(boss) && invocVal) {
+                records = records.filter(pb => {
+                    const inv = pb.invocation_level != null ? String(pb.invocation_level) : '?';
+                    return inv === invocVal;
+                });
+            }
+
+            if (records.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #666; padding: 40px;">No records found for this selection</div>`;
+                return;
+            }
+
+            // If no filters applied, group by the relevant dimensions
+            const noFilter = !sizeVal && !invocVal;
+            if (noFilter) {
+                const sizes = [...new Set(records.map(pb => pb.party_size || 1))].sort((a, b) => a - b);
+                if (sizes.length > 1 || isTOA(boss)) {
+                    let html = '';
+                    sizes.forEach(size => {
+                        const sizeGroup = records.filter(pb => (pb.party_size || 1) === size);
+                        if (isTOA(boss)) {
+                            const invocs = [...new Set(sizeGroup.map(pb => pb.invocation_level != null ? pb.invocation_level : '?'))]
+                                .sort((a, b) => (a === '?' ? 1 : b === '?' ? -1 : a - b));
+                            invocs.forEach(inv => {
+                                const invGroup = sizeGroup.filter(pb => (pb.invocation_level != null ? pb.invocation_level : '?') === inv);
+                                const label = `${pbSizeLabel(size)} · Invoc ${inv === '?' ? 'Unknown' : inv}`;
+                                html += `<div style="font-weight:bold;color:#8B6914;margin:14px 0 6px 0;padding:4px 10px;background:rgba(205,139,45,0.12);border-left:3px solid #cd8b2d;">⚔️ ${label}</div>`;
+                                html += renderPBTable(invGroup);
+                            });
+                        } else {
+                            html += `<div style="font-weight:bold;color:#8B6914;margin:14px 0 6px 0;padding:4px 10px;background:rgba(205,139,45,0.12);border-left:3px solid #cd8b2d;">👥 ${pbSizeLabel(size)}</div>`;
+                            html += renderPBTable(sizeGroup);
+                        }
+                    });
+                    container.innerHTML = html;
+                    return;
+                }
+            }
+
+            container.innerHTML = renderPBTable(records);
+        };
+
         function renderPBTable(records) {
-            // Sort by time ascending (fastest first)
             const sorted = [...records].sort((a, b) => a.time_seconds - b.time_seconds);
             const medals = ['🥇', '🥈', '🥉'];
+            const rowClass = i => i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : '';
 
-            let html = '<div style="background:rgba(255,255,255,0.9);border:1px solid #ddd;border-radius:6px;overflow:hidden;">';
-            html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-            html += '<thead><tr style="background:#2c1810;color:white;">';
-            html += '<th style="padding:8px 10px;text-align:left;width:36px;"></th>';
-            html += '<th style="padding:8px 10px;text-align:left;">Time</th>';
-            html += '<th style="padding:8px 10px;text-align:left;">Player</th>';
-            html += '<th style="padding:8px 10px;text-align:left;">Date</th>';
-            html += '</tr></thead><tbody>';
-
+            let rows = '';
             sorted.forEach((pb, i) => {
                 const medal = medals[i] || `#${i + 1}`;
                 const date = pb.timestamp ? new Date(pb.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-                const rowBg = i === 0 ? 'background:rgba(255,215,0,0.1);' : i % 2 === 0 ? 'background:#fafafa;' : '';
-                html += `<tr style="${rowBg}border-bottom:1px solid #eee;">`;
-                html += `<td style="padding:8px 10px;text-align:center;font-size:16px;">${medal}</td>`;
-                html += `<td style="padding:8px 10px;font-weight:bold;color:#2c1810;font-family:monospace;font-size:14px;">${pb.time_string || '—'}</td>`;
-                html += `<td style="padding:8px 10px;"><span style="background:#2c1810;color:#ffcc33;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:bold;">${pb.player}</span></td>`;
-                html += `<td style="padding:8px 10px;color:#888;font-size:12px;">${date}</td>`;
-                html += `</tr>`;
+                rows += `
+                    <tr class="${rowClass(i)}">
+                        <td style="text-align:center;font-size:15px;">${medal}</td>
+                        <td style="font-weight:bold;font-family:monospace;">${pb.time_string || '—'}</td>
+                        <td>${pb.player}</td>
+                        <td style="color:#666;font-size:12px;">${date}</td>
+                    </tr>`;
             });
 
-            html += '</tbody></table></div>';
-            return html;
+            return `
+                <table class="boss-contribution-table">
+                    <thead><tr>
+                        <th style="width:36px;"></th>
+                        <th>Time</th>
+                        <th>Player</th>
+                        <th>Date</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
         }
 
         // ============================================

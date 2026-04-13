@@ -282,7 +282,10 @@ def parse_pb_embed(embed, message):
         if not pb_info['boss']:
             defeated_match = re.search(r'has defeated (.+?)(?:\s+with\s|\n|$)', desc, re.IGNORECASE)
             if defeated_match:
-                pb_info['boss'] = defeated_match.group(1).strip()
+                raw_boss = defeated_match.group(1).strip()
+                # Strip Discord markdown links: [Boss Name](url) -> Boss Name
+                raw_boss = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', raw_boss)
+                pb_info['boss'] = raw_boss
 
         # Boss name fallback from description: "personal best in X", "completed X"
         if not pb_info['boss']:
