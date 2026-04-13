@@ -919,7 +919,7 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
                 try:
                     await progress_msg.edit(content=(
                         f"💀 Importing death history from {target_channel.mention}...\n"
-                        f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
+                        f"📨 **{scanned:,} / {limit:,}** messages scanned \n; "
                         f"💀 {imported_count} imported"
                     ))
                 except Exception:
@@ -1034,7 +1034,7 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                     try:
                         await progress_msg.edit(content=(
                             f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
-                            f"📨 **{scanned:,} / {limit:,}** messages scanned &nbsp;·&nbsp; "
+                            f"📨 **{scanned:,} / {limit:,}** messages scanned \nIts ; "
                             f"🔍 {len(collected_pbs)} found so far..."
                         ))
                     except Exception:
@@ -1110,7 +1110,7 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
         # ── Pass 3: send all collected PBs to API ─────────────────────────
         await progress_msg.edit(content=(
             f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
-            f"📨 **{scanned:,}** messages scanned &nbsp;·&nbsp; "
+            f"📨 **{scanned:,}** messages scanned\n; "
             f"💾 Saving {len(collected_pbs)} PBs to database..."
         ))
 
