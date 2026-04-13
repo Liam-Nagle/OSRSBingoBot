@@ -5388,7 +5388,7 @@ async function loadAnalyticsWithFilters() {
                     _pbData[boss].push(pb);
                 });
 
-                const sortedBosses = Object.keys(_pbData).sort();
+                const sortedBosses = Object.keys(_pbData).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
                 const selectStyle = `width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ddd; background: white; color: #333; font-size: 14px;`;
                 let html = `

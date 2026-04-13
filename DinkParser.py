@@ -302,6 +302,13 @@ def parse_pb_embed(embed, message):
         if len(parts) == 2:
             pb_info['boss'] = parts[1].strip()
 
+    # Normalise boss name: title-case so "shellbane gryphon" → "Shellbane Gryphon"
+    # but preserve existing capitalisation if already mixed-case
+    if pb_info['boss']:
+        name = pb_info['boss']
+        if name == name.lower() or name == name.upper():
+            pb_info['boss'] = name.title()
+
     # Parse embed fields
     for field in embed.fields:
         field_name = (field.name or '').strip()
@@ -494,6 +501,11 @@ async def on_message(message):
         return
 
     embed = message.embeds[0]
+
+    # Skip all seasonal notifications — seasonal characters are separate from
+    # the main game and should not be tracked in bingo stats
+    if embed.title and '[seasonal]' in embed.title.lower():
+        return
 
     # Check if this is a "Loot Drop" or "Collection Log" message
     drop_type = None
@@ -834,6 +846,9 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
             if message.webhook_id and message.embeds:
                 embed = message.embeds[0]
 
+                if embed.title and '[seasonal]' in embed.title.lower():
+                    continue
+
                 if embed.title and ("Loot Drop" in embed.title or "Collection Log" in embed.title):
                     drop_data = parse_drop_embed(embed, message)
 
@@ -927,6 +942,9 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
 
             if message.webhook_id and message.embeds:
                 embed = message.embeds[0]
+
+                if embed.title and '[seasonal]' in embed.title.lower():
+                    continue
 
                 if embed.title and "Player Death" in embed.title:
                     death_data = parse_death_embed(embed, message)
@@ -1034,7 +1052,7 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                     try:
                         await progress_msg.edit(content=(
                             f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
-                            f"📨 **{scanned:,} / {limit:,}** messages scanned \nIts ; "
+                            f"📨 **{scanned:,} / {limit:,}** messages scanned \n"
                             f"🔍 {len(collected_pbs)} found so far..."
                         ))
                     except Exception:
@@ -1047,6 +1065,8 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                 if not embed.title:
                     continue
                 title_lower = embed.title.lower()
+                if '[seasonal]' in title_lower:
+                    continue
                 desc_lower = (embed.description or '').lower()
                 is_pb = (
                     "personal best" in title_lower
@@ -1067,14 +1087,16 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
             if len(messages) < batch_size:
                 done = True
 
-        # ── Pass 2: infer party sizes from grouped PBs ────────────────────
-        # If multiple players get the exact same boss+time within 5 minutes,
-        # they were in the same raid party. Use the largest explicit party_size
-        # seen in the group, or fall back to the group's player count.
+        # ── Pass 2: infer party sizes and fix invocation levels ───────────
+        # If multiple players get the exact same boss+time within 30 minutes,
+        # they were in the same raid party.
+        # - Party size  : use max(explicit size, group count)
+        # - Invocation  : all must be identical — use consensus (most common
+        #   non-null value), preferring values with more digits to fix OCR
+        #   truncations like "2" being a misread of "200" or "250"
         PARTY_WINDOW_SECONDS = 300  # 5 minutes
 
-        # Build a lookup: (boss_lower, time_string) -> list of pb_data indices
-        from collections import defaultdict
+        from collections import defaultdict, Counter
         time_groups = defaultdict(list)
         for idx, pb in enumerate(collected_pbs):
             if pb['boss']:
@@ -1084,7 +1106,7 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
         for key, indices in time_groups.items():
             if len(indices) < 2:
                 continue
-            # Check they all fall within the time window
+
             timestamps = []
             for idx in indices:
                 try:
@@ -1095,17 +1117,34 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
             valid = [ts for ts in timestamps if ts is not None]
             if not valid:
                 continue
-            window_ok = (max(valid) - min(valid)).total_seconds() <= PARTY_WINDOW_SECONDS
+            if (max(valid) - min(valid)).total_seconds() > PARTY_WINDOW_SECONDS:
+                continue
 
-            if window_ok:
-                explicit_size = max(
-                    (collected_pbs[idx].get('party_size') or 1) for idx in indices
-                )
-                inferred_size = max(explicit_size, len(indices))
-                for idx in indices:
-                    if (collected_pbs[idx].get('party_size') or 1) < inferred_size:
-                        collected_pbs[idx]['party_size'] = inferred_size
-                        print(f"[PartyInfer] {collected_pbs[idx]['player']} {key[0]} {key[1]} → party {inferred_size}")
+            # ── Party size ──
+            explicit_size = max((collected_pbs[idx].get('party_size') or 1) for idx in indices)
+            inferred_size = max(explicit_size, len(indices))
+            for idx in indices:
+                if (collected_pbs[idx].get('party_size') or 1) < inferred_size:
+                    collected_pbs[idx]['party_size'] = inferred_size
+                    print(f"[PartyInfer] {collected_pbs[idx]['player']} {key[0]} {key[1]} → party {inferred_size}")
+
+            # ── Invocation level consensus (TOA only) ──
+            invoc_values = [collected_pbs[idx].get('invocation_level') for idx in indices]
+            non_null = [v for v in invoc_values if v is not None]
+            if not non_null:
+                continue
+
+            # Prefer values with the most digits — short values are likely OCR
+            # truncations (e.g. 2 misread instead of 200 or 250)
+            max_digits = max(len(str(v)) for v in non_null)
+            plausible = [v for v in non_null if len(str(v)) == max_digits]
+            consensus = Counter(plausible).most_common(1)[0][0]
+
+            for idx in indices:
+                old = collected_pbs[idx].get('invocation_level')
+                if old != consensus:
+                    collected_pbs[idx]['invocation_level'] = consensus
+                    print(f"[InvocFix] {collected_pbs[idx]['player']} {key[0]} {key[1]}: {old} → {consensus}")
 
         # ── Pass 3: send all collected PBs to API ─────────────────────────
         await progress_msg.edit(content=(
