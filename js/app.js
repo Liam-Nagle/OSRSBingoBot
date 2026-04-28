@@ -30,7 +30,7 @@
             }
         };
 
-        const API_URL = 'https://baseball-rights-prisoner-exhaust.trycloudflare.com'; //Production ENV Oracle Cloud
+        const API_URL = 'https://junction-robertson-organised-interference.trycloudflare.com'; //Production ENV Oracle Cloud
         //const API_URL = 'http://localhost:5000'; //Local Testing
 
         // Tenant & Plan tracking
