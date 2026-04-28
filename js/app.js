@@ -30,7 +30,7 @@
             }
         };
 
-        const API_URL = 'http://79.72.91.27:10000'; //Production ENV Oracle Cloud
+        const API_URL = 'https://baseball-rights-prisoner-exhaust.trycloudflare.com'; //Production ENV Oracle Cloud
         //const API_URL = 'http://localhost:5000'; //Local Testing
 
         // Tenant & Plan tracking
