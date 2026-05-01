@@ -1,0 +1,5 @@
+/.claude/
+.idea/
+bingo_data.json
+drops_log.json
+migrate_to_tenant.py
