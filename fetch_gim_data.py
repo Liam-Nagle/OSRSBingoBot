@@ -11,11 +11,10 @@ from datetime import datetime
 from urllib.parse import quote
 
 try:
-    import cloudscraper
-    HAS_CLOUDSCRAPER = True
+    from curl_cffi import requests as cf_requests
+    HAS_CURL_CFFI = True
 except ImportError:
-    import requests
-    HAS_CLOUDSCRAPER = False
+    HAS_CURL_CFFI = False
 GROUP_NAME = 'unsociables'
 GROUP_SIZE = 5
 MAX_PAGES = 150
@@ -25,22 +24,14 @@ def fetch_gim_data():
     """Fetch GIM highscore data from RuneScape"""
     print(f'🔍 Searching for group: {GROUP_NAME}')
 
-    # Use cloudscraper to bypass Cloudflare
-    if HAS_CLOUDSCRAPER:
-        print('Using cloudscraper to bypass Cloudflare')
-        scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'mobile': False
-            }
-        )
-        # Hit directly - no proxy needed!
-        PROXY_URL = ''
+    # Use curl_cffi to bypass Cloudflare
+    if HAS_CURL_CFFI:
+        print('Using curl_cffi to bypass Cloudflare')
         use_proxy = False
     else:
-        print('cloudscraper not available, falling back to requests + corsproxy.io')
+        print('curl_cffi not available, falling back to requests + corsproxy.io')
         import requests
+        use_proxy = True
         scraper = requests.Session()
         scraper.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -65,7 +56,7 @@ def fetch_gim_data():
         base_url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={GROUP_SIZE}&page={page}'
 
         # Only use proxy if cloudscraper not available
-        url = (PROXY_URL + quote(base_url, safe='')) if use_proxy else base_url
+        url = ('https://corsproxy.io/?' + quote(base_url, safe='')) if use_proxy else base_url
 
         try:
             print(f'📄 Fetching page {page}...')
@@ -75,7 +66,10 @@ def fetch_gim_data():
             retry_delay = 2  # Start with 2 seconds
 
             for attempt in range(max_retries):
-                response = scraper.get(url, timeout=30)
+                if HAS_CURL_CFFI:
+                    response = cf_requests.get(base_url, impersonate="chrome120", timeout=30)
+                else:
+                    response = requests.get(url, timeout=30)
 
                 if response.status_code == 200:
                     break
