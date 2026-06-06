@@ -20,35 +20,37 @@ GROUP_NAME = 'unsociables'
 GROUP_SIZE = 5
 MAX_PAGES = 150
 
+
 def fetch_gim_data():
     """Fetch GIM highscore data from RuneScape"""
     print(f'🔍 Searching for group: {GROUP_NAME}')
 
-    # Use corsproxy.io with browser headers to avoid detection
-    import requests
-    scraper = requests.Session()
-
-    # Add browser-like headers to avoid being blocked as a bot
-    # NOTE: Removed Accept-Encoding to avoid compression issues with corsproxy.io
-    scraper.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Cache-Control': 'max-age=0',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    })
-
-    PROXY_URL = 'https://corsproxy.io/?'
-    print(f'Using corsproxy.io with browser headers')
+    # Use cloudscraper to bypass Cloudflare
+    if HAS_CLOUDSCRAPER:
+        print('Using cloudscraper to bypass Cloudflare')
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'mobile': False
+            }
+        )
+        # Hit directly - no proxy needed!
+        PROXY_URL = ''
+        use_proxy = False
+    else:
+        print('cloudscraper not available, falling back to requests + corsproxy.io')
+        import requests
+        scraper = requests.Session()
+        scraper.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+        })
+        PROXY_URL = 'https://corsproxy.io/?'
+        use_proxy = True
 
     overall_rank = None
     total_xp = None
@@ -61,7 +63,9 @@ def fetch_gim_data():
             break
 
         base_url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={GROUP_SIZE}&page={page}'
-        url = PROXY_URL + quote(base_url, safe='')
+
+        # Only use proxy if cloudscraper not available
+        url = (PROXY_URL + quote(base_url, safe='')) if use_proxy else base_url
 
         try:
             print(f'📄 Fetching page {page}...')
