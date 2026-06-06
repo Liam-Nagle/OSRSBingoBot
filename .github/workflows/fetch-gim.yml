@@ -21,9 +21,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4 cloudscraper
+          pip install requests beautifulsoup4 curl_cffi
 
       - name: Fetch GIM data
+        env:
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+          API_URL: https://osrsbingobot.onrender.com
         run: |
           python fetch_gim_data.py
 
