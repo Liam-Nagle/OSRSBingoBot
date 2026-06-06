@@ -7,6 +7,7 @@ Run this script periodically via GitHub Actions or cron.
 import os
 import sys
 import time
+import requests
 from datetime import datetime
 from urllib.parse import quote
 
@@ -15,33 +16,25 @@ try:
     HAS_CURL_CFFI = True
 except ImportError:
     HAS_CURL_CFFI = False
+
 GROUP_NAME = 'unsociables'
 GROUP_SIZE = 5
 MAX_PAGES = 150
+
+SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
 
 
 def fetch_gim_data():
     """Fetch GIM highscore data from RuneScape"""
     print(f'🔍 Searching for group: {GROUP_NAME}')
 
-    # Use curl_cffi to bypass Cloudflare
-    if HAS_CURL_CFFI:
+    if SCRAPER_API_KEY:
+        print('Using ScraperAPI to bypass Cloudflare')
+    elif HAS_CURL_CFFI:
         print('Using curl_cffi to bypass Cloudflare')
-        use_proxy = False
     else:
-        print('curl_cffi not available, falling back to requests + corsproxy.io')
-        import requests
-        use_proxy = True
-        scraper = requests.Session()
-        scraper.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-        })
-        PROXY_URL = 'https://corsproxy.io/?'
-        use_proxy = True
+        print('❌ No bypass method available! Set SCRAPER_API_KEY environment variable.')
+        return None
 
     overall_rank = None
     total_xp = None
@@ -55,21 +48,36 @@ def fetch_gim_data():
 
         base_url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={GROUP_SIZE}&page={page}'
 
-        # Only use proxy if cloudscraper not available
-        url = ('https://corsproxy.io/?' + quote(base_url, safe='')) if use_proxy else base_url
-
         try:
             print(f'📄 Fetching page {page}...')
 
-            # Retry logic for 503 errors
+            # Retry logic
             max_retries = 3
-            retry_delay = 2  # Start with 2 seconds
+            retry_delay = 2
 
             for attempt in range(max_retries):
-                if HAS_CURL_CFFI:
-                    response = cf_requests.get(base_url, impersonate="chrome120", timeout=30)
-                else:
-                    response = requests.get(url, timeout=30)
+                try:
+                    if SCRAPER_API_KEY:
+                        response = requests.get(
+                            'http://api.scraperapi.com',
+                            params={
+                                'api_key': SCRAPER_API_KEY,
+                                'url': base_url
+                            },
+                            timeout=60
+                        )
+                    elif HAS_CURL_CFFI:
+                        response = cf_requests.get(
+                            base_url,
+                            impersonate="chrome120",
+                            timeout=30
+                        )
+                    else:
+                        return None
+
+                except Exception as e:
+                    print(f'❌ Request error: {e}')
+                    break
 
                 if response.status_code == 200:
                     break
@@ -77,10 +85,9 @@ def fetch_gim_data():
                     if attempt < max_retries - 1:
                         print(f'⏳ Page {page} returned 503, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})')
                         time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        retry_delay *= 2
                     else:
                         print(f'❌ Page {page} returned 503 after {max_retries} attempts')
-                        continue
                 elif response.status_code == 403:
                     print(f'❌ Page {page} returned 403 - Blocked by Cloudflare')
                     return None
@@ -91,20 +98,18 @@ def fetch_gim_data():
             if response.status_code != 200:
                 continue
 
-            # Add delay between successful requests to avoid rate limiting
+            # Add delay between requests to avoid rate limiting
             time.sleep(0.5)
 
-            # Get HTML text (requests auto-decodes)
+            # Parse HTML
             html = response.text
 
-            # Parse HTML with BeautifulSoup
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html, 'html.parser')
 
             # Find table
             tbody = soup.find('tbody')
             if not tbody:
-                # Try finding table directly if no tbody
                 table = soup.find('table')
                 if table:
                     tbody = table
@@ -147,7 +152,7 @@ def fetch_gim_data():
                     if has_star and not found:
                         prestige_count += 1
 
-                except (ValueError, IndexError, AttributeError) as e:
+                except (ValueError, IndexError, AttributeError):
                     continue
 
             # Progress indicator
@@ -186,20 +191,17 @@ def save_via_api(data):
         return False
 
     try:
-        # Get API URL from environment or use default
         api_url = os.environ.get('API_URL', 'https://osrsbingobot.onrender.com')
 
-        # Format data for the existing rank snapshot endpoint
         payload = {
             'rank': data['overall_rank'],
             'prestigeRank': data['prestige_rank'],
             'totalXp': data['total_xp'],
-            'rankChange': 0,  # Will be calculated by the API
+            'rankChange': 0,
             'prestigeRankChange': 0,
             'xpChange': 0
         }
 
-        import requests
         response = requests.post(
             f'{api_url}/rank/snapshot',
             json=payload,
