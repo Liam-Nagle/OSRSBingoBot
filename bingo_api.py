@@ -802,7 +802,29 @@ def load_bingo_data(tenant_id=None):
 
             board = bingo_coll.find_one({'type': 'current_board'})
             if board:
-                # Remove MongoDB _id field
+                tiles = board.get('tiles', [])
+                has_content = any(t.get('items') or t.get('displayTitle') for t in tiles)
+                if has_content:
+                    board.pop('_id', None)
+                    board.pop('type', None)
+                    return board
+                # Tenant board exists but tiles are empty — check legacy collection
+                print(f"[!] Tenant board has empty tiles, checking legacy collection...")
+
+            # Check legacy bingo_board collection for real tile data
+            legacy_board = bingo_collection.find_one({'type': 'current_board'})
+            if legacy_board:
+                legacy_tiles = legacy_board.get('tiles', [])
+                has_legacy_content = any(t.get('items') or t.get('displayTitle') for t in legacy_tiles)
+                if has_legacy_content:
+                    print(f"[OK] Found content in legacy collection, migrating to tenant collection...")
+                    legacy_board.pop('_id', None)
+                    legacy_board['type'] = 'current_board'
+                    bingo_coll.replace_one({'type': 'current_board'}, legacy_board, upsert=True)
+                    legacy_board.pop('type', None)
+                    return legacy_board
+
+            if board:
                 board.pop('_id', None)
                 board.pop('type', None)
                 return board

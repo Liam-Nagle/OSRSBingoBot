@@ -797,8 +797,6 @@
                 }
             });
 
-            saveData();
-
             // Restore bonus overlay if it was visible
             if (bonusOverlayVisible) {
                 console.log('🎁 renderBoard finished - restoring bonus overlay');
