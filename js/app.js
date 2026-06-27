@@ -1352,11 +1352,17 @@
 
             localStorage.setItem('bingoData', JSON.stringify(dataToSave));
 
+            const adminPw = sessionStorage.getItem('adminPassword');
+            if (!adminPw) {
+                console.log('⚠️  Not logged in as admin, skipping server sync');
+                return;
+            }
+
             try {
                 const response = await fetch(`${API_URL}/update`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(dataToSave)
+                    body: JSON.stringify({...dataToSave, password: adminPw})
                 });
 
                 if (response.ok) {

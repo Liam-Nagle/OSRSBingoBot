@@ -802,29 +802,6 @@ def load_bingo_data(tenant_id=None):
 
             board = bingo_coll.find_one({'type': 'current_board'})
             if board:
-                tiles = board.get('tiles', [])
-                has_content = any(t.get('items') or t.get('displayTitle') for t in tiles)
-                if has_content:
-                    board.pop('_id', None)
-                    board.pop('type', None)
-                    return board
-                # Tenant board exists but tiles are empty — check legacy collection
-                print(f"[!] Tenant board has empty tiles, checking legacy collection...")
-
-            # Check legacy bingo_board collection for real tile data
-            legacy_board = bingo_collection.find_one({'type': 'current_board'})
-            if legacy_board:
-                legacy_tiles = legacy_board.get('tiles', [])
-                has_legacy_content = any(t.get('items') or t.get('displayTitle') for t in legacy_tiles)
-                if has_legacy_content:
-                    print(f"[OK] Found content in legacy collection, migrating to tenant collection...")
-                    legacy_board.pop('_id', None)
-                    legacy_board['type'] = 'current_board'
-                    bingo_coll.replace_one({'type': 'current_board'}, legacy_board, upsert=True)
-                    legacy_board.pop('type', None)
-                    return legacy_board
-
-            if board:
                 board.pop('_id', None)
                 board.pop('type', None)
                 return board
@@ -1520,8 +1497,10 @@ def get_history():
 
 @app.route('/update', methods=['POST'])
 def update_board():
-    """Update entire board (for syncing from website)"""
+    """Update entire board (admin only)"""
     data = request.json
+    if not data or data.get('password') != ADMIN_PASSWORD:
+        return jsonify({'error': 'Unauthorized'}), 401
     save_bingo_data(data)
     return jsonify({'success': True})
 
