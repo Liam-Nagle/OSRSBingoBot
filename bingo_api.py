@@ -306,14 +306,18 @@ def fetch_osrs_highscores(player_name):
             'zulrah': 'Zulrah'
         }
 
-        # Extract KC from snapshot
-        for wom_key, display_name in boss_mapping.items():
+        # Extract KC from snapshot - iterate WiseOldMan's full response so new bosses
+        # are picked up automatically without needing a code change.
+        # The mapping overrides display names for special cases (apostrophes, abbreviations);
+        # anything not in the mapping gets an auto-derived name (underscores → title case).
+        for wom_key, boss_value in bosses_data.items():
+            kc = boss_value.get('kills', 0)
+            if not kc or kc <= 0:
+                continue
+            display_name = boss_mapping.get(wom_key) or wom_key.replace('_', ' ').title()
             if display_name in EXCLUDED_BOSSES:
                 continue
-            if wom_key in bosses_data:
-                kc = bosses_data[wom_key].get('kills', 0)
-                if kc and kc > 0:
-                    boss_data[display_name] = kc
+            boss_data[display_name] = kc
 
         debug.append(f"✅ Found {len(boss_data)} bosses with KC > 0")
         if boss_data:
