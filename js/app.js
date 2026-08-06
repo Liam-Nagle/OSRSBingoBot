@@ -712,13 +712,6 @@
             }
         }
 
-        async function manualRefresh() {
-            console.log('🔄 Manual refresh triggered...');
-            await refreshFromAPI();
-            loadTotalValueLooted();
-            alert('Board refreshed!');
-        }
-
         function renderBoard() {
             console.log('🔄 renderBoard called, bonusOverlayVisible:', bonusOverlayVisible);
             const board = document.getElementById('bingoBoard');
@@ -1980,6 +1973,287 @@
                 if (chart) chart.destroy();
             });
             analyticsCharts = {};
+        }
+
+        // ============================================================
+        // Tile Race Timeline
+        // ============================================================
+        // completedBy only stores WHO finished a tile. Since v2.11.0 the /drop
+        // and /manual-override endpoints also stamp a parallel completedAt map
+        // (player -> ISO timestamp) on each tile, which is what we use here.
+        // Tiles completed before that shipped won't have a stamp, so as a
+        // fallback we cross-reference drop history: the earliest drop of a
+        // matching item is treated as that tile's completion moment.
+        let timelineBarChartInstance = null;
+        const TIMELINE_MAX_DAYS = 180; // safety cap so a stale/faraway event start date can't render thousands of rows
+
+        function openTimelineModal() {
+            document.getElementById('timelineModal').classList.add('active');
+            document.getElementById('timelineLoading').style.display = 'block';
+            document.getElementById('timelineEmpty').style.display = 'none';
+            document.getElementById('timelineContent').style.display = 'none';
+            loadTimeline();
+        }
+
+        function closeTimelineModal() {
+            document.getElementById('timelineModal').classList.remove('active');
+            if (timelineBarChartInstance) {
+                timelineBarChartInstance.destroy();
+                timelineBarChartInstance = null;
+            }
+        }
+
+        // Earliest history entry by `player` whose item exactly matches one of
+        // itemsLower - mirrors the /drop endpoint's single-item completion check.
+        function findFirstMatchingDrop(drops, player, itemsLower) {
+            for (const d of drops) {
+                if (d.player !== player) continue;
+                if (itemsLower.includes(d.item.trim().toLowerCase())) return d.timestamp;
+            }
+            return null;
+        }
+
+        // For multi-item (requiredItems) tiles, mirrors the /drop endpoint's
+        // substring-based required-item matching. A tile only completes once
+        // every required item is collected, so its completion time is the
+        // *latest* of each required item's own earliest matching drop.
+        function findMultiItemCompletionTime(drops, player, requiredLower) {
+            let latest = null;
+            for (const reqItem of requiredLower) {
+                let earliestForItem = null;
+                for (const d of drops) {
+                    if (d.player !== player) continue;
+                    const itemClean = d.item.trim().toLowerCase();
+                    if (reqItem === itemClean || reqItem.includes(itemClean) || itemClean.includes(reqItem)) {
+                        earliestForItem = d.timestamp;
+                        break; // drops is sorted ascending, so first hit is earliest
+                    }
+                }
+                if (!earliestForItem) return null; // this required item was never matched in history - unresolved
+                if (!latest || earliestForItem > latest) latest = earliestForItem;
+            }
+            return latest;
+        }
+
+        async function loadTimeline() {
+            let eventConfig = null;
+            try {
+                const configResponse = await fetch(`${API_URL}/event/config`);
+                eventConfig = await configResponse.json();
+            } catch (error) {
+                console.error('Failed to load event config for timeline:', error);
+            }
+
+            const hasEvent = !!(eventConfig && eventConfig.enabled && eventConfig.startDate);
+            const eventStart = hasEvent ? new Date(eventConfig.startDate) : null;
+
+            document.getElementById('timelineEventStart').textContent = hasEvent
+                ? `Event started: ${eventStart.toLocaleDateString()}`
+                : 'No active event configured — grouping by calendar date';
+
+            try {
+                const params = new URLSearchParams({ limit: 10000 });
+                if (hasEvent) params.append('start_date', eventConfig.startDate);
+
+                const response = await fetch(`${API_URL}/history?${params}`);
+                if (!response.ok) throw new Error('Failed to fetch history');
+                const data = await response.json();
+
+                // Oldest first, and collapse the loot/collection_log duplicate
+                // messages Dink can send for a single pickup (see dedupeDropsForAnalytics).
+                const drops = dedupeDropsForAnalytics((data.history || []).map(d => ({
+                    ...d,
+                    timestamp: new Date(d.timestamp)
+                }))).sort((a, b) => a.timestamp - b.timestamp);
+
+                renderTimeline(drops, hasEvent, eventStart);
+            } catch (error) {
+                console.error('Error loading timeline:', error);
+                document.getElementById('timelineLoading').innerHTML =
+                    '<div style="text-align: center; padding: 60px; color: #8b1a1a;">Failed to load timeline data.</div>';
+            }
+        }
+
+        function renderTimeline(drops, hasEvent, eventStart) {
+            const loadingDiv = document.getElementById('timelineLoading');
+            const emptyDiv = document.getElementById('timelineEmpty');
+            const contentDiv = document.getElementById('timelineContent');
+
+            // Resolve a completion timestamp for every player on every completed tile
+            const resolved = [];
+            const unmatched = [];
+
+            (bingoData.tiles || []).forEach((tile, index) => {
+                if (!tile.completedBy || tile.completedBy.length === 0) return;
+                const displayName = tile.displayTitle || (tile.items.length > 0 ? tile.items[0] : 'Empty Tile');
+                const isMultiItem = tile.requiredItems && tile.requiredItems.length > 1;
+                const itemsLower = (tile.items || []).map(i => i.trim().toLowerCase());
+                const requiredLower = isMultiItem ? tile.requiredItems.map(i => i.trim().toLowerCase()) : null;
+
+                tile.completedBy.forEach(player => {
+                    // The backend has stamped completedAt since v2.11.0 - trust it when present,
+                    // and only fall back to cross-referencing drop history for older completions
+                    // (or tiles completed on a tenant that hasn't picked up the backend change yet).
+                    const stamped = tile.completedAt && tile.completedAt[player];
+                    const timestamp = stamped
+                        ? new Date(stamped)
+                        : (isMultiItem
+                            ? findMultiItemCompletionTime(drops, player, requiredLower)
+                            : findFirstMatchingDrop(drops, player, itemsLower));
+
+                    const entry = { tileName: displayName, iconItem: tile.items[0], player, timestamp };
+                    if (timestamp) resolved.push(entry);
+                    else unmatched.push(entry);
+                });
+            });
+
+            if (resolved.length === 0 && unmatched.length === 0) {
+                loadingDiv.style.display = 'none';
+                emptyDiv.style.display = 'block';
+                contentDiv.style.display = 'none';
+                return;
+            }
+
+            resolved.sort((a, b) => a.timestamp - b.timestamp);
+
+            // --- Figure out the day range to render ---
+            const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+            const oneDay = 24 * 60 * 60 * 1000;
+
+            let firstDay = hasEvent
+                ? dayStart(eventStart)
+                : dayStart(resolved.length ? resolved[0].timestamp : new Date());
+
+            const lastResolvedDay = resolved.length ? dayStart(resolved[resolved.length - 1].timestamp) : firstDay;
+            const today = dayStart(new Date());
+            const lastDay = new Date(Math.max(lastResolvedDay, today));
+
+            let totalDays = Math.max(1, Math.round((lastDay - firstDay) / oneDay) + 1);
+            if (totalDays > TIMELINE_MAX_DAYS) {
+                // Keep the most recent stretch so "today" is always visible
+                firstDay = new Date(lastDay.getTime() - (TIMELINE_MAX_DAYS - 1) * oneDay);
+                totalDays = TIMELINE_MAX_DAYS;
+            }
+
+            const days = [];
+            for (let i = 0; i < totalDays; i++) {
+                days.push({ dayNumber: i + 1, date: new Date(firstDay.getTime() + i * oneDay), entries: [] });
+            }
+
+            resolved.forEach(entry => {
+                const idx = Math.round((dayStart(entry.timestamp) - firstDay) / oneDay);
+                if (days[idx]) days[idx].entries.push(entry);
+            });
+            days.forEach(day => day.entries.sort((a, b) => a.timestamp - b.timestamp));
+
+            // --- Render day-by-day timeline ---
+            document.getElementById('timelineDays').innerHTML = days.map(day => renderTimelineDay(day, hasEvent)).join('');
+
+            // --- Unmatched completions ---
+            const unmatchedSection = document.getElementById('timelineUnmatched');
+            if (unmatched.length > 0) {
+                unmatchedSection.style.display = 'block';
+                document.getElementById('timelineUnmatchedList').innerHTML = unmatched.map(e =>
+                    `<span class="completion-badge">${e.tileName} — ✓ ${e.player}</span>`
+                ).join('');
+            } else {
+                unmatchedSection.style.display = 'none';
+            }
+
+            renderTimelineBarChart(days, hasEvent);
+            renderTimelineMostActive(days, hasEvent);
+
+            loadingDiv.style.display = 'none';
+            emptyDiv.style.display = 'none';
+            contentDiv.style.display = 'block';
+        }
+
+        function renderTimelineDay(day, hasEvent) {
+            const dateLabel = day.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            const heading = hasEvent ? `Day ${day.dayNumber}` : dateLabel;
+            const isEmpty = day.entries.length === 0;
+
+            const entriesHtml = isEmpty
+                ? `<div class="timeline-day-empty-msg">😴 No tiles completed today</div>`
+                : `<div class="timeline-entries">${day.entries.map(renderTimelineEntry).join('')}</div>`;
+
+            return `
+                <div class="timeline-day ${isEmpty ? 'empty' : ''}">
+                    <div class="timeline-day-header">
+                        <span>📅 ${heading} • ${day.entries.length} tile${day.entries.length === 1 ? '' : 's'}</span>
+                        ${hasEvent ? `<span class="timeline-day-date">${dateLabel}</span>` : ''}
+                    </div>
+                    ${entriesHtml}
+                </div>
+            `;
+        }
+
+        function renderTimelineEntry(entry) {
+            const time = entry.timestamp.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+            const iconUrl = entry.iconItem
+                ? `https://oldschool.runescape.wiki/images/${encodeURIComponent(entry.iconItem.trim().replace(/\s+/g, '_'))}_detail.png`
+                : '';
+
+            return `
+                <div class="timeline-entry">
+                    <span class="timeline-entry-time">🕐 ${time}</span>
+                    ${iconUrl ? `<img src="${iconUrl}" class="timeline-entry-icon" onerror="this.style.display='none'">` : ''}
+                    <div class="timeline-entry-body">
+                        <span class="timeline-entry-tile">${entry.tileName}</span>
+                        <span class="timeline-entry-player">✓ ${entry.player}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTimelineBarChart(days, hasEvent) {
+            const ctx = document.getElementById('timelineBarChart').getContext('2d');
+            const labels = days.map(d => hasEvent ? `Day ${d.dayNumber}` : d.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+            const counts = days.map(d => d.entries.length);
+            const horizontal = days.length > 10; // long ranges read better as a horizontal bar chart
+
+            if (timelineBarChartInstance) timelineBarChartInstance.destroy();
+
+            timelineBarChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Tiles Completed',
+                        data: counts,
+                        backgroundColor: '#cd8b2d',
+                        borderColor: '#8B6914',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    indexAxis: horizontal ? 'y' : 'x',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        [horizontal ? 'x' : 'y']: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
+                }
+            });
+        }
+
+        function renderTimelineMostActive(days, hasEvent) {
+            const container = document.getElementById('timelineMostActive');
+            const active = days.filter(d => d.entries.length > 0)
+                .sort((a, b) => b.entries.length - a.entries.length || a.dayNumber - b.dayNumber)
+                .slice(0, 3);
+
+            if (active.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #999; font-style: italic;">No completions yet</p>';
+                return;
+            }
+
+            const medals = ['🥇', '🥈', '🥉'];
+            container.innerHTML = active.map((d, i) => {
+                const label = hasEvent ? `Day ${d.dayNumber}` : d.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                return `<div class="timeline-most-active-item"><span>${medals[i] || '•'} ${label}</span><span>${d.entries.length} tile${d.entries.length === 1 ? '' : 's'} completed</span></div>`;
+            }).join('');
         }
 
         // Open a drilldown panel showing filtered drops when a chart bar/point is clicked
@@ -5825,6 +6099,33 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.11.2",
+                date: "2026-08-06",
+                title: "Renamed the board, decluttered the controls bar",
+                changes: [
+                    { type: "improvement", text: "Renamed the page from 'OSRS Bingo Board' to 'Unsociables Bingo Board'" },
+                    { type: "improvement", text: "Removed the 'Refresh Now' button — the board already auto-refreshes every 5 seconds, so it was a redundant, purely cosmetic click" },
+                ]
+            },
+            {
+                version: "v2.11.1",
+                date: "2026-08-06",
+                title: "Timeline now records real completion times",
+                changes: [
+                    { type: "improvement", text: "The /drop and manual-override endpoints now stamp each tile completion with an exact timestamp instead of the Timeline having to guess it from drop history" },
+                    { type: "improvement", text: "Timeline falls back to the drop-history guess only for completions from before this change" },
+                ]
+            },
+            {
+                version: "v2.11.0",
+                date: "2026-08-06",
+                title: "Tile Race Timeline",
+                changes: [
+                    { type: "feature", text: "Added a 📅 Timeline button showing a day-by-day feed of when each tile was completed and by whom, reconstructed from drop history" },
+                    { type: "feature", text: "Timeline includes a 'Tiles per Day' chart and a 'Most Active Days' leaderboard to highlight momentum swings" },
+                ]
+            },
+            {
                 version: "v2.10.1",
                 date: "2026-08-06",
                 title: "Drop value leaderboard, event-scoped analytics, and a main board GP total",
@@ -6316,7 +6617,7 @@ async function loadAnalyticsWithFilters() {
                     <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
                         <button class="close-btn" onclick="closeChangelogModal()">×</button>
                         <h2>📜 Changelog</h2>
-                        <p style="color: #666; margin-bottom: 20px;">Recent updates and improvements to the OSRS Bingo Board</p>
+                        <p style="color: #666; margin-bottom: 20px;">Recent updates and improvements to the Unsociables Bingo Board</p>
                         ${changelogHtml}
                     </div>
                 </div>

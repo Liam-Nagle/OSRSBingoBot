@@ -739,6 +739,121 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
 
+        /* Tile Race Timeline Styles */
+        .timeline-day {
+            margin-bottom: 22px;
+        }
+
+        .timeline-day-header {
+            background: linear-gradient(135deg, #8B6914 0%, #6d5410 100%);
+            color: #f4e4c1;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .timeline-day.empty .timeline-day-header {
+            background: linear-gradient(135deg, #9c9182 0%, #7d7364 100%);
+        }
+
+        .timeline-day-date {
+            font-weight: normal;
+            font-size: 12px;
+            opacity: 0.85;
+        }
+
+        .timeline-entries {
+            position: relative;
+            padding-left: 26px;
+            border-left: 3px solid #cd8b2d;
+            margin-left: 10px;
+        }
+
+        .timeline-entry {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+        }
+
+        .timeline-entry::before {
+            content: '';
+            position: absolute;
+            left: -32px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #cd8b2d;
+            border: 2px solid #f4e4c1;
+            box-shadow: 0 0 0 2px #8B6914;
+        }
+
+        .timeline-entry-time {
+            color: #6d5635;
+            font-size: 12px;
+            font-weight: bold;
+            min-width: 50px;
+            flex-shrink: 0;
+        }
+
+        .timeline-entry-icon {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            flex-shrink: 0;
+        }
+
+        .timeline-entry-body {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .timeline-entry-tile {
+            font-weight: bold;
+            color: #2c1810;
+            font-size: 14px;
+        }
+
+        .timeline-entry-player {
+            font-size: 12px;
+            color: #4a5c3a;
+            font-weight: bold;
+        }
+
+        .timeline-day-empty-msg {
+            color: #999;
+            font-style: italic;
+            font-size: 13px;
+            padding: 4px 0 4px 26px;
+            margin-left: 10px;
+        }
+
+        .timeline-most-active-item {
+            display: flex;
+            justify-content: space-between;
+            background: rgba(255,255,255,0.5);
+            border: 1px solid #8B6914;
+            border-radius: 6px;
+            padding: 8px 14px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            color: #2c1810;
+        }
+
         /* Bonus Overlay Styles */
         .bonus-overlay-container {
             position: absolute;

@@ -861,7 +861,7 @@ def load_bingo_data(tenant_id=None):
     # Return default empty board
     return {
         'boardSize': 5,
-        'tiles': [{'items': [], 'value': 10, 'completedBy': [], 'displayTitle': ''} for _ in range(25)],
+        'tiles': [{'items': [], 'value': 10, 'completedBy': [], 'completedAt': {}, 'displayTitle': ''} for _ in range(25)],
         'completions': {},
         'lineBonuses': {
             'rows': [50, 50, 50, 50, 50],
@@ -970,6 +970,14 @@ def record_drop():
         except Exception as e:
             print(f"[X] Error saving to history: {e}")
 
+    # Normalize the drop timestamp once so it can be stamped onto any tile
+    # this drop completes (see completedAt below).
+    try:
+        completed_at_iso = (datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                             if isinstance(timestamp, str) else timestamp).isoformat()
+    except (ValueError, AttributeError):
+        completed_at_iso = datetime.utcnow().isoformat()
+
     # Check tiles for completion (using tenant's bingo data)
     bingo_data = load_bingo_data(tenant_id)
     updated = False
@@ -1016,6 +1024,7 @@ def record_drop():
 
                     if has_all and player_name not in tile['completedBy']:
                         tile['completedBy'].append(player_name)
+                        tile.setdefault('completedAt', {})[player_name] = completed_at_iso
                         completed_tiles.append({
                             'tile': index + 1,
                             'items': tile['items'],
@@ -1035,6 +1044,7 @@ def record_drop():
 
                     if player_name not in tile['completedBy']:
                         tile['completedBy'].append(player_name)
+                        tile.setdefault('completedAt', {})[player_name] = completed_at_iso
                         completed_tiles.append({
                             'tile': index + 1,
                             'items': tile['items'],
@@ -1977,6 +1987,9 @@ def manual_override():
     if action == 'add':
         if player_name not in tile['completedBy']:
             tile['completedBy'].append(player_name)
+            # No drop event backs a manual override, so stamp it with "now" rather
+            # than leaving it unresolved on the Timeline.
+            tile.setdefault('completedAt', {})[player_name] = datetime.utcnow().isoformat()
             save_bingo_data(bingo_data, tenant_id)
             print(f"[OK] Manual override: Added {player_name} to tile {tile_index + 1}")
             return jsonify({
@@ -1992,6 +2005,7 @@ def manual_override():
     elif action == 'remove':
         if player_name in tile['completedBy']:
             tile['completedBy'].remove(player_name)
+            tile.get('completedAt', {}).pop(player_name, None)
             save_bingo_data(bingo_data, tenant_id)
             print(f"[OK] Manual override: Removed {player_name} from tile {tile_index + 1}")
             return jsonify({

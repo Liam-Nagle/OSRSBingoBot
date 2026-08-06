@@ -10,7 +10,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>⚔️ OSRS BINGO BOARD ⚔️</h1>
+        <h1>⚔️ Unsociables Bingo Board ⚔️</h1>
 
         <!-- Legend (compact, sits right under the title) -->
         <div class="view-legend view-legend-compact">
@@ -81,10 +81,10 @@
 
             <!-- Public Controls - Centered Below -->
             <div style="flex-basis: 100%; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
-                <button onclick="manualRefresh()" class="secondary">🔄 Refresh Now</button>
                 <button id="viewHistoryBtn" onclick="openHistoryModal()" class="secondary">📜 View History</button>
                 <button id="rankHistoryBtn" onclick="openRankHistoryModal()" class="secondary">📈 Rank History</button>
                 <button id="analyticsBtn" onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
+                <button id="timelineBtn" onclick="openTimelineModal()" class="secondary">📅 Timeline</button>
                 <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
                 <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
                 <button id="pbsBtn" onclick="openPBsModal()" class="secondary">🏆 Personal Bests</button>
@@ -577,6 +577,47 @@ Dragon warhammer"></textarea>
 
             <div class="modal-buttons" style="margin-top: 20px;">
                 <button class="btn-save" onclick="loadAnalytics()">🔄 Refresh Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tile Race Timeline Modal -->
+    <div class="modal" id="timelineModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <button onclick="closeTimelineModal()" class="close-btn">✕</button>
+            <h2>📅 Tile Race Timeline</h2>
+            <p id="timelineEventStart" style="color: #666; margin-bottom: 20px;"></p>
+
+            <!-- Loading State -->
+            <div id="timelineLoading" style="text-align: center; padding: 60px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+                <div style="color: #2c1810; font-weight: bold; font-size: 18px;">Building timeline...</div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="timelineEmpty" style="display: none; text-align: center; padding: 60px; color: #666;">
+                No tiles have been completed yet!
+            </div>
+
+            <!-- Timeline Content -->
+            <div id="timelineContent" style="display: none;">
+                <div id="timelineDays" class="timeline-days"></div>
+
+                <div id="timelineUnmatched" style="display: none; margin-top: 20px;">
+                    <h3 style="color: #2c1810; font-size: 15px; margin-bottom: 5px;">❓ Unmatched Completions</h3>
+                    <p style="font-size: 12px; color: #666; margin-bottom: 10px;">These tiles were completed before completion times were tracked, and no matching drop could be found in history to estimate one — they aren't placed on the timeline below.</p>
+                    <div id="timelineUnmatchedList" class="tile-completions"></div>
+                </div>
+
+                <div class="chart-container" style="margin-top: 25px;">
+                    <h3 style="color: #2c1810; margin-bottom: 15px; text-align: center;">📊 Tiles per Day</h3>
+                    <canvas id="timelineBarChart"></canvas>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <h3 style="color: #2c1810; margin-bottom: 10px; text-align: center;">🏆 Most Active Days</h3>
+                    <div id="timelineMostActive"></div>
+                </div>
             </div>
         </div>
     </div>
