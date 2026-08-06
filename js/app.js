@@ -715,6 +715,7 @@
         async function manualRefresh() {
             console.log('🔄 Manual refresh triggered...');
             await refreshFromAPI();
+            loadTotalValueLooted();
             alert('Board refreshed!');
         }
 
@@ -1872,10 +1873,104 @@
 
         // Analytics Functions
         let analyticsCharts = {};
+        let _analyticsMode = 'bingo'; // 'bingo' = current event only, 'alltime' = full history
+        let _analyticsEventConfig = null;
 
         function openAnalyticsModal() {
             document.getElementById('analyticsModal').classList.add('active');
-            loadAnalytics();
+            loadAnalyticsEventConfig().then(() => loadAnalytics());
+        }
+
+        // Fetch the active event's config so analytics can be scoped to "current bingo"
+        async function loadAnalyticsEventConfig() {
+            try {
+                const response = await fetch(`${API_URL}/event/config`);
+                _analyticsEventConfig = await response.json();
+            } catch (error) {
+                console.error('Failed to load event config for analytics:', error);
+                _analyticsEventConfig = null;
+            }
+            updateAnalyticsModeLabel();
+        }
+
+        function updateAnalyticsModeLabel() {
+            const label = document.getElementById('analyticsModeLabel');
+            if (!label) return;
+
+            const hasEvent = _analyticsEventConfig && _analyticsEventConfig.enabled && _analyticsEventConfig.startDate;
+
+            if (!hasEvent) {
+                label.textContent = 'No active event configured — showing all-time data';
+                document.getElementById('analyticsModeBingo').disabled = true;
+                document.getElementById('analyticsModeBingo').classList.remove('active');
+                document.getElementById('analyticsModeAlltime').classList.add('active');
+                return;
+            }
+
+            document.getElementById('analyticsModeBingo').disabled = false;
+            if (_analyticsMode === 'bingo') {
+                const start = new Date(_analyticsEventConfig.startDate);
+                label.textContent = `Showing drops since ${start.toLocaleDateString()} (${_analyticsEventConfig.eventName || 'current event'})`;
+            } else {
+                label.textContent = 'Showing all-time drop history';
+            }
+        }
+
+        function switchAnalyticsMode(mode) {
+            const hasEvent = _analyticsEventConfig && _analyticsEventConfig.enabled && _analyticsEventConfig.startDate;
+            if (mode === 'bingo' && !hasEvent) return; // nothing to scope to
+
+            _analyticsMode = mode;
+            document.getElementById('analyticsModeBingo').classList.toggle('active', mode === 'bingo');
+            document.getElementById('analyticsModeAlltime').classList.toggle('active', mode === 'alltime');
+            updateAnalyticsModeLabel();
+
+            // Reload with whatever filters are currently applied
+            loadAnalyticsWithFilters();
+        }
+
+        // Returns the start_date query param to scope fetches to the current event, or null for all-time
+        function getAnalyticsStartDate() {
+            if (_analyticsMode !== 'bingo') return null;
+            if (!_analyticsEventConfig || !_analyticsEventConfig.enabled || !_analyticsEventConfig.startDate) return null;
+            return _analyticsEventConfig.startDate;
+        }
+
+        // Dink can send two separate Discord messages for one physical item pickup - a "Loot
+        // Drop" message and, if it's a new slot, a "Collection Log" message - and both get
+        // saved as their own row in drop_history. That's correct for the raw History log, but
+        // it double-counts a single drop everywhere Analytics counts "number of drops". This
+        // collapses same player+item rows that land within a few seconds of each other (i.e.
+        // a loot/collection_log pair for the same pickup) into one, before any chart/stat sees
+        // them. Does not touch the underlying data - only affects what Analytics computes.
+        function dedupeDropsForAnalytics(drops, windowSeconds = 5) {
+            const byPlayer = {};
+            drops.forEach(d => {
+                (byPlayer[d.player] = byPlayer[d.player] || []).push(d);
+            });
+
+            const result = [];
+            Object.values(byPlayer).forEach(playerDrops => {
+                const sorted = [...playerDrops].sort((a, b) => a.timestamp - b.timestamp);
+                const kept = [];
+                sorted.forEach(d => {
+                    const match = kept.find(k =>
+                        k.item === d.item &&
+                        Math.abs(k.timestamp - d.timestamp) / 1000 <= windowSeconds
+                    );
+                    if (match) {
+                        // Same physical drop - keep whichever entry actually carries a GP value
+                        if (!match.value && d.value) {
+                            match.value = d.value;
+                            match.value_string = d.value_string;
+                        }
+                    } else {
+                        kept.push(d);
+                    }
+                });
+                result.push(...kept);
+            });
+            return result;
         }
 
         function closeAnalyticsModal() {
@@ -2174,22 +2269,30 @@
             }, 100);
 
             try {
-                // Fetch all history data
-                const response = await fetch(`${API_URL}/history?limit=10000`);
+                // Fetch history data, scoped to the current event unless in All Time mode
+                const params = new URLSearchParams({ limit: 10000 });
+                const startDate = getAnalyticsStartDate();
+                if (startDate) params.append('start_date', startDate);
+
+                const response = await fetch(`${API_URL}/history?${params}`);
                 if (!response.ok) throw new Error('Failed to fetch history');
 
                 const data = await response.json();
 
                 if (!data.history || data.history.length === 0) {
-                    loadingDiv.innerHTML = '<div style="text-align: center; padding: 60px; color: #666;">No data available yet!</div>';
+                    const msg = startDate ? 'No drops recorded yet for the current event!' : 'No data available yet!';
+                    loadingDiv.innerHTML = `<div style="text-align: center; padding: 60px; color: #666;">${msg}</div>`;
+                    loadingDiv.style.display = 'block';
+                    contentDiv.style.display = 'none';
                     return;
                 }
 
-                // Process data - convert timestamps to Date objects
-                const drops = data.history.map(d => ({
+                // Process data - convert timestamps to Date objects, then collapse
+                // loot/collection_log pairs so drop counts reflect real events
+                const drops = dedupeDropsForAnalytics(data.history.map(d => ({
                     ...d,
                     timestamp: new Date(d.timestamp)
-                }));
+                })));
 
                 // Populate player filter (for filtering feature)
                 populateAnalyticsPlayerFilter(drops);
@@ -2215,6 +2318,7 @@
                 generateKeyStats(drops);
                 generateDayOfWeekChart(drops);
                 generatePlayerActivityChart(drops);
+                generateValueLeaderboardChart(drops);
                 generateMonthComparisonChart(drops);
 
                 loadingDiv.style.display = 'none';
@@ -2333,6 +2437,7 @@
                     };
                     break;
                 case 'playerActivityChart':
+                case 'valueLeaderboardChart':
                     clickHandler = (elements, chart) => {
                         if (!elements.length) return;
                         openHistoryFromChart({ player: chart.data.labels[elements[0].index] });
@@ -2497,15 +2602,17 @@
             if (typeFilter) params.append('type', typeFilter);
             if (valueFilter > 0) params.append('minValue', valueFilter);
             if (searchFilter) params.append('search', searchFilter);
+            const expandedEventStartDate = getAnalyticsStartDate();
+            if (expandedEventStartDate) params.append('start_date', expandedEventStartDate);
 
             try {
                 const response = await fetch(`${API_URL}/history?${params}`);
                 const data = await response.json();
 
-                let filteredHistory = (data.history || []).map(d => ({
+                let filteredHistory = dedupeDropsForAnalytics((data.history || []).map(d => ({
                     ...d,
                     timestamp: new Date(d.timestamp)
-                }));
+                })));
 
                 // Store for player dropdown
                 expandedChartData = filteredHistory;
@@ -2803,6 +2910,57 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                     };
                     break;
 
+                case 'valueLeaderboardChart':
+                    // Recreate drop value leaderboard with filtered data
+                    const playerValues2 = {};
+                    drops.forEach(d => {
+                        playerValues2[d.player] = (playerValues2[d.player] || 0) + (d.value || 0);
+                    });
+
+                    const sortedPlayerValues = Object.entries(playerValues2)
+                        .sort((a, b) => b[1] - a[1]);
+
+                    config = {
+                        type: 'bar',
+                        data: {
+                            labels: sortedPlayerValues.map(p => p[0]),
+                            datasets: [{
+                                label: 'Total Value Looted (GP)',
+                                data: sortedPlayerValues.map(p => p[1]),
+                                backgroundColor: sortedPlayerValues.map(p => playerColors[p[0]] || '#cd8b2d'),
+                                borderColor: '#8B6914',
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Drop Value Leaderboard',
+                                    font: { size: 16 }
+                                },
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (context) => `${formatGP(context.parsed.x)} gp`
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        callback: (value) => formatGP(value)
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    break;
+
                 case 'monthComparisonChart':
                     // Recreate month comparison chart with filtered data
                     const monthNames2 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2943,12 +3101,17 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             makeChartExpandable('dayOfWeekChart', '📅 Activity by Day of Week');
             makeChartExpandable('hourHeatmapChart', '🕐 Activity Heatmap');
             makeChartExpandable('playerActivityChart', '👥 Player Activity');
+            makeChartExpandable('valueLeaderboardChart', '💰 Drop Value Leaderboard');
             makeChartExpandable('monthComparisonChart', '📆 Monthly Comparison');
         }
 
         function generateKeyStats(drops) {
             // Total drops
             document.getElementById('totalDrops').textContent = drops.length.toLocaleString();
+
+            // Total value looted
+            const totalValue = drops.reduce((sum, d) => sum + (d.value || 0), 0);
+            document.getElementById('totalValueLooted').textContent = formatGP(totalValue) + ' gp';
 
             // Unique players
             const uniquePlayers = new Set(drops.map(d => d.player));
@@ -3201,6 +3364,76 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                         x: {
                             beginAtZero: true,
                             ticks: { stepSize: 1 }
+                        }
+                    },
+                    onHover: (event, elements) => {
+                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements, chart) => {
+                        if (!elements.length) return;
+                        const player = chart.data.labels[elements[0].index];
+                        openHistoryFromChart({ player: player });
+                    }
+                }
+            });
+        }
+
+        // Format a raw GP number as a short string, e.g. 450300000 -> "450.3M"
+        function formatGP(value) {
+            const abs = Math.abs(value);
+            if (abs >= 1000000000) return (value / 1000000000).toFixed(2) + 'B';
+            if (abs >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+            if (abs >= 1000) return (value / 1000).toFixed(0) + 'K';
+            return value.toLocaleString();
+        }
+
+        function generateValueLeaderboardChart(drops) {
+            const canvas = document.getElementById('valueLeaderboardChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            // Sum drop value per player
+            const playerValues = {};
+            drops.forEach(d => {
+                playerValues[d.player] = (playerValues[d.player] || 0) + (d.value || 0);
+            });
+
+            const sortedPlayers = Object.entries(playerValues)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10); // Top 10 players
+
+            if (analyticsCharts.valueLeaderboard) analyticsCharts.valueLeaderboard.destroy();
+
+            analyticsCharts.valueLeaderboard = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sortedPlayers.map(p => p[0]),
+                    datasets: [{
+                        label: 'Total Value Looted (GP)',
+                        data: sortedPlayers.map(p => p[1]),
+                        backgroundColor: '#cd8b2d',
+                        borderColor: '#8B6914',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => `${formatGP(context.parsed.x)} gp`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: (value) => formatGP(value)
+                            }
                         }
                     },
                     onHover: (event, elements) => {
@@ -3595,6 +3828,9 @@ async function loadAnalyticsWithFilters() {
             if (valueFilter > 0) params.append('minValue', valueFilter);
             if (searchFilter) params.append('search', searchFilter);
 
+            const eventStartDate = getAnalyticsStartDate();
+            if (eventStartDate) params.append('start_date', eventStartDate);
+
             try {
                 const response = await fetch(`${API_URL}/history?${params}`);
                 const data = await response.json();
@@ -3606,6 +3842,9 @@ async function loadAnalyticsWithFilters() {
                     ...d,
                     timestamp: new Date(d.timestamp)
                 }));
+
+                // Collapse loot/collection_log pairs so drop counts reflect real events
+                filteredHistory = dedupeDropsForAnalytics(filteredHistory);
 
                 // Apply player filter (client-side for multi-select)
                 if (analyticsSelectedPlayers.length > 0) {
@@ -3630,6 +3869,7 @@ async function loadAnalyticsWithFilters() {
                 generateKeyStats(filteredHistory);
                 generateDayOfWeekChart(filteredHistory);
                 generatePlayerActivityChart(filteredHistory);
+                generateValueLeaderboardChart(filteredHistory);
                 generateMonthComparisonChart(filteredHistory);
 
             } catch (error) {
@@ -5584,6 +5824,75 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.10.1",
+                date: "2026-08-06",
+                title: "Drop value leaderboard, event-scoped analytics, and a main board GP total",
+                changes: [
+                    { type: "feature", text: "Added a Drop Value Leaderboard chart to Analytics — see who's looted the most GP this event" },
+                    { type: "feature", text: "Added a 'Total Value Looted' stat card to the Analytics dashboard" },
+                    { type: "feature", text: "Added a 'Current Bingo' / 'All Time' toggle to the Analytics dashboard, defaulting to just the active event's drops instead of all-time history" },
+                    { type: "fix", text: "Dink can send a separate 'Collection Log' message alongside a 'Loot Drop' message for the same item pickup — the Boss KC 'Actual drops' stat and Analytics drop counts were counting both as two drops. Both now correctly count as one." },
+                    { type: "feature", text: "Added a 'Total Value Looted' widget to the main board for an at-a-glance total of GP looted this bingo" },
+                    { type: "improvement", text: "Moved the colour legend to a smaller strip directly under the title, freeing up space in the controls bar" },
+                ]
+            },
+            {
+                version: "v2.10.0",
+                date: "2026-08-01",
+                title: "Smarter Boss KC tracking, removed Deaths screen",
+                changes: [
+                    { type: "improvement", text: "Boss KC now automatically picks up every boss from the highscores instead of a fixed list, so newly added OSRS bosses show up without needing a code update" },
+                    { type: "improvement", text: "Removed the Deaths tracking screen and its admin cleanup tool" },
+                ]
+            },
+            {
+                version: "v2.9.5",
+                date: "2026-06-27",
+                title: "Found the real cause of the board wipe bug",
+                changes: [
+                    { type: "fix", text: "The board-save endpoint had no authentication, so it could be silently overwritten by an unauthenticated request — saving now requires admin login" },
+                    { type: "fix", text: "The site no longer silently tries to sync board changes to the server unless you're actually logged in as admin" },
+                ]
+            },
+            {
+                version: "v2.9.4",
+                date: "2026-06-20",
+                title: "Board data wipe fallback",
+                changes: [
+                    { type: "fix", text: "Added a fallback to recover board tile data from the legacy collection if the board ever appeared wiped after a cold start" },
+                ]
+            },
+            {
+                version: "v2.9.3",
+                date: "2026-06-06",
+                title: "Fixed the GIM highscores widget (again)",
+                changes: [
+                    { type: "fix", text: "GIM highscores widget was being blocked by Cloudflare — switched to ScraperAPI for reliable fetching" },
+                    { type: "improvement", text: "Reduced highscore refresh frequency from hourly to every 3 days to stay within API limits" },
+                ]
+            },
+            {
+                version: "v2.9.2",
+                date: "2026-05-01",
+                title: "Hosting changes",
+                changes: [
+                    { type: "improvement", text: "Briefly trialed Oracle Cloud + Cloudflare tunnel hosting for the API, then moved back to Render" },
+                ]
+            },
+            {
+                version: "v2.9.1",
+                date: "2026-04-14",
+                title: "Personal Bests import & UI improvements",
+                changes: [
+                    { type: "feature", text: "Added boss selection, party size, and invocation level dropdowns to Personal Bests" },
+                    { type: "feature", text: "Party size is now automatically inferred from grouped PBs with the same boss and time" },
+                    { type: "improvement", text: "PB import now updates live as it scans, and retries automatically on Discord rate limits" },
+                    { type: "improvement", text: "Filtered out seasonal embeds and cleaned up boss name casing/sorting" },
+                    { type: "improvement", text: "Improved table filtering in the Personal Bests view" },
+                    { type: "fix", text: "Fixed the PB parser misreading some completion-count embeds and boss names" },
+                ]
+            },
                        {
                 version: "v2.9.0",
                 date: "2025-04-13",
@@ -6694,6 +7003,31 @@ function startEventCountdown(config) {
 
         // Auto-refresh every 1 hour (to match cache expiry)
         setInterval(loadGroupHighscore, 60 * 60 * 1000);
+
+        // Total Value Looted widget (main board, quick-glance)
+        async function loadTotalValueLooted() {
+            const amountEl = document.getElementById('totalValueLootedMain');
+            if (!amountEl) return;
+
+            try {
+                const response = await fetch(`${API_URL}/history/total-value`);
+                if (!response.ok) throw new Error('Failed to fetch total value');
+
+                const data = await response.json();
+                amountEl.textContent = `${formatGP(data.total_value || 0)} gp`;
+
+                const labelEl = document.getElementById('valueLootedLabel');
+                if (labelEl) {
+                    labelEl.textContent = data.since ? 'Total Value Looted' : 'Total Value Looted (All Time)';
+                }
+            } catch (error) {
+                console.error('Failed to load total value looted:', error);
+                amountEl.textContent = '?';
+            }
+        }
+
+        loadTotalValueLooted();
+        setInterval(loadTotalValueLooted, 60 * 1000);
 
 
         // Run this when the page loads

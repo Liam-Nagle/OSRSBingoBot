@@ -611,6 +611,31 @@ def get_all_kc():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def count_unique_drops(docs, window_seconds=5):
+    """
+    Count real drop events from history docs, collapsing paired 'loot' + 'collection_log'
+    entries that Dink can send for the same physical item pickup (one item, two Discord
+    messages) into a single count. Docs are NOT modified or removed - this only affects
+    how many "actual drops" we report, not what's stored in history.
+    """
+    # Group by player so timestamps are only compared within the same player's drops
+    by_player = {}
+    for doc in docs:
+        by_player.setdefault(doc['player'], []).append(doc['timestamp'])
+
+    total = 0
+    for timestamps in by_player.values():
+        timestamps.sort()
+        last_counted = None
+        for ts in timestamps:
+            if last_counted is not None and (ts - last_counted).total_seconds() <= window_seconds:
+                continue  # same physical drop as the previous one we counted (loot + collection_log pair)
+            total += 1
+            last_counted = ts
+
+    return total
+
+
 @app.route('/kc/notable-drops', methods=['GET'])
 def get_notable_drops():
     """Count actual drops of a notable item (e.g. Enhanced crystal weapon seed) from drop history"""
@@ -623,7 +648,11 @@ def get_notable_drops():
     collections = get_tenant_collections(tenant_id)
 
     try:
-        count = collections['history'].count_documents({'item': {'$regex': f'^{item_name}$', '$options': 'i'}})
+        docs = list(collections['history'].find(
+            {'item': {'$regex': f'^{item_name}$', '$options': 'i'}},
+            {'player': 1, 'timestamp': 1}
+        ))
+        count = count_unique_drops(docs)
         return jsonify({'item': item_name, 'count': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1497,6 +1526,43 @@ def get_history():
 
     except Exception as e:
         return jsonify({'error': f'Failed to get history: {str(e)}'}), 500
+
+
+@app.route('/history/total-value', methods=['GET'])
+def get_total_value_looted():
+    """
+    Sum of GP value looted, for the main board's quick-glance widget.
+    Scoped to the current event (since its startDate) by default; pass
+    ?all_time=true to sum across all history instead.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        all_time = request.args.get('all_time', 'false').lower() == 'true'
+
+        match_query = {}
+        since = None
+        if not all_time:
+            event_config = collections['bingo'].find_one({'_id': 'event_config'})
+            if event_config and event_config.get('enabled') and event_config.get('startDate'):
+                since = event_config['startDate']
+                match_query['timestamp'] = {'$gte': datetime.fromisoformat(since.replace('Z', '+00:00'))}
+
+        result = list(collections['history'].aggregate([
+            {'$match': match_query},
+            {'$group': {'_id': None, 'total': {'$sum': '$value'}}}
+        ]))
+
+        total = result[0]['total'] if result else 0
+        return jsonify({'total_value': total, 'since': since})
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get total value: {str(e)}'}), 500
 
 
 @app.route('/update', methods=['POST'])

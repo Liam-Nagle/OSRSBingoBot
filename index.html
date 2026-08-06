@@ -12,6 +12,22 @@
     <div class="container">
         <h1>⚔️ OSRS BINGO BOARD ⚔️</h1>
 
+        <!-- Legend (compact, sits right under the title) -->
+        <div class="view-legend view-legend-compact">
+            <div class="legend-item">
+                <div class="legend-box green"></div>
+                <span>You completed</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box yellow"></div>
+                <span>Others completed</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box white"></div>
+                <span>Not completed</span>
+            </div>
+        </div>
+
         <div class="controls">
             <!-- Player View Selector -->
             <div class="player-selector">
@@ -54,19 +70,12 @@
                 </div>
             </div>
 
-            <!-- Legend -->
-            <div class="view-legend">
-                <div class="legend-item">
-                    <div class="legend-box green"></div>
-                    <span>You completed</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-box yellow"></div>
-                    <span>Others completed</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-box white"></div>
-                    <span>Not completed</span>
+            <!-- Total Value Looted Widget -->
+            <div class="value-looted-widget" title="Total GP looted so far this bingo">
+                <div class="value-looted-icon">💰</div>
+                <div class="value-looted-info">
+                    <div class="value-looted-label" id="valueLootedLabel">Total Value Looted</div>
+                    <div class="value-looted-amount" id="totalValueLootedMain">--</div>
                 </div>
             </div>
 
@@ -398,6 +407,13 @@ Dragon warhammer"></textarea>
             <h2>📊 Drop Analytics Dashboard</h2>
             <p style="color: #666; margin-bottom: 20px;">Comprehensive statistics and insights</p>
 
+            <!-- Mode Toggle -->
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
+                <button onclick="switchAnalyticsMode('bingo')" id="analyticsModeBingo" class="kc-mode-btn active">🏁 Current Bingo</button>
+                <button onclick="switchAnalyticsMode('alltime')" id="analyticsModeAlltime" class="kc-mode-btn">📈 All Time</button>
+                <span id="analyticsModeLabel" style="font-size: 12px; color: #8b7355; margin-left: 8px;"></span>
+            </div>
+
             <!-- Loading State -->
             <div id="analyticsLoading" style="text-align: center; padding: 60px;">
                 <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
@@ -412,6 +428,10 @@ Dragon warhammer"></textarea>
                     <div class="stat-card">
                         <div class="stat-value" id="totalDrops">0</div>
                         <div class="stat-label">Total Drops</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalValueLooted">0</div>
+                        <div class="stat-label">💰 Total Value Looted</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value" id="uniquePlayers">0</div>
@@ -542,6 +562,14 @@ Dragon warhammer"></textarea>
                     <div class="chart-container">
                         <h3 style="color: #2c1810; margin-bottom: 15px; text-align: center;">🏆 Most Dropped Items</h3>
                         <canvas id="topItemsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Drop Value Leaderboard -->
+                <div style="display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 25px;">
+                    <div class="chart-container">
+                        <h3 style="color: #2c1810; margin-bottom: 15px; text-align: center;">💰 Drop Value Leaderboard</h3>
+                        <canvas id="valueLeaderboardChart"></canvas>
                     </div>
                 </div>
 

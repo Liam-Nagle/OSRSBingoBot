@@ -184,6 +184,21 @@
             color: #f4e4c1;
         }
 
+        /* Compact variant - sits directly under the title instead of inside .controls */
+        .view-legend-compact {
+            justify-content: center;
+            gap: 12px;
+            margin: -10px auto 15px;
+            font-size: 11px;
+        }
+
+        .view-legend-compact .legend-box {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            border-width: 1px;
+        }
+
         .legend-item {
             display: flex;
             align-items: center;
@@ -622,9 +637,13 @@
                 top: 0;
             }
 
-            .view-legend {
+            .view-legend:not(.view-legend-compact) {
                 margin-left: 0;
                 flex-basis: 100%;
+            }
+
+            .view-legend-compact {
+                flex-wrap: wrap;
             }
         }
 
@@ -1138,6 +1157,41 @@
 
         .group-stats span {
             opacity: 0.9;
+        }
+
+        /* ============================================
+           TOTAL VALUE LOOTED WIDGET (Top Bar)
+           ============================================ */
+
+        .value-looted-widget {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, #2c1810 0%, #1a0f08 100%);
+            border: 3px solid #4CAF50;
+            border-radius: 12px;
+            padding: 10px 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 15px rgba(76, 175, 80, 0.15);
+        }
+
+        .value-looted-icon {
+            font-size: 34px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+
+        .value-looted-label {
+            font-size: 12px;
+            color: #f4e4c1;
+            opacity: 0.9;
+            margin-bottom: 3px;
+        }
+
+        .value-looted-amount {
+            font-size: 22px;
+            font-weight: bold;
+            color: #4CAF50;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.6);
         }
 
         /* ============================================
