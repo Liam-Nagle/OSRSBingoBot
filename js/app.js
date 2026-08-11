@@ -1975,6 +1975,27 @@
             analyticsCharts = {};
         }
 
+        function showAnalyticsTab(tab) {
+            document.querySelectorAll('.analytics-tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.analytics-tab').forEach(el => el.classList.remove('active'));
+
+            const suffix = tab.charAt(0).toUpperCase() + tab.slice(1);
+            document.getElementById(`analyticsTabContent${suffix}`).classList.add('active');
+            document.getElementById(`analyticsTab${suffix}`).classList.add('active');
+
+            // Charts in a tab that was hidden at creation time render at 0x0 —
+            // resize them now that their canvas is actually visible.
+            Object.values(analyticsCharts).forEach(chart => chart && chart.resize());
+        }
+
+        // Format an hour (0-23) as a short 12-hour label, e.g. 20 -> "8 PM"
+        function formatHourLabel(hour) {
+            if (hour === 0) return '12 AM';
+            if (hour < 12) return `${hour} AM`;
+            if (hour === 12) return '12 PM';
+            return `${hour - 12} PM`;
+        }
+
         // ============================================================
         // Tile Race Timeline
         // ============================================================
@@ -2264,8 +2285,9 @@
             // --- Build title from the chart dimension that was clicked ---
             let titleIcon = '📊';
             let titleText = 'Drops';
-            if (dayOfWeek !== null)       { titleIcon = '📅'; titleText = `Drops on ${dayNames[dayOfWeek]}s`; }
-            else if (hour !== null)       { const lbl = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour-12} PM`; titleIcon = '🕐'; titleText = `Drops at ${lbl}`; }
+            if (dayOfWeek !== null && hour !== null) { titleIcon = '🗓️'; titleText = `Drops on ${dayNames[dayOfWeek]}s at ${formatHourLabel(hour)}`; }
+            else if (dayOfWeek !== null)  { titleIcon = '📅'; titleText = `Drops on ${dayNames[dayOfWeek]}s`; }
+            else if (hour !== null)       { titleIcon = '🕐'; titleText = `Drops at ${formatHourLabel(hour)}`; }
             else if (player)              { titleIcon = '👤'; titleText = `Drops by ${player}`; }
             else if (itemSearch)          { titleIcon = '🎯'; titleText = `Drops — "${itemSearch}"`; }
             else if (dateStart && dateEnd) {
@@ -2295,8 +2317,9 @@
             const chips = [];
 
             // Context chip — what dimension was clicked
-            if (dayOfWeek !== null)        chips.push({ label: `📅 ${dayNames[dayOfWeek]}s`, color: '#1565C0', bg: '#E3F2FD' });
-            else if (hour !== null)        { const lbl = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour-12} PM`; chips.push({ label: `🕐 ${lbl}`, color: '#1565C0', bg: '#E3F2FD' }); }
+            if (dayOfWeek !== null && hour !== null) chips.push({ label: `🗓️ ${dayNames[dayOfWeek]}s @ ${formatHourLabel(hour)}`, color: '#1565C0', bg: '#E3F2FD' });
+            else if (dayOfWeek !== null)   chips.push({ label: `📅 ${dayNames[dayOfWeek]}s`, color: '#1565C0', bg: '#E3F2FD' });
+            else if (hour !== null)        chips.push({ label: `🕐 ${formatHourLabel(hour)}`, color: '#1565C0', bg: '#E3F2FD' });
             else if (player)               chips.push({ label: `👤 ${player}`, color: '#6A1B9A', bg: '#F3E5F5' });
             else if (itemSearch)           chips.push({ label: `🎯 "${itemSearch}"`, color: '#BF360C', bg: '#FBE9E7' });
             else if (dateStart && dateEnd) chips.push({ label: titleText.replace('Drops ', ''), color: '#1565C0', bg: '#E3F2FD' });
@@ -2586,11 +2609,10 @@
                 // Use new chart update functions that support multi-player
                 updateDropsOverTimeChart(drops, players, playerColors);
                 updateTopItemsChart(drops, players, playerColors);
-                updateActivityHeatmapChart(drops, players, playerColors);
+                renderActivityHeatmapGrid(drops);
 
                 // Also generate the other charts
                 generateKeyStats(drops);
-                generateDayOfWeekChart(drops);
                 generatePlayerActivityChart(drops);
                 generateValueLeaderboardChart(drops);
                 generateMonthComparisonChart(drops);
@@ -2696,18 +2718,6 @@
                         const label = chart.data.labels[elements[0].index];
                         const dateStr = window._drilldownDateMap?.[label];
                         if (dateStr) openHistoryFromChart({ dateStart: dateStr, dateEnd: dateStr });
-                    };
-                    break;
-                case 'dayOfWeekChart':
-                    clickHandler = (elements) => {
-                        if (!elements.length) return;
-                        openHistoryFromChart({ dayOfWeek: elements[0].index });
-                    };
-                    break;
-                case 'hourHeatmapChart':
-                    clickHandler = (elements) => {
-                        if (!elements.length) return;
-                        openHistoryFromChart({ hour: elements[0].index });
                     };
                     break;
                 case 'playerActivityChart':
@@ -3047,105 +3057,6 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
                     };
                     break;
 
-                case 'dayOfWeekChart':
-                    // Recreate day of week chart with filtered data
-                    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const dayCounts2 = [0, 0, 0, 0, 0, 0, 0];
-
-                    drops.forEach(d => {
-                        const day = d.timestamp.getDay();
-                        dayCounts2[day]++;
-                    });
-
-                    config = {
-                        type: 'bar',
-                        data: {
-                            labels: dayNames,
-                            datasets: [{
-                                label: 'Drops',
-                                data: dayCounts2,
-                                backgroundColor: '#cd8b2d',
-                                borderColor: '#8B6914',
-                                borderWidth: 2
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                title: {
-                                    display: true,
-                                    text: 'Activity by Day of Week',
-                                    font: { size: 16 }
-                                },
-                                legend: {
-                                    display: false
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: { stepSize: 1 }
-                                }
-                            }
-                        }
-                    };
-                    break;
-
-                case 'hourHeatmapChart':
-                    // Recreate hour heatmap with filtered data
-                    const hourCounts = {};
-                    const hours = Array.from({length: 24}, (_, i) => i);
-
-                    players.forEach(player => {
-                        hourCounts[player] = Array(24).fill(0);
-                    });
-
-                    drops.forEach(d => {
-                        const hour = d.timestamp.getHours();
-                        if (hourCounts[d.player]) {
-                            hourCounts[d.player][hour]++;
-                        }
-                    });
-
-                    const hourDatasets = players.map(player => ({
-                        label: player,
-                        data: hourCounts[player] || Array(24).fill(0),
-                        borderColor: playerColors[player],
-                        backgroundColor: playerColors[player] + '40',
-                        tension: 0.4,
-                        fill: true
-                    }));
-
-                    config = {
-                        type: 'line',
-                        data: {
-                            labels: hours.map(h => `${h}:00`),
-                            datasets: hourDatasets
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                title: {
-                                    display: true,
-                                    text: 'Activity by Hour of Day',
-                                    font: { size: 16 }
-                                },
-                                legend: {
-                                    labels: { font: { size: 14 }, padding: 15 }
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: { stepSize: 1 }
-                                }
-                            }
-                        }
-                    };
-                    break;
-
                 case 'playerActivityChart':
                     // Recreate player activity chart with filtered data
                     const playerCounts = {};
@@ -3372,8 +3283,6 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
         function initializeExpandableCharts() {
             makeChartExpandable('dropsPerDayChart', '📊 Drops Over Time');
             makeChartExpandable('topItemsChart', '🏆 Most Valuable Drops');
-            makeChartExpandable('dayOfWeekChart', '📅 Activity by Day of Week');
-            makeChartExpandable('hourHeatmapChart', '🕐 Activity Heatmap');
             makeChartExpandable('playerActivityChart', '👥 Player Activity');
             makeChartExpandable('valueLeaderboardChart', '💰 Drop Value Leaderboard');
             makeChartExpandable('monthComparisonChart', '📆 Monthly Comparison');
@@ -3421,184 +3330,59 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             }
         }
 
-        function generateDropsPerDayChart(drops) {
-            const ctx = document.getElementById('dropsPerDayChart').getContext('2d');
+        // Renders the combined Day x Hour activity heatmap as a plain HTML/CSS grid
+        // (not a Chart.js canvas) into #activityHeatmapGrid. Replaces the old separate
+        // "Activity by Day of Week" and "Activity by Hour of Day" bar charts — a single
+        // 7x24 grid can actually show something like "busiest Saturday evenings",
+        // which two independent 1-D breakdowns can't distinguish from e.g. Tuesday mornings.
+        function renderActivityHeatmapGrid(drops) {
+            const container = document.getElementById('activityHeatmapGrid');
+            if (!container) return;
 
-            // Get last 30 days
-            const last30Days = [];
-            const dayCounts = {};
-            const today = new Date();
+            const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dayNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-            for (let i = 29; i >= 0; i--) {
-                const date = new Date(today);
-                date.setDate(today.getDate() - i);
-                const dateStr = date.toISOString().split('T')[0];
-                last30Days.push(dateStr);
-                dayCounts[dateStr] = 0;
+            // counts[day][hour]
+            const counts = Array.from({ length: 7 }, () => Array(24).fill(0));
+            drops.forEach(d => {
+                counts[d.timestamp.getDay()][d.timestamp.getHours()]++;
+            });
+
+            const maxCount = Math.max(1, ...counts.flat());
+
+            // Find the single busiest cell for the summary callout
+            let best = { day: 0, hour: 0, count: 0 };
+            counts.forEach((row, day) => row.forEach((count, hour) => {
+                if (count > best.count) best = { day, hour, count };
+            }));
+
+            const summary = document.getElementById('heatmapSummary');
+            if (summary) {
+                summary.textContent = best.count > 0
+                    ? `🔥 Most active: ${dayNamesFull[best.day]}s around ${formatHourLabel(best.hour)} (${best.count} drops)`
+                    : '';
             }
 
-            drops.forEach(d => {
-                const dateStr = d.timestamp.toISOString().split('T')[0];
-                if (dayCounts.hasOwnProperty(dateStr)) {
-                    dayCounts[dateStr]++;
+            // Header row (hour labels, shown every 3 hours to avoid clutter)
+            let html = `<div class="heatmap-row"><div class="heatmap-day-label"></div>`;
+            for (let h = 0; h < 24; h++) {
+                html += `<div class="heatmap-hour-label">${h % 3 === 0 ? formatHourLabel(h).replace(' ', '') : ''}</div>`;
+            }
+            html += `</div>`;
+
+            dayLabels.forEach((dayLabel, day) => {
+                html += `<div class="heatmap-row"><div class="heatmap-day-label">${dayLabel}</div>`;
+                for (let h = 0; h < 24; h++) {
+                    const count = counts[day][h];
+                    const intensity = count / maxCount;
+                    const bg = count === 0 ? 'rgba(139,105,20,0.08)' : `rgba(205, 139, 45, ${0.15 + intensity * 0.85})`;
+                    const cellLabel = `${dayNamesFull[day]} ${formatHourLabel(h)}: ${count} drop${count === 1 ? '' : 's'}`;
+                    html += `<div class="heatmap-cell" style="background:${bg}" title="${cellLabel}" onclick="openHistoryFromChart({dayOfWeek: ${day}, hour: ${h}})"></div>`;
                 }
+                html += `</div>`;
             });
 
-            const data = last30Days.map(d => dayCounts[d]);
-            const labels = last30Days.map(d => {
-                const date = new Date(d + 'T12:00:00');
-                return `${date.getMonth() + 1}/${date.getDate()}`;
-            });
-
-            // Build label → date string map for drilldown (also stored globally for expanded chart)
-            const dateMap = {};
-            last30Days.forEach(d => {
-                const date = new Date(d + 'T12:00:00');
-                dateMap[`${date.getMonth() + 1}/${date.getDate()}`] = d;
-            });
-            window._drilldownDateMap = dateMap;
-
-            if (analyticsCharts.dropsPerDay) analyticsCharts.dropsPerDay.destroy();
-
-            analyticsCharts.dropsPerDay = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Drops',
-                        data: data,
-                        borderColor: '#cd8b2d',
-                        backgroundColor: 'rgba(205, 139, 45, 0.2)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 }
-                        }
-                    },
-                    onHover: (event, elements) => {
-                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-                    },
-                    onClick: (event, elements, chart) => {
-                        if (!elements.length) return;
-                        const label = chart.data.labels[elements[0].index];
-                        const dateStr = dateMap[label];
-                        if (dateStr) openHistoryFromChart({ dateStart: dateStr, dateEnd: dateStr });
-                    }
-                }
-            });
-        }
-
-        function generateDayOfWeekChart(drops) {
-            const ctx = document.getElementById('dayOfWeekChart').getContext('2d');
-
-            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const dayCounts = [0, 0, 0, 0, 0, 0, 0];
-
-            drops.forEach(d => {
-                dayCounts[d.timestamp.getDay()]++;
-            });
-
-            if (analyticsCharts.dayOfWeek) analyticsCharts.dayOfWeek.destroy();
-
-            analyticsCharts.dayOfWeek = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: dayNames,
-                    datasets: [{
-                        label: 'Drops',
-                        data: dayCounts,
-                        backgroundColor: '#cd8b2d',
-                        borderColor: '#8B6914',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 }
-                        }
-                    },
-                    onHover: (event, elements) => {
-                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-                    },
-                    onClick: (event, elements) => {
-                        if (!elements.length) return;
-                        openHistoryFromChart({ dayOfWeek: elements[0].index });
-                    }
-                }
-            });
-        }
-
-        function generateHourHeatmap(drops) {
-            const ctx = document.getElementById('hourHeatmapChart').getContext('2d');
-
-            const hourCounts = Array(24).fill(0);
-
-            drops.forEach(d => {
-                hourCounts[d.timestamp.getHours()]++;
-            });
-
-            const labels = Array.from({length: 24}, (_, i) => {
-                const hour = i % 12 || 12;
-                const ampm = i < 12 ? 'AM' : 'PM';
-                return `${hour}${ampm}`;
-            });
-
-            if (analyticsCharts.hourHeatmap) analyticsCharts.hourHeatmap.destroy();
-
-            analyticsCharts.hourHeatmap = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Drops',
-                        data: hourCounts,
-                        backgroundColor: hourCounts.map(count => {
-                            const maxCount = Math.max(...hourCounts);
-                            const intensity = maxCount > 0 ? count / maxCount : 0;
-                            return `rgba(205, 139, 45, ${0.3 + intensity * 0.7})`;
-                        }),
-                        borderColor: '#8B6914',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 }
-                        }
-                    },
-                    onHover: (event, elements) => {
-                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-                    },
-                    onClick: (event, elements) => {
-                        if (!elements.length) return;
-                        openHistoryFromChart({ hour: elements[0].index });
-                    }
-                }
-            });
+            container.innerHTML = html;
         }
 
         function generatePlayerActivityChart(drops) {
@@ -3796,58 +3580,6 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             });
         }
 
-        function generateTopItemsChart(drops) {
-            const ctx = document.getElementById('topItemsChart').getContext('2d');
-
-            const itemCounts = {};
-            drops.forEach(d => {
-                itemCounts[d.item] = (itemCounts[d.item] || 0) + 1;
-            });
-
-            const sortedItems = Object.entries(itemCounts)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10); // Top 10 items
-
-            if (analyticsCharts.topItems) analyticsCharts.topItems.destroy();
-
-            analyticsCharts.topItems = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: sortedItems.map(i => i[0]),
-                    datasets: [{
-                        data: sortedItems.map(i => i[1]),
-                        backgroundColor: [
-                            '#FFD700', '#C0C0C0', '#CD7F32', '#4CAF50', '#2196F3',
-                            '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#8BC34A'
-                        ],
-                        borderColor: '#8B6914',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: {
-                                boxWidth: 15,
-                                font: { size: 11 }
-                            }
-                        }
-                    },
-                    onHover: (event, elements) => {
-                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-                    },
-                    onClick: (event, elements, chart) => {
-                        if (!elements.length) return;
-                        const itemName = chart.data.labels[elements[0].index];
-                        openHistoryFromChart({ itemSearch: itemName });
-                    }
-                }
-            });
-        }
-
         // Analytics Filter State
         let analyticsSelectedPlayers = []; // Empty = All players
 
@@ -3884,7 +3616,7 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
 
             // "All Players" checkbox
             html += `
-                <label style="display: block; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
+                <label style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
                     <input type="checkbox"
                            id="analyticsPlayerAll"
                            onchange="toggleAllAnalyticsPlayers(this)"
@@ -3898,7 +3630,7 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             sortedPlayers.forEach(player => {
                 const checked = analyticsSelectedPlayers.length === 0 || analyticsSelectedPlayers.includes(player);
                 html += `
-                    <label style="display: block; padding: 8px 12px; cursor: pointer; color: #333; hover: background: #f5f5f5;">
+                    <label style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer; color: #333;">
                         <input type="checkbox"
                                class="analyticsPlayerCheckbox"
                                value="${player}"
@@ -4137,11 +3869,10 @@ async function loadAnalyticsWithFilters() {
                 // Update multi-player charts
                 updateDropsOverTimeChart(filteredHistory, players, playerColors);
                 updateTopItemsChart(filteredHistory, players, playerColors);
-                updateActivityHeatmapChart(filteredHistory, players, playerColors);
+                renderActivityHeatmapGrid(filteredHistory);
 
                 // Update other charts
                 generateKeyStats(filteredHistory);
-                generateDayOfWeekChart(filteredHistory);
                 generatePlayerActivityChart(filteredHistory);
                 generateValueLeaderboardChart(filteredHistory);
                 generateMonthComparisonChart(filteredHistory);
@@ -4284,78 +4015,6 @@ async function loadAnalyticsWithFilters() {
             });
         }
 
-        function updateValueDistributionChart(historyData, players, playerColors) {
-            const ctx = document.getElementById('valueDistributionChart');
-            if (!ctx) return;
-
-            const ranges = [
-                { label: '0-100K', min: 0, max: 100000 },
-                { label: '100K-500K', min: 100000, max: 500000 },
-                { label: '500K-1M', min: 500000, max: 1000000 },
-                { label: '1M-5M', min: 1000000, max: 5000000 },
-                { label: '5M+', min: 5000000, max: Infinity }
-            ];
-
-            const datasets = players.map(player => {
-                const rangeCounts = ranges.map(() => 0);
-
-                historyData.forEach(drop => {
-                    if (drop.player === player && drop.value) {
-                        ranges.forEach((range, index) => {
-                            if (drop.value >= range.min && drop.value < range.max) {
-                                rangeCounts[index]++;
-                            }
-                        });
-                    }
-                });
-
-                const color = playerColors[player] || '#cd8b2d';
-
-                return {
-                    label: player,
-                    data: rangeCounts,
-                    backgroundColor: color + '99',
-                    borderColor: color,
-                    borderWidth: 1
-                };
-            });
-
-            if (analyticsCharts.valueDistribution) analyticsCharts.valueDistribution.destroy();
-
-            analyticsCharts.valueDistribution = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ranges.map(r => r.label),
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            display: players.length > 1,
-                            position: 'top',
-                            labels: {
-                                boxWidth: 12,
-                                font: { size: 10 }
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Drop Value Distribution',
-                            font: { size: 14, weight: 'bold' }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 }
-                        }
-                    }
-                }
-            });
-        }
-
         function updateTopItemsChart(historyData, players, playerColors) {
             const ctx = document.getElementById('topItemsChart').getContext('2d');
 
@@ -4468,97 +4127,6 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
-        function updateActivityHeatmapChart(historyData, players, playerColors) {
-            const ctx = document.getElementById('hourHeatmapChart');
-            if (!ctx) return;
-
-            const hours = Array.from({length: 24}, (_, i) => i);
-
-            const datasets = players.map(player => {
-                const hourCounts = Array(24).fill(0);
-
-                historyData.forEach(drop => {
-                    if (drop.player === player) {
-                        const hour = drop.timestamp.getHours();
-                        hourCounts[hour]++;
-                    }
-                });
-
-                const color = playerColors[player] || '#cd8b2d';
-
-                return {
-                    label: player,
-                    data: hourCounts,
-                    backgroundColor: color + '66',
-                    borderColor: color,
-                    borderWidth: 1
-                };
-            });
-
-            if (analyticsCharts.hourHeatmap) analyticsCharts.hourHeatmap.destroy();
-
-            analyticsCharts.hourHeatmap = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: hours.map(h => `${h}:00`),
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            display: players.length > 1,
-                            position: 'top',
-                            labels: {
-                                boxWidth: 12,
-                                font: { size: 10 }
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Activity by Hour of Day',
-                            font: { size: 14, weight: 'bold' }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1 }
-                        },
-                        x: {
-                            ticks: {
-                                maxRotation: 45,
-                                minRotation: 45,
-                                font: { size: 9 }
-                            }
-                        }
-                    },
-                    onHover: (event, elements) => {
-                        if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-                    },
-                    onClick: (event, elements) => {
-                        if (!elements.length) return;
-                        openHistoryFromChart({ hour: elements[0].index });
-                    }
-                }
-            });
-        }
-
-        function updateAnalyticsCharts(historyData) {
-            // Get player colors (assign colors to each player)
-            const players = analyticsSelectedPlayers.length > 0
-                ? analyticsSelectedPlayers
-                : [...new Set(historyData.map(r => r.player))];
-
-            const playerColors = assignPlayerColors(players);
-
-            // Update each chart with multi-player support
-            updateDropsOverTimeChart(historyData, players, playerColors);
-            updateValueDistributionChart(historyData, players, playerColors);
-            updateTopItemsChart(historyData, players, playerColors);
-            updateActivityHeatmapChart(historyData, players, playerColors);
-        }
 
         function assignPlayerColors(players) {
             const colors = [
@@ -6099,6 +5667,19 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.12.0",
+                date: "2026-08-11",
+                title: "Activity Heatmap, tabbed Analytics, and a checkbox fix",
+                changes: [
+                    { type: "feature", text: "Replaced the separate 'Activity by Day of Week' and 'Busiest Hours' charts with a single Day x Hour Activity Heatmap grid — actually shows things like 'busiest Saturday evenings' instead of two 1-D breakdowns that can't tell that apart from e.g. Tuesday mornings" },
+                    { type: "feature", text: "Heatmap calls out the single busiest day/hour combo up top, and clicking any cell drills into that exact slice of history" },
+                    { type: "improvement", text: "Reorganized the Analytics dashboard into Trends / Activity / Items & Value tabs instead of one long wall of 7 charts" },
+                    { type: "fix", text: "Fixed the Analytics player-filter checkboxes rendering full-width and out of line with their names — a modal-wide input style meant for text fields was stretching checkboxes too" },
+                    { type: "fix", text: "Fixed a scrollbar popping in and out when hovering heatmap cells near the edge of the grid — the hover 'pop' used a scale transform, which counts as scrollable overflow and jostled the horizontal scrollbar; swapped it for an inset highlight that never leaves the cell's box" },
+                    { type: "feature", text: "Boss KC leaderboard data now refreshes automatically every 3 hours instead of only when an admin clicks 'Fetch All Players' KC'" },
+                ]
+            },
+            {
                 version: "v2.11.2",
                 date: "2026-08-06",
                 title: "Renamed the board, decluttered the controls bar",
@@ -7006,36 +6587,9 @@ async function loadAnalyticsWithFilters() {
 
             document.getElementById('groupXP').textContent = `Total XP: ${formatXp(data.totalXp)}`;
 
-            // Note: Rank snapshots are now saved by GitHub Actions hourly
+            // Note: Rank snapshots are now saved by GitHub Actions every 3 days
+            // (throttled to stay within the ScraperAPI usage limit — see fetch-gim.yml)
             // Frontend only displays cached data, doesn't save
-        }
-
-                // Helper functions to create chart configs
-        function createDropsOverTimeConfig(drops, players, playerColors) {
-            // Extract the config creation logic from updateDropsOverTimeChart
-            // Return the config object
-            // (You'll need to extract this from your existing chart creation functions)
-            return Chart.getChart(document.getElementById('dropsPerDayChart'))?.config || {};
-        }
-
-        function createTopItemsConfig(drops, players, playerColors) {
-            return Chart.getChart(document.getElementById('topItemsChart'))?.config || {};
-        }
-
-        function createDayOfWeekConfig(drops) {
-            return Chart.getChart(document.getElementById('dayOfWeekChart'))?.config || {};
-        }
-
-        function createHourHeatmapConfig(drops, players, playerColors) {
-            return Chart.getChart(document.getElementById('hourHeatmapChart'))?.config || {};
-        }
-
-        function createPlayerActivityConfig(drops) {
-            return Chart.getChart(document.getElementById('playerActivityChart'))?.config || {};
-        }
-
-        function createMonthComparisonConfig(drops) {
-            return Chart.getChart(document.getElementById('monthComparisonChart'))?.config || {};
         }
 
         // ============================================

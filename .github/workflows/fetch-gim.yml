@@ -2,7 +2,10 @@ name: Fetch GIM Highscores
 
 on:
   schedule:
-    # Run every hour
+    # Every 3 days — deliberately throttled (not a typo). GIM data scrapes RuneScape's
+    # hiscores through ScraperAPI to get past Cloudflare, and this cadence was
+    # calculated to just about stay within the ScraperAPI plan's usage limit.
+    # Do not bump this to hourly/daily without checking ScraperAPI quota headroom first.
     - cron: '0 0 */3 * *'
   workflow_dispatch: # Allow manual trigger
 
