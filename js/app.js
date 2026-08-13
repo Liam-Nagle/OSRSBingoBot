@@ -19,6 +19,7 @@
         let currentTileIndex = null;
         let isAdmin = false;
         let currentPlayer = null;
+        let currentEventConfig = null; // last-loaded /event/config, used to gate the recap card until the event ends
 
         // Leaderboard "live standings" state — see updatePlayerStats()
         const LEADERBOARD_VISIT_KEY = 'leaderboardLastVisit';
@@ -262,10 +263,12 @@
                 btn.textContent = '⭐ Favorite';
             }
 
-            // Recap card only makes sense once a specific player is selected
+            // Recap card only makes sense once a specific player is selected, and stays
+            // hidden from everyone but admins until the event actually ends — it's meant
+            // to be a wrap-up reveal (MVP/badges/etc.), not a live leaderboard duplicate.
             const recapBtn = document.getElementById('recapBtn');
             if (recapBtn) {
-                recapBtn.style.display = currentPlayer ? 'inline-block' : 'none';
+                recapBtn.style.display = (currentPlayer && (isAdmin || isEventOver())) ? 'inline-block' : 'none';
             }
         }
 
@@ -389,8 +392,14 @@
 
             renderRecapModalContent({ loading: true });
 
+            // Admins can preview recaps before the event ends — pass along the session
+            // password so the backend's own gate (not just this button being hidden) lets it through.
+            const adminPassword = isAdmin ? sessionStorage.getItem('adminPassword') : null;
+            const url = `${API_URL}/event/recap/${encodeURIComponent(targetPlayer)}` +
+                (adminPassword ? `?password=${encodeURIComponent(adminPassword)}` : '');
+
             try {
-                const res = await fetch(`${API_URL}/event/recap/${encodeURIComponent(targetPlayer)}`);
+                const res = await fetch(url);
                 const data = await res.json();
                 if (!res.ok) {
                     renderRecapModalContent({ error: data.error || 'No recap available for this event yet.' });
@@ -818,6 +827,7 @@
             document.getElementById('adminControls').style.flexWrap = 'wrap';
             document.getElementById('adminControls').style.justifyContent = 'center';
             document.getElementById('loginBtn').style.display = 'none';
+            updateFavoriteButton(); // admin can now see the recap button early, before the event ends
         }
 
         function hideAdminControls() {
@@ -826,6 +836,7 @@
             const btn = document.getElementById('editBtn');
             btn.textContent = '📝 Edit Mode';
             btn.style.background = 'linear-gradient(135deg, #cd8b2d 0%, #a67318 100%)';
+            updateFavoriteButton(); // recap button goes back to hidden (unless the event has actually ended)
         }
 
         function formatItemName(itemName) {
@@ -6044,6 +6055,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.1",
+                date: "2026-08-13",
+                title: "Event Recap stays a surprise until the event ends",
+                changes: [
+                    { type: "fix", text: "'🎁 My Event Recap' now stays hidden for everyone until the event's end date has actually passed, instead of showing live mid-event stats and badges — admins can still log in to preview it early" },
+                ]
+            },
+            {
                 version: "v2.13.0",
                 date: "2026-08-13",
                 title: "Personal Event Recap cards + Event Archive",
@@ -7039,6 +7058,7 @@ async function loadAnalyticsWithFilters() {
             try {
                 const response = await fetch(`${API_URL}/event/config`);
                 const config = await response.json();
+                currentEventConfig = config;
 
                 if (config.enabled && config.startDate && config.endDate) {
                     displayEventTimer(config);
@@ -7048,8 +7068,21 @@ async function loadAnalyticsWithFilters() {
                 }
             } catch (error) {
                 console.error('Failed to load event config:', error);
+                currentEventConfig = null;
                 hideEventTimer();
             }
+
+            // Recap button is gated on event-over state, which just changed
+            updateFavoriteButton();
+        }
+
+        // True once the current event's endDate has passed (or there's no event
+        // configured for it to even be gating against).
+        function isEventOver() {
+            if (!currentEventConfig || !currentEventConfig.enabled || !currentEventConfig.endDate) {
+                return true;
+            }
+            return new Date() > new Date(currentEventConfig.endDate);
         }
 
         function displayEventTimer(config) {

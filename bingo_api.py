@@ -2100,7 +2100,13 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 
 @app.route('/event/recap/<player_name>', methods=['GET'])
 def get_event_recap(player_name):
-    """Live per-player event recap, scoped to the current event_config window."""
+    """
+    Live per-player event recap, scoped to the current event_config window.
+    Locked to admins only until the event's endDate has passed — players
+    shouldn't see final-stats/badges (MVP, biggest drop, etc.) while the
+    event is still in progress. Pass ?password=<admin password> to preview
+    early.
+    """
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
@@ -2112,6 +2118,20 @@ def get_event_recap(player_name):
         event_config = collections['bingo'].find_one({'_id': 'event_config'})
         if not event_config or not event_config.get('enabled'):
             return jsonify({'error': 'No event is currently configured'}), 404
+
+        end_date = event_config.get('endDate')
+        event_over = False
+        if end_date:
+            # .replace(tzinfo=None): endDate is always stored as a UTC ISO string (JS
+            # toISOString(), always 'Z'-suffixed) — strip the offset fromisoformat adds
+            # so this compares safely against the naive datetime.utcnow() below.
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            event_over = datetime.utcnow() > end_dt
+        is_admin = request.args.get('password') == ADMIN_PASSWORD
+
+        if not event_over and not is_admin:
+            event_name = event_config.get('eventName', 'Bingo Event')
+            return jsonify({'error': f'Recaps unlock once {event_name} ends'}), 403
 
         recap = compute_event_recap(
             collections,
