@@ -2387,94 +2387,242 @@
             max-width: 480px;
         }
 
+        /* Parchment/gold palette stays exactly what the site already uses — the "Year in
+           Review" borrowing is about DENSITY OF ORNAMENT (ribbon banner, corner flourishes,
+           a laurel on the headline stat, textured ground), not a different color story. */
         .recap-card {
-            background: linear-gradient(135deg, #f4e4c1 0%, #e6d3a8 100%);
+            position: relative;
+            background-image:
+                radial-gradient(ellipse at top, #f8ecd4 0%, #ecdab3 55%, #ddc596 100%),
+                repeating-linear-gradient(135deg, rgba(139,105,20,0.05) 0px, rgba(139,105,20,0.05) 1px, transparent 1px, transparent 7px);
             border: 3px solid #DAA520;
             border-radius: 10px;
-            padding: 22px;
+            padding-bottom: 22px;
             color: #2c1810;
-            box-shadow: 0 0 20px rgba(255,215,0,0.15);
+            overflow: hidden;
+            box-shadow:
+                0 0 0 1px rgba(139,105,20,0.5),
+                inset 0 0 46px rgba(139,105,20,0.15),
+                0 8px 24px rgba(0,0,0,0.35);
         }
 
-        .recap-card-header {
+        .recap-card-body {
+            position: relative;
+            padding: 0 22px;
             text-align: center;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 2px solid rgba(139,105,20,0.4);
         }
 
-        .recap-card-event {
-            font-size: 11px;
+        /* Illuminated-manuscript-style corner flourishes — inline SVG (not an <img>), so it's
+           part of the document and can't taint the html2canvas capture the way a loaded
+           cross-origin image would. */
+        .recap-corner {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            opacity: 0.8;
+            z-index: 1;
+        }
+
+        .recap-corner-tl { top: 8px; left: 8px; }
+        .recap-corner-tr { top: 8px; right: 8px; transform: scaleX(-1); }
+
+        /* Ribbon banner for the event name — Old School's own marketing device (see its
+           "#MyYearInOSRS" banner), recolored into the site's existing button-gold rather
+           than the reference's red. Built from real elements, not ::before/::after — those
+           render unreliably in html2canvas and this needs to survive the PNG capture. */
+        .recap-ribbon {
+            display: flex;
+            justify-content: center;
+            margin: 18px 0 16px;
+            position: relative;
+        }
+
+        .recap-ribbon-band {
+            background: linear-gradient(180deg, #cd8b2d 0%, #a67318 100%);
+            border-top: 2px solid #e2a850;
+            border-bottom: 2px solid #6b5410;
+            color: #fff8e7;
+            font-weight: 900;
+            font-size: 12px;
+            letter-spacing: 1.5px;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #8B6914;
-            font-weight: bold;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+            padding: 7px 20px;
+            white-space: nowrap;
         }
 
+        .recap-ribbon-notch {
+            width: 0;
+            height: 0;
+            border-top: 16px solid transparent;
+            border-bottom: 16px solid transparent;
+        }
+
+        .recap-ribbon-notch-left { border-right: 11px solid #6b5410; }
+        .recap-ribbon-notch-right { border-left: 11px solid #6b5410; }
+
+        /* Bold caps (real Arial/Helvetica — no custom @font-face for html2canvas to lose
+           the load race on) stands in for the reference's game-title display face. */
         .recap-card-player {
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: 900;
             font-size: 26px;
-            font-weight: bold;
-            color: #8B4513;
-            text-shadow: 1px 1px 2px rgba(255,255,255,0.4);
-            margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #7a3b12;
+            text-shadow: 1px 1px 0 rgba(255,255,255,0.5);
         }
 
-        .recap-badge-row {
+        /* Badges as wax-seal medallions — the card's own signature flourish. */
+        .recap-medallion-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 6px;
+            gap: 14px;
             justify-content: center;
-            margin-top: 10px;
+            margin-top: 14px;
         }
 
-        .recap-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
-            color: #2c1810;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 12px;
+        .recap-medallion {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 64px;
+        }
+
+        .recap-medallion-seal {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #FFE58A 0%, #DAA520 55%, #93690f 100%);
+            border: 2px solid #7a5510;
+            box-shadow:
+                inset 0 2px 3px rgba(255,255,255,0.6),
+                inset 0 -3px 4px rgba(0,0,0,0.35),
+                0 3px 6px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .recap-medallion-label {
+            margin-top: 5px;
+            font-size: 9px;
             font-weight: bold;
-            border: 1px solid #CC8400;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b5842;
+            text-align: center;
+            line-height: 1.2;
         }
 
+        /* Baked into the card itself (not just a hover tooltip) so badge meanings survive
+           being downloaded/pasted into Discord as a flat PNG — only lists badges this
+           player actually earned, so it costs nothing on a card with none. */
+        .recap-badge-key {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(139,105,20,0.3);
+            text-align: left;
+        }
+
+        .recap-badge-key-item {
+            font-size: 10px;
+            color: #6b5842;
+            line-height: 1.5;
+        }
+
+        .recap-badge-key-item strong {
+            color: #7a3b12;
+        }
+
+        /* GP is the one number OSRS players actually brag about — the card's hero figure,
+           flanked by a small laurel motif (a real achievement device, not decoration for its
+           own sake) instead of sitting equal-weight with drop count and KC. */
+        .recap-hero-stat {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 20px 0 4px;
+        }
+
+        .recap-laurel {
+            width: 20px;
+            height: 34px;
+            flex-shrink: 0;
+            opacity: 0.85;
+        }
+
+        .recap-laurel-right { transform: scaleX(-1); }
+
+        .recap-hero-text {
+            text-align: center;
+        }
+
+        .recap-hero-value {
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: 900;
+            font-size: 34px;
+            letter-spacing: 0.5px;
+            color: #6b3e0a;
+            line-height: 1.1;
+        }
+
+        .recap-hero-label {
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #8B6914;
+            margin-top: 4px;
+        }
+
+        /* Number-over-label pairs split by hairline dividers — the reference's actual stat
+           device (its 2-col "HOURS PLAYED / XP GAINED" grid) rather than filled boxes. */
         .recap-stat-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 16px 0;
+            display: flex;
+            align-items: stretch;
+            margin: 16px 0 4px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(139,105,20,0.35);
         }
 
         .recap-stat {
-            background: rgba(139,105,20,0.12);
-            border: 1px solid rgba(139,105,20,0.35);
-            border-radius: 8px;
-            padding: 10px 12px;
+            flex: 1;
             text-align: center;
         }
 
+        .recap-stat-divider {
+            width: 1px;
+            background: rgba(139,105,20,0.35);
+            margin: 2px 6px;
+        }
+
         .recap-stat-value {
-            font-size: 18px;
-            font-weight: bold;
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: 900;
+            font-size: 19px;
             color: #4a2c1a;
         }
 
         .recap-stat-label {
-            font-size: 11px;
+            font-size: 9.5px;
             color: #6b5842;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 2px;
+            margin-top: 3px;
         }
 
         .recap-highlight {
-            background: rgba(255,255,255,0.35);
-            border-left: 4px solid #cd8b2d;
-            border-radius: 6px;
+            background: rgba(255,255,255,0.4);
+            border-left: 3px solid #cd8b2d;
+            border-radius: 4px;
             padding: 8px 12px;
-            margin-bottom: 8px;
+            margin-top: 10px;
             font-size: 13px;
+            text-align: left;
+            color: #2c1810;
         }
 
         .recap-highlight strong {

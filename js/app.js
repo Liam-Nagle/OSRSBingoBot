@@ -276,14 +276,36 @@
         // EVENT RECAP + ARCHIVE
         // ============================================
 
+        // Inline SVG (not <img src="...">) so these decorative flourishes are part of the
+        // document itself — an externally-loaded image would risk tainting the canvas
+        // html2canvas needs to read back out as a PNG. Defined once and reused per card.
+        const RECAP_CORNER_SVG = `
+            <svg class="recap-corner" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 28 C2 14, 14 2, 28 2" stroke="#8B6914" stroke-width="2" fill="none"/>
+                <path d="M2 28 C2 20, 8 14, 16 14" stroke="#8B6914" stroke-width="1.3" fill="none" opacity="0.6"/>
+                <circle cx="28" cy="2" r="2.5" fill="#DAA520"/>
+            </svg>
+        `;
+        const RECAP_LAUREL_SVG = `
+            <svg class="recap-laurel" viewBox="0 0 20 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 32 C10 20, 10 10, 8 2" stroke="#8B6914" stroke-width="1.4" fill="none"/>
+                <ellipse cx="6" cy="8" rx="3" ry="1.6" fill="#DAA520" transform="rotate(-30 6 8)"/>
+                <ellipse cx="5" cy="14" rx="3" ry="1.6" fill="#DAA520" transform="rotate(-30 5 14)"/>
+                <ellipse cx="6" cy="20" rx="3" ry="1.6" fill="#DAA520" transform="rotate(-30 6 20)"/>
+                <ellipse cx="12" cy="6" rx="3" ry="1.6" fill="#c9971a" transform="rotate(30 12 6)"/>
+                <ellipse cx="13" cy="12" rx="3" ry="1.6" fill="#c9971a" transform="rotate(30 13 12)"/>
+                <ellipse cx="12" cy="18" rx="3" ry="1.6" fill="#c9971a" transform="rotate(30 12 18)"/>
+            </svg>
+        `;
+
         const RECAP_BADGE_INFO = {
-            mvp: { emoji: '🏆', label: 'MVP' },
-            biggest_drop: { emoji: '💰', label: 'Biggest Drop' },
-            rarest_drop: { emoji: '💎', label: 'Rarest Drop' },
-            most_consistent: { emoji: '📅', label: 'Most Consistent' },
-            top_grinder: { emoji: '⚔️', label: 'Top Grinder' },
-            first_blood: { emoji: '🥇', label: 'First Blood' },
-            closer: { emoji: '🌒', label: 'Closer' }
+            mvp: { emoji: '🏆', label: 'MVP', desc: 'Highest points this event (tiles + line bonuses)' },
+            biggest_drop: { emoji: '💰', label: 'Biggest Drop', desc: "The event's single most valuable drop" },
+            rarest_drop: { emoji: '💎', label: 'Rarest Drop', desc: "The event's lowest-odds drop" },
+            most_consistent: { emoji: '📅', label: 'Most Consistent', desc: 'Logged drops on the most different days' },
+            top_grinder: { emoji: '⚔️', label: 'Top Grinder', desc: 'Most KC gained this event' },
+            first_blood: { emoji: '🥇', label: 'First Blood', desc: "Completed the event's very first tile" },
+            closer: { emoji: '🌒', label: 'Closer', desc: "Completed the event's last tile" }
         };
 
         function formatRecapGp(value) {
@@ -302,18 +324,39 @@
             }
         }
 
+        // Dink's "Item Rarity" embed field comes through wrapped in Discord code-block
+        // fences (e.g. "```\n1 in 500.0 (0.2%)\n```"), and that raw text is what's stored —
+        // strip the fences/whitespace for display rather than showing them verbatim.
+        function formatRarityText(raw) {
+            if (!raw) return '';
+            return raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').replace(/\s+/g, ' ').trim();
+        }
+
         function buildRecapCardHtml(data) {
-            const badges = (data.badges || []).map(key => {
-                const info = RECAP_BADGE_INFO[key];
-                return info ? `<span class="recap-badge">${info.emoji} ${info.label}</span>` : '';
-            }).join('');
+            const earnedBadges = (data.badges || []).map(key => RECAP_BADGE_INFO[key]).filter(Boolean);
+
+            // Hover tooltip helps on the live page; it does nothing once this is a downloaded/
+            // pasted-into-Discord PNG, so the key below is what actually explains the badge
+            // to someone who only ever sees the shared image.
+            const medallions = earnedBadges.map(info => `
+                <div class="recap-medallion" title="${info.desc}">
+                    <div class="recap-medallion-seal">${info.emoji}</div>
+                    <div class="recap-medallion-label">${info.label}</div>
+                </div>
+            `).join('');
+
+            const badgeKeyHtml = earnedBadges.length ? `
+                <div class="recap-badge-key">
+                    ${earnedBadges.map(info => `<div class="recap-badge-key-item"><strong>${info.emoji} ${info.label}</strong> — ${info.desc}</div>`).join('')}
+                </div>
+            ` : '';
 
             let highlightsHtml = '';
             if (data.most_valuable_drop) {
                 highlightsHtml += `<div class="recap-highlight">💰 Most valuable drop: <strong>${data.most_valuable_drop.item}</strong> (${formatRecapGp(data.most_valuable_drop.value)})</div>`;
             }
             if (data.rarest_drop) {
-                highlightsHtml += `<div class="recap-highlight">💎 Rarest drop: <strong>${data.rarest_drop.item}</strong> (${data.rarest_drop.rarity || ''})</div>`;
+                highlightsHtml += `<div class="recap-highlight">💎 Rarest drop: <strong>${data.rarest_drop.item}</strong> (${formatRarityText(data.rarest_drop.rarity)})</div>`;
             }
             const firstDate = formatRecapDate(data.first_tile_at);
             const lastDate = formatRecapDate(data.last_tile_at);
@@ -324,20 +367,46 @@
                 highlightsHtml += `<div class="recap-highlight">🏁 Last tile completed: <strong>${data.last_tile}</strong>${lastDate ? ` (${lastDate})` : ''}</div>`;
             }
 
+            const cornerTL = RECAP_CORNER_SVG.replace('class="recap-corner"', 'class="recap-corner recap-corner-tl"');
+            const cornerTR = RECAP_CORNER_SVG.replace('class="recap-corner"', 'class="recap-corner recap-corner-tr"');
+            const laurelLeft = RECAP_LAUREL_SVG;
+            const laurelRight = RECAP_LAUREL_SVG.replace('class="recap-laurel"', 'class="recap-laurel recap-laurel-right"');
+
             return `
                 <div class="recap-card" id="recapCardCapture">
-                    <div class="recap-card-header">
-                        <div class="recap-card-event">${data.eventName || 'Bingo Event'}</div>
+                    ${cornerTL}
+                    ${cornerTR}
+
+                    <div class="recap-ribbon">
+                        <div class="recap-ribbon-notch recap-ribbon-notch-left"></div>
+                        <div class="recap-ribbon-band">${data.eventName || 'Bingo Event'}</div>
+                        <div class="recap-ribbon-notch recap-ribbon-notch-right"></div>
+                    </div>
+
+                    <div class="recap-card-body">
                         <div class="recap-card-player">${data.player}</div>
-                        ${badges ? `<div class="recap-badge-row">${badges}</div>` : ''}
+                        ${medallions ? `<div class="recap-medallion-row">${medallions}</div>` : ''}
+                        ${badgeKeyHtml}
+
+                        <div class="recap-hero-stat">
+                            ${laurelLeft}
+                            <div class="recap-hero-text">
+                                <div class="recap-hero-value">💰 ${formatRecapGp(data.gp_total)}</div>
+                                <div class="recap-hero-label">GP Looted</div>
+                            </div>
+                            ${laurelRight}
+                        </div>
+
+                        <div class="recap-stat-grid">
+                            <div class="recap-stat"><div class="recap-stat-value">${data.drop_count || 0}</div><div class="recap-stat-label">Drops</div></div>
+                            <span class="recap-stat-divider"></span>
+                            <div class="recap-stat"><div class="recap-stat-value">${data.tiles_completed || 0}</div><div class="recap-stat-label">Tiles</div></div>
+                            <span class="recap-stat-divider"></span>
+                            <div class="recap-stat"><div class="recap-stat-value">${data.kc_gained || 0}</div><div class="recap-stat-label">KC Gained</div></div>
+                        </div>
+
+                        ${highlightsHtml}
                     </div>
-                    <div class="recap-stat-grid">
-                        <div class="recap-stat"><div class="recap-stat-value">${formatRecapGp(data.gp_total)}</div><div class="recap-stat-label">GP Looted</div></div>
-                        <div class="recap-stat"><div class="recap-stat-value">${data.drop_count || 0}</div><div class="recap-stat-label">Drops Logged</div></div>
-                        <div class="recap-stat"><div class="recap-stat-value">${data.tiles_completed || 0}</div><div class="recap-stat-label">Tiles Completed</div></div>
-                        <div class="recap-stat"><div class="recap-stat-value">${data.kc_gained || 0}</div><div class="recap-stat-label">KC Gained</div></div>
-                    </div>
-                    ${highlightsHtml}
                 </div>
             `;
         }
@@ -6054,6 +6123,38 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.5",
+                date: "2026-08-13",
+                title: "Badge meanings explained",
+                changes: [
+                    { type: "improvement", text: "Event Recap badges (MVP, Top Grinder, Rarest Drop, etc.) now come with a plain-English explanation baked right into the card, so it's still clear what they mean once it's downloaded or shared in Discord — not just a hover tooltip on the site" },
+                ]
+            },
+            {
+                version: "v2.13.4",
+                date: "2026-08-13",
+                title: "Rarest Drop text cleanup",
+                changes: [
+                    { type: "fix", text: "Fixed the Rarest Drop line on the Event Recap card showing raw \"```\" code-block formatting around the odds (e.g. \"```1 in 500.0 (0.2%)```\") instead of just the odds themselves" },
+                ]
+            },
+            {
+                version: "v2.13.3",
+                date: "2026-08-13",
+                title: "Event Recap gets a proper ceremony",
+                changes: [
+                    { type: "improvement", text: "Event Recap card now has a proper ribbon banner for the event name and a laurel flourish around the GP figure — styled after Old School's own \"Year in Review\" emails, in the site's existing gold/parchment colors" },
+                ]
+            },
+            {
+                version: "v2.13.2",
+                date: "2026-08-13",
+                title: "Event Recap card redesign",
+                changes: [
+                    { type: "improvement", text: "Redesigned the Event Recap card — GP looted now gets its own headline figure, badges (MVP, Biggest Drop, etc.) show as gold wax-seal medallions instead of small tags, and the Drops/Tiles/KC stats are color-coded so the card doesn't read as one flat wall of identical boxes" },
+                ]
+            },
             {
                 version: "v2.13.1",
                 date: "2026-08-13",
