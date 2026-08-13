@@ -6,7 +6,7 @@
     <title>Unsociables Bingo Board</title>
 
     <!-- External Stylesheet -->
-    <link rel="stylesheet" href="css/style.css?v=2.3">
+    <link rel="stylesheet" href="css/style.css?v=2.4">
 </head>
 <body>
     <div class="container">
@@ -88,7 +88,7 @@
                 <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
                 <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
                 <button id="pbsBtn" onclick="openPBsModal()" class="secondary">🏆 Personal Bests</button>
-                <button onclick="openChangelogModal()" class="secondary">📝 Changelog</button>
+                <button onclick="openChangelogModal()" class="secondary" style="position: relative;">📝 Changelog<span id="changelogBadge" class="changelog-badge" style="display: none;">NEW</span></button>
 
                 <!-- Login Button (Shows when not admin) -->
                 <button onclick="openLoginModal()" id="loginBtn" class="secondary">🔐 Admin Login</button>

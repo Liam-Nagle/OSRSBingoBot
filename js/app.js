@@ -19,6 +19,13 @@
         let currentTileIndex = null;
         let isAdmin = false;
         let currentPlayer = null;
+
+        // Leaderboard "live standings" state — see updatePlayerStats()
+        const LEADERBOARD_VISIT_KEY = 'leaderboardLastVisit';
+        let previousPlayerRankOrder = null; // player names in last-rendered rank order, for move arrows + slide animation
+        let visitBaselineCaptured = false;  // ensures we only read/overwrite the "last visit" snapshot once per page load
+        let visitBaselineScores = null;     // player -> points as of the last time this browser opened the page
+        let visitBaselineTimestamp = null;
         let bingoData = {
             boardSize: 5,
             tiles: [],
@@ -1450,6 +1457,27 @@
                 playerScores[player].points += totalBonus;
             });
 
+            // Capture the "since your last visit" baseline exactly once per page load — the
+            // very first call here (from initBoard) has the freshly-loaded, real standings.
+            // We read the previous snapshot for the delta below, then immediately overwrite it
+            // so *this* load becomes the baseline for the next time this browser opens the page.
+            if (!visitBaselineCaptured) {
+                visitBaselineCaptured = true;
+                try {
+                    const stored = JSON.parse(localStorage.getItem(LEADERBOARD_VISIT_KEY) || 'null');
+                    if (stored && stored.scores) {
+                        visitBaselineScores = stored.scores;
+                        visitBaselineTimestamp = stored.timestamp;
+                    }
+                } catch (e) { /* corrupt snapshot, ignore */ }
+
+                try {
+                    const snapshot = {};
+                    Object.keys(playerScores).forEach(p => { snapshot[p] = playerScores[p].points; });
+                    localStorage.setItem(LEADERBOARD_VISIT_KEY, JSON.stringify({ scores: snapshot, timestamp: Date.now() }));
+                } catch (e) { /* localStorage unavailable, ignore */ }
+            }
+
             if (Object.keys(playerScores).length === 0) {
                 statsDiv.innerHTML = '<div class="no-players">No drops recorded yet!</div>';
                 return;
@@ -1458,6 +1486,19 @@
             const sorted = Object.entries(playerScores).sort((a, b) => b[1].points - a[1].points);
 
             const rankEmojis = ['🥇', '🥈', '🥉'];
+
+            // FLIP animation setup: remember where each card currently sits before we
+            // rebuild the list, so we can slide it from its old spot to its new one.
+            const oldRects = {};
+            statsDiv.querySelectorAll('.player-card').forEach(el => {
+                oldRects[el.dataset.player] = el.getBoundingClientRect();
+            });
+
+            // Map of player -> previous rank index, to work out who moved up/down since the last render.
+            const oldRankIndex = {};
+            if (previousPlayerRankOrder) {
+                previousPlayerRankOrder.forEach((p, i) => { oldRankIndex[p] = i; });
+            }
 
             statsDiv.innerHTML = sorted.map(([player, stats], index) => {
                 const rankClass = index < 3 ? `rank-${index + 1}` : '';
@@ -1469,9 +1510,34 @@
                 if (stats.lines.cols.length > 0) lineText.push(`${stats.lines.cols.length} col${stats.lines.cols.length > 1 ? 's' : ''}`);
                 if (stats.lines.diagonals.length > 0) lineText.push(`${stats.lines.diagonals.length} diagonal${stats.lines.diagonals.length > 1 ? 's' : ''}`);
 
+                // Rank-change arrow: only shown when we actually have a previous render to compare against.
+                let rankArrowHtml = '';
+                if (previousPlayerRankOrder) {
+                    const oldIdx = oldRankIndex[player];
+                    if (oldIdx === undefined) {
+                        rankArrowHtml = `<span class="rank-arrow rank-arrow-new">NEW</span>`;
+                    } else if (oldIdx > index) {
+                        rankArrowHtml = `<span class="rank-arrow rank-arrow-up">▲${oldIdx - index}</span>`;
+                    } else if (oldIdx < index) {
+                        rankArrowHtml = `<span class="rank-arrow rank-arrow-down">▼${index - oldIdx}</span>`;
+                    }
+                }
+
+                // "Since your last visit" — compares live points to the snapshot from the last time
+                // this browser had the page open. Recomputed every render, so it ticks up live too.
+                let visitGainHtml = '';
+                if (visitBaselineScores) {
+                    const gained = stats.points - (visitBaselineScores[player] || 0);
+                    if (gained > 0) {
+                        const agoLabel = visitBaselineTimestamp ? getTimeAgo(new Date(visitBaselineTimestamp)) : '';
+                        visitGainHtml = `<div class="visit-gain-badge">📈 +${gained.toLocaleString()} since your last visit${agoLabel ? ` (${agoLabel})` : ''}</div>`;
+                    }
+                }
+
                 return `
-                    <div class="player-card ${rankClass} ${isCurrentView}" onclick="viewAsPlayer('${player.replace(/'/g, "\\'")}')" style="cursor: pointer;" title="Click to filter board by ${player}">
+                    <div class="player-card ${rankClass} ${isCurrentView}" data-player="${player.replace(/"/g, '&quot;')}" onclick="viewAsPlayer('${player.replace(/'/g, "\\'")}')" style="cursor: pointer;" title="Click to filter board by ${player}">
                         ${rankEmoji ? `<div class="player-rank">${rankEmoji}</div>` : ''}
+                        ${rankArrowHtml}
                         <div class="player-name">${player}</div>
                         <div class="player-score">${stats.points.toLocaleString()} points</div>
                         <div class="player-stats">
@@ -1479,9 +1545,27 @@
                             ${stats.lineBonus > 0 ? `<span class="bonus-badge">+${stats.lineBonus} bonus</span>` : ''}
                         </div>
                         ${lineText.length > 0 ? `<div class="player-stats" style="margin-top: 5px;">✓ ${lineText.join(', ')}</div>` : ''}
+                        ${visitGainHtml}
                     </div>
                 `;
             }).join('');
+
+            // FLIP animation playback: slide each card from its old position to its new one.
+            statsDiv.querySelectorAll('.player-card').forEach(el => {
+                const before = oldRects[el.dataset.player];
+                if (!before) return; // new card, nothing to animate from
+                const after = el.getBoundingClientRect();
+                const deltaY = before.top - after.top;
+                if (Math.abs(deltaY) < 1) return;
+                el.style.transition = 'none';
+                el.style.transform = `translateY(${deltaY}px)`;
+                requestAnimationFrame(() => {
+                    el.style.transition = 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)';
+                    el.style.transform = '';
+                });
+            });
+
+            previousPlayerRankOrder = sorted.map(([player]) => player);
         }
 
         function showApiInfo() {
@@ -2006,7 +2090,7 @@
         // fallback we cross-reference drop history: the earliest drop of a
         // matching item is treated as that tile's completion moment.
         let timelineBarChartInstance = null;
-        const TIMELINE_MAX_DAYS = 180; // safety cap so a stale/faraway event start date can't render thousands of rows
+        const TIMELINE_MAX_DAYS = 400; // safety cap so a stale/faraway event start date can't render thousands of rows (events can legitimately run a full year)
 
         function openTimelineModal() {
             document.getElementById('timelineModal').classList.add('active');
@@ -5667,6 +5751,32 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.12.3",
+                date: "2026-08-12",
+                title: "Leaderboard gets some life",
+                changes: [
+                    { type: "feature", text: "Player cards now smoothly slide into their new position when the standings shuffle, instead of just snapping" },
+                    { type: "feature", text: "A ▲/▼ badge briefly flashes on a player's card when they move up or down the leaderboard" },
+                    { type: "feature", text: "Added a '📈 +X since your last visit' badge showing how many points a player has gained since you last had the board open" },
+                ]
+            },
+            {
+                version: "v2.12.2",
+                date: "2026-08-12",
+                title: "Timeline fix for long-running events",
+                changes: [
+                    { type: "fix", text: "Fixed the Timeline showing the wrong 'Day 1' and dropping early completions for events running longer than 180 days — its safety cap was cutting off and sliding the window forward on this year-long event" },
+                ]
+            },
+            {
+                version: "v2.12.1",
+                date: "2026-08-11",
+                title: "Changelog notification badge",
+                changes: [
+                    { type: "feature", text: "The Changelog button now shows a 'NEW' badge whenever there are entries you haven't seen yet" },
+                ]
+            },
+            {
                 version: "v2.12.0",
                 date: "2026-08-11",
                 title: "Activity Heatmap, tabbed Analytics, and a checkbox fix",
@@ -6171,7 +6281,31 @@ async function loadAnalyticsWithFilters() {
             }
         ];
 
+        // Lets returning visitors know new changelog entries exist since they last checked,
+        // via a small badge on the Changelog button. Tracked per-browser in localStorage —
+        // no backend involved, so it's just "have I personally opened the changelog since
+        // this version was published", not a per-account read receipt.
+        const CHANGELOG_SEEN_KEY = 'bingoLastSeenChangelogVersion';
+
+        function checkForNewChangelog() {
+            const badge = document.getElementById('changelogBadge');
+            if (!badge || changelogData.length === 0) return;
+
+            const latestVersion = changelogData[0].version;
+            const lastSeenVersion = localStorage.getItem(CHANGELOG_SEEN_KEY);
+            badge.style.display = (latestVersion !== lastSeenVersion) ? 'inline-flex' : 'none';
+        }
+
+        function markChangelogSeen() {
+            if (changelogData.length === 0) return;
+            localStorage.setItem(CHANGELOG_SEEN_KEY, changelogData[0].version);
+            const badge = document.getElementById('changelogBadge');
+            if (badge) badge.style.display = 'none';
+        }
+
         function openChangelogModal() {
+            markChangelogSeen();
+
             const changelogHtml = changelogData.map(entry => {
                 const changesHtml = entry.changes.map(change => {
                     const badgeClass = `badge-${change.type}`;
@@ -6888,6 +7022,7 @@ function startEventCountdown(config) {
         // Run this when the page loads
         document.addEventListener('DOMContentLoaded', function() {
             addCloseButtonsToModals();
+            checkForNewChangelog();
 
             // Close any modal by clicking on the backdrop (outside the modal-content box)
             document.querySelectorAll('.modal').forEach(modal => {
