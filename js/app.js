@@ -261,6 +261,299 @@
                 btn.classList.remove('active');
                 btn.textContent = '⭐ Favorite';
             }
+
+            // Recap card only makes sense once a specific player is selected
+            const recapBtn = document.getElementById('recapBtn');
+            if (recapBtn) {
+                recapBtn.style.display = currentPlayer ? 'inline-block' : 'none';
+            }
+        }
+
+        // ============================================
+        // EVENT RECAP + ARCHIVE
+        // ============================================
+
+        const RECAP_BADGE_INFO = {
+            mvp: { emoji: '🏆', label: 'MVP' },
+            biggest_drop: { emoji: '💰', label: 'Biggest Drop' },
+            rarest_drop: { emoji: '💎', label: 'Rarest Drop' },
+            most_consistent: { emoji: '📅', label: 'Most Consistent' },
+            top_grinder: { emoji: '⚔️', label: 'Top Grinder' },
+            first_blood: { emoji: '🥇', label: 'First Blood' },
+            closer: { emoji: '🌒', label: 'Closer' }
+        };
+
+        function formatRecapGp(value) {
+            if (!value) return '0 gp';
+            if (value >= 1000000) return (value / 1000000).toFixed(2).replace(/\.00$/, '').replace(/0$/, '') + 'M gp';
+            if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'K gp';
+            return `${value.toLocaleString()} gp`;
+        }
+
+        function formatRecapDate(iso) {
+            if (!iso) return null;
+            try {
+                return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function buildRecapCardHtml(data) {
+            const badges = (data.badges || []).map(key => {
+                const info = RECAP_BADGE_INFO[key];
+                return info ? `<span class="recap-badge">${info.emoji} ${info.label}</span>` : '';
+            }).join('');
+
+            let highlightsHtml = '';
+            if (data.most_valuable_drop) {
+                highlightsHtml += `<div class="recap-highlight">💰 Most valuable drop: <strong>${data.most_valuable_drop.item}</strong> (${formatRecapGp(data.most_valuable_drop.value)})</div>`;
+            }
+            if (data.rarest_drop) {
+                highlightsHtml += `<div class="recap-highlight">💎 Rarest drop: <strong>${data.rarest_drop.item}</strong> (${data.rarest_drop.rarity || ''})</div>`;
+            }
+            const firstDate = formatRecapDate(data.first_tile_at);
+            const lastDate = formatRecapDate(data.last_tile_at);
+            if (data.first_tile) {
+                highlightsHtml += `<div class="recap-highlight">🎯 First tile completed: <strong>${data.first_tile}</strong>${firstDate ? ` (${firstDate})` : ''}</div>`;
+            }
+            if (data.last_tile && data.last_tile_at !== data.first_tile_at) {
+                highlightsHtml += `<div class="recap-highlight">🏁 Last tile completed: <strong>${data.last_tile}</strong>${lastDate ? ` (${lastDate})` : ''}</div>`;
+            }
+
+            return `
+                <div class="recap-card" id="recapCardCapture">
+                    <div class="recap-card-header">
+                        <div class="recap-card-event">${data.eventName || 'Bingo Event'}</div>
+                        <div class="recap-card-player">${data.player}</div>
+                        ${badges ? `<div class="recap-badge-row">${badges}</div>` : ''}
+                    </div>
+                    <div class="recap-stat-grid">
+                        <div class="recap-stat"><div class="recap-stat-value">${formatRecapGp(data.gp_total)}</div><div class="recap-stat-label">GP Looted</div></div>
+                        <div class="recap-stat"><div class="recap-stat-value">${data.drop_count || 0}</div><div class="recap-stat-label">Drops Logged</div></div>
+                        <div class="recap-stat"><div class="recap-stat-value">${data.tiles_completed || 0}</div><div class="recap-stat-label">Tiles Completed</div></div>
+                        <div class="recap-stat"><div class="recap-stat-value">${data.kc_gained || 0}</div><div class="recap-stat-label">KC Gained</div></div>
+                    </div>
+                    ${highlightsHtml}
+                </div>
+            `;
+        }
+
+        // state: {loading:true} | {error:'...'} | {data:{...}} — creates the modal shell once,
+        // then only swaps the inner body, so repeated loading/error/data transitions don't
+        // rebuild the close button / heading each time.
+        function renderRecapModalContent(state) {
+            let bodyHtml;
+            if (state.loading) {
+                bodyHtml = '<div class="recap-empty">Loading...</div>';
+            } else if (state.error || !state.data) {
+                bodyHtml = `<div class="recap-empty">${state.error || 'No recap data available.'}</div>`;
+            } else {
+                bodyHtml = buildRecapCardHtml(state.data) + `
+                    <div class="recap-actions">
+                        <button class="btn-save" onclick="downloadRecapImage()">⬇️ Download PNG</button>
+                        <button class="btn-cancel" onclick="copyRecapImage()">📋 Copy to Clipboard</button>
+                    </div>
+                    <p id="recapActionStatus" style="font-size:12px; color:#6b5842; margin-top:8px; text-align:center;"></p>
+                `;
+            }
+
+            let modal = document.getElementById('recapModal');
+            if (!modal) {
+                document.body.insertAdjacentHTML('beforeend', `
+                    <div class="modal" id="recapModal">
+                        <div class="modal-content">
+                            <button class="close-btn" onclick="closeRecapModal()">×</button>
+                            <h2>🎁 Event Recap</h2>
+                            <div id="recapModalBody"></div>
+                        </div>
+                    </div>
+                `);
+                modal = document.getElementById('recapModal');
+            }
+            document.getElementById('recapModalBody').innerHTML = bodyHtml;
+            modal.classList.add('active');
+        }
+
+        function closeRecapModal() {
+            const modal = document.getElementById('recapModal');
+            if (modal) modal.remove();
+        }
+
+        async function openRecapModal(player) {
+            const targetPlayer = player || currentPlayer;
+            if (!targetPlayer) {
+                alert('Select a player first (use "View as" above)!');
+                return;
+            }
+
+            renderRecapModalContent({ loading: true });
+
+            try {
+                const res = await fetch(`${API_URL}/event/recap/${encodeURIComponent(targetPlayer)}`);
+                const data = await res.json();
+                if (!res.ok) {
+                    renderRecapModalContent({ error: data.error || 'No recap available for this event yet.' });
+                    return;
+                }
+                renderRecapModalContent({ data });
+            } catch (e) {
+                renderRecapModalContent({ error: 'Could not load recap — check your connection.' });
+            }
+        }
+
+        async function captureRecapCanvas() {
+            const card = document.getElementById('recapCardCapture');
+            if (!card || typeof html2canvas === 'undefined') return null;
+            return await html2canvas(card, { backgroundColor: '#f4e4c1', scale: 2 });
+        }
+
+        async function downloadRecapImage() {
+            const status = document.getElementById('recapActionStatus');
+            const canvas = await captureRecapCanvas();
+            if (!canvas) {
+                if (status) status.textContent = '⚠️ Could not generate image.';
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = canvas.toDataURL('image/png');
+            link.download = 'bingo-event-recap.png';
+            link.click();
+            if (status) status.textContent = '✅ Downloaded!';
+        }
+
+        async function copyRecapImage() {
+            const status = document.getElementById('recapActionStatus');
+            const canvas = await captureRecapCanvas();
+            if (!canvas) {
+                if (status) status.textContent = '⚠️ Could not generate image.';
+                return;
+            }
+            canvas.toBlob(async (blob) => {
+                try {
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                    if (status) status.textContent = '✅ Copied! Paste it into Discord.';
+                } catch (e) {
+                    if (status) status.textContent = '⚠️ Copy not supported in this browser — use Download instead.';
+                }
+            }, 'image/png');
+        }
+
+        // ---- Admin: Event Archive ----
+
+        async function archiveCurrentEvent() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+
+            const confirmed = confirm(
+                "📦 Archive the current event's stats now?\n\n" +
+                "This freezes a copy of every player's recap (and the board's tile state) into the Event Archive.\n" +
+                "It does NOT reset or clear the live board.\n\n" +
+                "Continue?"
+            );
+            if (!confirmed) return;
+
+            const password = sessionStorage.getItem('adminPassword');
+            if (!password) {
+                alert('Session expired. Please log in again.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/event/archive`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert(`✅ ${result.message}\n\nView it anytime under "🏛️ Event Archive".`);
+                } else {
+                    alert(`❌ ${result.error || 'Failed to archive event'}`);
+                }
+            } catch (e) {
+                console.error('Archive error:', e);
+                alert('❌ Could not connect to server. Make sure the API is running.');
+            }
+        }
+
+        async function openArchiveModal() {
+            const modalHtml = `
+                <div class="modal" id="archiveModal">
+                    <div class="modal-content">
+                        <button class="close-btn" onclick="closeArchiveModal()">×</button>
+                        <h2>🏛️ Event Archive</h2>
+                        <div id="archiveModalBody"><div class="recap-empty">Loading past events...</div></div>
+                    </div>
+                </div>
+            `;
+            const existing = document.getElementById('archiveModal');
+            if (existing) existing.remove();
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.getElementById('archiveModal').classList.add('active');
+
+            try {
+                const res = await fetch(`${API_URL}/event/archive/list`);
+                const data = await res.json();
+                const archives = data.archives || [];
+                const body = document.getElementById('archiveModalBody');
+                if (archives.length === 0) {
+                    body.innerHTML = '<div class="recap-empty">No archived events yet. Use "📦 Archive Current Event" once one wraps up.</div>';
+                    return;
+                }
+                body.innerHTML = `<div class="archive-list">${archives.map(a => `
+                    <div class="archive-entry" onclick='openArchivePlayerPicker(${JSON.stringify(a._id)}, ${JSON.stringify(a.event_name)}, ${JSON.stringify(a.player_names || [])})'>
+                        <div class="archive-entry-name">${a.event_name}</div>
+                        <div class="archive-entry-meta">${(a.player_names || []).length} player(s) • Archived ${formatRecapDate(a.archived_at) || ''}</div>
+                    </div>
+                `).join('')}</div>`;
+            } catch (e) {
+                document.getElementById('archiveModalBody').innerHTML = '<div class="recap-empty">Could not load archived events.</div>';
+            }
+        }
+
+        function closeArchiveModal() {
+            const modal = document.getElementById('archiveModal');
+            if (modal) modal.remove();
+        }
+
+        function openArchivePlayerPicker(archiveId, eventName, playerNames) {
+            const body = document.getElementById('archiveModalBody');
+            if (!playerNames || playerNames.length === 0) {
+                body.innerHTML = `<div class="recap-empty">No players recorded for ${eventName}.</div>
+                    <div class="modal-buttons"><button class="btn-cancel" onclick="openArchiveModal()">← Back</button></div>`;
+                return;
+            }
+            const options = playerNames.map(p => `<option value="${p}">${p}</option>`).join('');
+            body.innerHTML = `
+                <p style="margin-bottom:10px;"><strong>${eventName}</strong> — pick a player:</p>
+                <select id="archivePlayerSelect" style="margin-bottom:14px;">${options}</select>
+                <div class="modal-buttons">
+                    <button class="btn-cancel" onclick="openArchiveModal()">← Back</button>
+                    <button class="btn-save" onclick="viewArchivedRecap(${JSON.stringify(archiveId)})">View Recap</button>
+                </div>
+            `;
+        }
+
+        async function viewArchivedRecap(archiveId) {
+            const player = document.getElementById('archivePlayerSelect').value;
+            closeArchiveModal();
+            renderRecapModalContent({ loading: true });
+
+            try {
+                const res = await fetch(`${API_URL}/event/archive/${archiveId}/player/${encodeURIComponent(player)}`);
+                const data = await res.json();
+                if (!res.ok) {
+                    renderRecapModalContent({ error: data.error || 'No recap available.' });
+                    return;
+                }
+                renderRecapModalContent({ data });
+            } catch (e) {
+                renderRecapModalContent({ error: 'Could not load recap — check your connection.' });
+            }
         }
 
         function updatePlayerDropdown() {
@@ -1218,7 +1511,7 @@
         }
 
         function clearBoard() {
-            if (confirm('Clear all tiles and player progress?')) {
+            if (confirm('Clear all tiles and player progress?\n\n📦 Reminder: if you want to keep this event\'s stats, click "Archive Current Event" FIRST — clearing the board does not archive anything.')) {
                 const currentSize = bingoData.boardSize;
                 bingoData = {
                     boardSize: currentSize,
@@ -5750,6 +6043,16 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.0",
+                date: "2026-08-13",
+                title: "Personal Event Recap cards + Event Archive",
+                changes: [
+                    { type: "feature", text: "Added '🎁 My Event Recap' — a personal, shareable stats card (GP looted, drops logged, tiles completed, KC gained, most valuable & rarest drops, first/last tile completed) plus badges like 🏆 MVP, 💰 Biggest Drop, 💎 Rarest Drop, 📅 Most Consistent, ⚔️ Top Grinder, 🥇 First Blood and 🌒 Closer" },
+                    { type: "feature", text: "Recap cards can be downloaded as a PNG or copied straight to your clipboard to paste into Discord" },
+                    { type: "feature", text: "Added an Event Archive so past events' recaps stick around and stay viewable after a new event starts (admins: use '📦 Archive Current Event' before clearing the board)" },
+                ]
+            },
             {
                 version: "v2.12.3",
                 date: "2026-08-12",

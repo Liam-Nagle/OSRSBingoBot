@@ -6,7 +6,7 @@
     <title>Unsociables Bingo Board</title>
 
     <!-- External Stylesheet -->
-    <link rel="stylesheet" href="css/style.css?v=2.4">
+    <link rel="stylesheet" href="css/style.css?v=2.5">
 </head>
 <body>
     <div class="container">
@@ -37,6 +37,9 @@
                 </select>
                 <button class="star-btn" id="favoriteBtn" onclick="toggleFavorite()" title="Set as favorite player">
                     ⭐ Favorite
+                </button>
+                <button class="secondary" id="recapBtn" onclick="openRecapModal()" title="View your personal event recap" style="display: none;">
+                    🎁 My Event Recap
                 </button>
             </div>
 
@@ -106,6 +109,8 @@
                 <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
                 <button id="exportBtn" onclick="exportBoard()" class="secondary">💾 Export</button>
                 <button onclick="importBoard()" class="secondary">📥 Import</button>
+                <button onclick="archiveCurrentEvent()" class="secondary">📦 Archive Current Event</button>
+                <button onclick="openArchiveModal()" class="secondary">🏛️ Event Archive</button>
                 <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
                 <button onclick="logout()" class="danger">🚪 Logout</button>
             </div>
@@ -995,7 +1000,10 @@ Dragon warhammer"></textarea>
     <!-- Chart.js Library (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
+    <!-- html2canvas Library (CDN) - for rendering the shareable event recap card to PNG -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
     <!-- External JavaScript -->
-    <script src="js/app.js?v=2.5"></script>
+    <script src="js/app.js?v=2.6"></script>
 </body>
 </html>

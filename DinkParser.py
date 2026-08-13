@@ -26,7 +26,7 @@ if BINGO_API_BASE.endswith('/drop'):
 
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
-def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, value=0, value_string=''):
+def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, value=0, value_string='', rarity=None):
     """Send drop to bingo board API with value information"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/drop",
@@ -40,7 +40,8 @@ def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, val
                 'drop_type': drop_type,
                 'source': source,
                 'value': value,  # ← NEW: Send numeric value
-                'value_string': value_string  # ← NEW: Send original text (e.g., "2.95M")
+                'value_string': value_string,  # ← NEW: Send original text (e.g., "2.95M")
+                'rarity': rarity  # Raw "1 in X" text from Dink's Item Rarity/Rank field, when known
             },
             timeout=5)
 
@@ -62,7 +63,7 @@ def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, val
         print(f"❌ Bingo API error: {e}")
 
 
-def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None, value=0, value_string=''):
+def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None, value=0, value_string='', rarity=None):
     """Send drop to history-only endpoint (no tile checking)"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/history-only",
@@ -77,7 +78,8 @@ def send_to_history_only(player_name, item_name, drop_type='loot', source=None, 
                                      'source': source,
                                      'timestamp': timestamp or datetime.utcnow().isoformat(),
                                      'value': value,
-                                     'value_string': value_string
+                                     'value_string': value_string,
+                                     'rarity': rarity
                                  },
                                  timeout=5)
 
@@ -485,6 +487,7 @@ async def on_ready():
     print('  !import_history [channel_id] [limit] - Import drop history')
     print('  !import_deaths [channel_id] [limit] - Import death history')
     print('  !import_pbs [channel_id] [limit] - Import personal best history')
+    print('  !backfill_rarity [channel_id] [start_date] - Backfill rarity/value into existing history')
     print('  !stats [player] - Show drop statistics')
 
 
@@ -526,14 +529,25 @@ async def on_message(message):
 
             # Send to bingo board
             if drop_data['player'] and drop_data['items']:
+                # Dink's message-level total (and rarity, when present) only reliably maps
+                # 1:1 to a single item — for multi-item messages we can't fairly attribute
+                # either back to one line, so both fall back only in the single-item case.
+                is_single_item = len(drop_data['items']) == 1
                 for item in drop_data['items']:
+                    item_value = item.get('value_numeric', 0)
+                    item_value_string = item.get('value', '')
+                    if is_single_item and not item_value and drop_data.get('total_value_numeric'):
+                        item_value = drop_data['total_value_numeric']
+                        item_value_string = drop_data.get('total_value', '') or item_value_string
+
                     send_to_bingo_api(
                         player_name=drop_data['player'],
                         item_name=item['name'],
                         drop_type=drop_type,  # ← PASS THE DROP TYPE
                         source=drop_data.get('source'),
-                        value=item.get('value_numeric', 0),
-                        value_string=item.get('value', '')
+                        value=item_value,
+                        value_string=item_value_string,
+                        rarity=drop_data.get('rarity') if is_single_item else None
                     )
 
             save_drop_to_file(drop_data)
@@ -856,15 +870,23 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                         drop_data['timestamp'] = message.created_at.isoformat()
 
                         if drop_data['player'] and drop_data['items']:
+                            is_single_item = len(drop_data['items']) == 1
                             for item in drop_data['items']:
+                                item_value = item.get('value_numeric', 0)
+                                item_value_string = item.get('value', '')
+                                if is_single_item and not item_value and drop_data.get('total_value_numeric'):
+                                    item_value = drop_data['total_value_numeric']
+                                    item_value_string = drop_data.get('total_value', '') or item_value_string
+
                                 success, is_dup = send_to_history_only(
                                     drop_data['player'],
                                     item['name'],
                                     drop_type=drop_data['drop_type'],
                                     source=drop_data.get('source'),
                                     timestamp=drop_data['timestamp'],
-                                    value=item.get('value_numeric', 0),
-                                    value_string=item.get('value', '')
+                                    value=item_value,
+                                    value_string=item_value_string,
+                                    rarity=drop_data.get('rarity') if is_single_item else None
                                 )
 
                                 if success:
@@ -889,6 +911,144 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
     except Exception as e:
         await ctx.send(f"❌ Error during import: {str(e)}")
         print(f"Import error: {e}")
+
+
+@bot.command()
+async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-01-01"):
+    """
+    Re-scan past Loot Drop / Collection Log messages to backfill rarity and
+    fix 'Unknown'-valued single-item drops already saved to history — for
+    drops logged before those fields existed. Does NOT create new history
+    entries and never overwrites a drop that already has good data; the
+    matching + updating happens server-side in bingo_api.py.
+
+    Usage:
+      !backfill_rarity                           - Scan current channel from 2026-01-01 onward
+      !backfill_rarity 123456789                 - Scan a specific channel
+      !backfill_rarity 123456789 2025-12-29       - Custom start date (YYYY-MM-DD)
+    """
+
+    if channel_id:
+        try:
+            target_channel = await bot.fetch_channel(int(channel_id))
+        except ValueError:
+            await ctx.send(f"❌ Invalid channel ID: {channel_id}")
+            return
+        except discord.NotFound:
+            await ctx.send(f"❌ Channel not found: {channel_id}")
+            return
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to access that channel.")
+            return
+    else:
+        target_channel = ctx.channel
+
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    except ValueError:
+        await ctx.send(f"❌ Invalid date format: {start_date}. Use YYYY-MM-DD (e.g. 2026-01-01).")
+        return
+
+    progress_msg = await ctx.send(
+        f"🔍 Backfilling rarity/value data from {target_channel.mention} since {start_date}...\n"
+        f"⚠️ Only fills gaps in existing history — won't create or duplicate entries.\n"
+        f"📨 I'll update every 2,000 messages scanned."
+    )
+
+    scanned = 0
+    candidates = []
+    submitted = 0
+    matched_total = 0
+    updated_total = 0
+    unmatched_total = 0
+    PROGRESS_EVERY = 2000
+    BATCH_SIZE = 200
+
+    async def flush_batch():
+        nonlocal candidates, submitted, matched_total, updated_total, unmatched_total
+        if not candidates:
+            return
+        try:
+            response = requests.post(f"{BINGO_API_BASE}/history/backfill-rarity",
+                headers={'Content-Type': 'application/json', 'X-API-Key': DROP_API_KEY},
+                json={'drops': candidates},
+                timeout=30)
+            if response.status_code == 200:
+                result = response.json()
+                matched_total += result.get('matched', 0)
+                updated_total += result.get('updated', 0)
+                unmatched_total += result.get('unmatched', 0)
+            else:
+                print(f"⚠️ Backfill batch failed: {response.status_code} {response.text[:200]}")
+        except Exception as e:
+            print(f"❌ Backfill batch error: {e}")
+        submitted += len(candidates)
+        candidates = []
+
+    try:
+        async for message in target_channel.history(after=start_dt, limit=None, oldest_first=True):
+            scanned += 1
+
+            if scanned % PROGRESS_EVERY == 0:
+                try:
+                    await progress_msg.edit(content=(
+                        f"🔍 Backfilling rarity/value data from {target_channel.mention}...\n"
+                        f"📨 {scanned:,} messages scanned\n"
+                        f"📤 {submitted:,} candidates submitted • {matched_total:,} matched • {updated_total:,} updated"
+                    ))
+                except Exception:
+                    pass
+
+            if not (message.webhook_id and message.embeds):
+                continue
+
+            embed = message.embeds[0]
+            if embed.title and '[seasonal]' in embed.title.lower():
+                continue
+            if not (embed.title and ("Loot Drop" in embed.title or "Collection Log" in embed.title)):
+                continue
+
+            drop_data = parse_drop_embed(embed, message)
+            if not (drop_data and drop_data['player'] and drop_data['items']):
+                continue
+            if len(drop_data['items']) != 1:
+                continue  # same single-item guard as the live fix — safe attribution only
+
+            item = drop_data['items'][0]
+            needs_value_fix = not item.get('value_numeric', 0) and drop_data.get('total_value_numeric')
+            if not drop_data.get('rarity') and not needs_value_fix:
+                continue  # nothing this drop could improve
+
+            candidates.append({
+                'player': drop_data['player'],
+                'item': item['name'],
+                'timestamp': message.created_at.isoformat(),
+                'rarity': drop_data.get('rarity'),
+                'total_value_numeric': drop_data.get('total_value_numeric'),
+                'total_value': drop_data.get('total_value')
+            })
+
+            if len(candidates) >= BATCH_SIZE:
+                await flush_batch()
+                await asyncio.sleep(0.2)
+
+        await flush_batch()
+
+        summary = f"✅ **Rarity/Value Backfill Complete!**\n"
+        summary += f"📨 Messages scanned: {scanned:,}\n"
+        summary += f"📤 Candidate drops submitted: {submitted:,}\n"
+        summary += f"🎯 Matched to existing history: {matched_total:,}\n"
+        summary += f"✏️ Actually updated: {updated_total:,}\n"
+        summary += f"❔ Unmatched (no corresponding history entry found): {unmatched_total:,}\n"
+
+        await progress_msg.edit(content=summary)
+        print(f"📊 Rarity backfill complete: {scanned} scanned, {submitted} submitted, {matched_total} matched, {updated_total} updated")
+
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to read message history!")
+    except Exception as e:
+        await ctx.send(f"❌ Error during backfill: {str(e)}")
+        print(f"Backfill error: {e}")
 
 
 @bot.command()

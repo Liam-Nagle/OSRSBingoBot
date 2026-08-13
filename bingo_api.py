@@ -115,8 +115,26 @@ def get_tenant_collections(tenant_id=None):
         'deaths': db[f'tenant_{subdomain}_deaths'],
         'rank_history': db[f'tenant_{subdomain}_rank_history'],
         'kc': db[f'tenant_{subdomain}_kc'],
-        'personal_bests': db[f'tenant_{subdomain}_personal_bests']
+        'personal_bests': db[f'tenant_{subdomain}_personal_bests'],
+        'archive': db[f'tenant_{subdomain}_archive']
     }
+
+
+def parse_rarity_denominator(raw):
+    """
+    Extract the numeric denominator from Dink's "Item Rarity"/"Rank" field text,
+    e.g. '```\\n1 in 12.8 (7.81%)\\n```' -> 12.8. Returns None if unparseable/absent.
+    Higher value = rarer.
+    """
+    if not raw:
+        return None
+    match = re.search(r'1\s*in\s*([\d,]+(?:\.\d+)?)', raw, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(',', ''))
+    except ValueError:
+        return None
 
 
 def check_tenant_feature(tenant, feature):
@@ -924,6 +942,8 @@ def record_drop():
     source = data.get('source')
     value = data.get('value', 0)  #Get value from bot
     value_string = data.get('value_string', '')  #Original value text (e.g., "2.95M")
+    rarity = data.get('rarity')  # Raw "1 in X" text from Dink, when known (single-item drops only)
+    rarity_1_in = parse_rarity_denominator(rarity)
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
     # Get tenant from request
@@ -963,6 +983,8 @@ def record_drop():
                 'source': source,
                 'value': value,
                 'value_string': value_string,
+                'rarity': rarity,
+                'rarity_1_in': rarity_1_in,
                 'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
                                                                                                     str) else timestamp
             })
@@ -1140,6 +1162,8 @@ def record_history_only():
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
     value = data.get('value', 0)
     value_string = data.get('value_string', '')
+    rarity = data.get('rarity')
+    rarity_1_in = parse_rarity_denominator(rarity)
 
     # Get tenant collections
     tenant = get_tenant_from_request()
@@ -1161,6 +1185,8 @@ def record_history_only():
                                                                                                     str) else timestamp,
                 'value': value,
                 'value_string': value_string,
+                'rarity': rarity,
+                'rarity_1_in': rarity_1_in,
             })
             return jsonify({
                 'success': True,
@@ -1171,6 +1197,112 @@ def record_history_only():
             return jsonify({'error': f'Failed to save: {str(e)}'}), 500
     else:
         return jsonify({'error': 'MongoDB not available'}), 503
+
+
+@app.route('/history/backfill-rarity', methods=['POST'])
+def backfill_rarity():
+    """
+    Enrich already-saved history documents with rarity/value data re-scraped
+    from old Discord messages (see DinkParser.py's !backfill_rarity command).
+    This never inserts new history entries and never overwrites a document
+    that already has rarity set or a nonzero value — it only fills gaps left
+    by drops logged before those fields existed.
+
+    Each candidate is matched to an existing history doc by player + item +
+    closest timestamp within a short window (drops predating rarity tracking
+    were saved with the API-receipt time, not the exact Discord message time,
+    so an exact timestamp match isn't expected).
+
+    Auth: same X-API-Key the bot already sends on every drop post — this is
+    a bot-driven data-correction pass, not an admin-panel action.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    api_key = request.headers.get('X-API-Key') or request.headers.get('Authorization')
+    if api_key and api_key.startswith('Bearer '):
+        api_key = api_key[7:]
+    if api_key != DROP_API_KEY:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    drops = data.get('drops', [])
+    if not isinstance(drops, list):
+        return jsonify({'error': 'drops must be a list'}), 400
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    MATCH_WINDOW_SECONDS = 120
+
+    matched = 0
+    updated = 0
+    unmatched = 0
+
+    for candidate in drops:
+        player = candidate.get('player')
+        item = candidate.get('item')
+        ts_raw = candidate.get('timestamp')
+        if not player or not item or not ts_raw:
+            unmatched += 1
+            continue
+
+        try:
+            ts = datetime.fromisoformat(ts_raw.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            unmatched += 1
+            continue
+
+        rarity = candidate.get('rarity')
+        rarity_1_in = parse_rarity_denominator(rarity)
+        total_value_numeric = candidate.get('total_value_numeric')
+        total_value = candidate.get('total_value')
+
+        query = {
+            'player': player,
+            'item': item,
+            'timestamp': {
+                '$gte': ts - timedelta(seconds=MATCH_WINDOW_SECONDS),
+                '$lte': ts + timedelta(seconds=MATCH_WINDOW_SECONDS)
+            },
+            '$or': [
+                {'rarity': {'$in': [None, '']}},
+                {'value': {'$in': [0, None]}}
+            ]
+        }
+
+        docs = list(collections['history'].find(query))
+        if not docs:
+            unmatched += 1
+            continue
+
+        # Multiple candidates near the same time (e.g. repeat drops of a common
+        # item) — take the closest match so we don't guess wrong on an unrelated one.
+        docs.sort(key=lambda d: abs((d['timestamp'] - ts).total_seconds()))
+        target_doc = docs[0]
+        matched += 1
+
+        update_fields = {}
+        if rarity and not target_doc.get('rarity'):
+            update_fields['rarity'] = rarity
+            update_fields['rarity_1_in'] = rarity_1_in
+        if total_value_numeric and not target_doc.get('value'):
+            update_fields['value'] = total_value_numeric
+            if total_value:
+                update_fields['value_string'] = total_value
+
+        if update_fields:
+            collections['history'].update_one({'_id': target_doc['_id']}, {'$set': update_fields})
+            updated += 1
+
+    return jsonify({
+        'success': True,
+        'received': len(drops),
+        'matched': matched,
+        'updated': updated,
+        'unmatched': unmatched
+    })
 
 
 @app.route('/death', methods=['POST'])
@@ -1787,6 +1919,319 @@ def is_within_event_window(timestamp=None, tenant_id=None):
         print(f"[!] Error checking event window: {e}")
         # On error, allow the action (fail open)
         return True
+
+
+# ============================================
+# EVENT RECAP + ARCHIVE
+# ============================================
+
+def compute_event_recap(collections, start_date, end_date, board_doc=None):
+    """
+    Compute per-player recap stats + team-wide superlative badges for the given
+    event window. Mirrors the client-side scoring in js/app.js's
+    updatePlayerStats()/checkLineCompletion() (tile value + line bonuses) so
+    "points"/MVP match the live leaderboard. Used for both the live
+    /event/recap endpoint and frozen /event/archive snapshots.
+    Returns {player_name: {...stats, badges: [...]}}.
+    """
+    board = board_doc if board_doc is not None else (collections['bingo'].find_one({'type': 'current_board'}) or {})
+    tiles = board.get('tiles', [])
+    board_size = board.get('boardSize', 5)
+    line_bonuses = board.get('lineBonuses', {}) or {}
+
+    def tile_at(row, col):
+        idx = row * board_size + col
+        return tiles[idx] if 0 <= idx < len(tiles) else {}
+
+    # --- tile points (sum of completed tiles' value) ---
+    player_scores = {}
+    for tile in tiles:
+        for player in tile.get('completedBy', []):
+            entry = player_scores.setdefault(player, {'tiles': 0, 'points': 0})
+            entry['tiles'] += 1
+            entry['points'] += tile.get('value', 0)
+
+    # --- line completion bonuses (rows/cols/diagonals), mirrors checkLineCompletion() ---
+    for player in list(player_scores.keys()):
+        bonus = 0
+        rows_list = line_bonuses.get('rows', [])
+        cols_list = line_bonuses.get('cols', [])
+        diags_list = line_bonuses.get('diags', [])
+
+        for row in range(board_size):
+            if all(player in tile_at(row, col).get('completedBy', []) for col in range(board_size)):
+                if row < len(rows_list):
+                    bonus += rows_list[row]
+
+        for col in range(board_size):
+            if all(player in tile_at(row, col).get('completedBy', []) for row in range(board_size)):
+                if col < len(cols_list):
+                    bonus += cols_list[col]
+
+        if all(player in tile_at(i, i).get('completedBy', []) for i in range(board_size)):
+            if len(diags_list) > 0:
+                bonus += diags_list[0]
+        if all(player in tile_at(i, board_size - 1 - i).get('completedBy', []) for i in range(board_size)):
+            if len(diags_list) > 1:
+                bonus += diags_list[1]
+
+        player_scores[player]['points'] += bonus
+
+    # --- first/last tile completed per player + event-wide earliest/latest (First Blood/Closer) ---
+    first_last = {}
+    event_earliest = None  # (iso, player)
+    event_latest = None
+    for tile in tiles:
+        title = tile.get('displayTitle') or (tile.get('items') or [{}])[0].get('name') or 'a tile'
+        for player, iso in (tile.get('completedAt') or {}).items():
+            entry = first_last.setdefault(player, {'first': iso, 'first_tile': title, 'last': iso, 'last_tile': title})
+            if iso < entry['first']:
+                entry['first'], entry['first_tile'] = iso, title
+            if iso > entry['last']:
+                entry['last'], entry['last_tile'] = iso, title
+            if event_earliest is None or iso < event_earliest[0]:
+                event_earliest = (iso, player)
+            if event_latest is None or iso > event_latest[0]:
+                event_latest = (iso, player)
+
+    # --- drop history aggregation ---
+    match_query = {}
+    if start_date:
+        match_query.setdefault('timestamp', {})['$gte'] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+    if end_date:
+        match_query.setdefault('timestamp', {})['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+
+    drop_stats = {}
+    biggest_drop = None  # (value, player, item)
+    for d in collections['history'].find(match_query):
+        player = d.get('player')
+        if not player:
+            continue
+        stats = drop_stats.setdefault(player, {
+            'drop_count': 0, 'gp_total': 0, 'days': set(), 'most_valuable': None, 'rarest_drop': None
+        })
+        stats['drop_count'] += 1
+        value = d.get('value', 0) or 0
+        stats['gp_total'] += value
+        ts = d.get('timestamp')
+        if isinstance(ts, datetime):
+            stats['days'].add(ts.date().isoformat())
+        if value > 0 and (stats['most_valuable'] is None or value > stats['most_valuable'][0]):
+            stats['most_valuable'] = (value, d.get('item'))
+        if value > 0 and (biggest_drop is None or value > biggest_drop[0]):
+            biggest_drop = (value, player, d.get('item'))
+
+        r1 = d.get('rarity_1_in')
+        if r1 and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
+            stats['rarest_drop'] = (r1, d.get('item'), d.get('rarity'))
+
+    rarest_drop_overall = None  # (rarity_1_in, player)
+    for player, stats in drop_stats.items():
+        if stats['rarest_drop'] and (rarest_drop_overall is None or stats['rarest_drop'][0] > rarest_drop_overall[0]):
+            rarest_drop_overall = (stats['rarest_drop'][0], player)
+
+    # --- KC gained per player, reusing the same start-vs-latest snapshot diff as /kc/player/<name> ---
+    kc_gained = {}
+    for snap_player in collections['kc'].distinct('player'):
+        start_snap = collections['kc'].find_one({'player': snap_player, 'snapshot_type': 'start'}, sort=[('timestamp', 1)])
+        current_snap = collections['kc'].find_one({'player': snap_player}, sort=[('timestamp', -1)])
+        if start_snap and current_snap:
+            total_gained = 0
+            for boss, current_kc in current_snap.get('bosses', {}).items():
+                gained = current_kc - start_snap.get('bosses', {}).get(boss, 0)
+                if gained > 0:
+                    total_gained += gained
+            if total_gained > 0:
+                kc_gained[snap_player] = total_gained
+
+    roster = set(player_scores) | set(drop_stats) | set(kc_gained)
+
+    # --- team-wide superlatives ---
+    top_points = max((s['points'] for s in player_scores.values()), default=0)
+    mvps = {p for p, s in player_scores.items() if top_points > 0 and s['points'] == top_points}
+
+    top_days = max((len(s['days']) for s in drop_stats.values()), default=0)
+    most_consistent = {p for p, s in drop_stats.items() if top_days > 0 and len(s['days']) == top_days}
+
+    top_kc = max(kc_gained.values(), default=0)
+    top_grinders = {p for p, v in kc_gained.items() if top_kc > 0 and v == top_kc}
+
+    recap = {}
+    for player in roster:
+        badges = []
+        if player in mvps:
+            badges.append('mvp')
+        if biggest_drop and biggest_drop[1] == player:
+            badges.append('biggest_drop')
+        if rarest_drop_overall and rarest_drop_overall[1] == player:
+            badges.append('rarest_drop')
+        if player in most_consistent:
+            badges.append('most_consistent')
+        if player in top_grinders:
+            badges.append('top_grinder')
+        if event_earliest and event_earliest[1] == player:
+            badges.append('first_blood')
+        if event_latest and event_latest[1] == player:
+            badges.append('closer')
+
+        stats = drop_stats.get(player, {})
+        most_valuable = stats.get('most_valuable')
+        rarest = stats.get('rarest_drop')
+        tile_dates = first_last.get(player, {})
+
+        recap[player] = {
+            'points': player_scores.get(player, {}).get('points', 0),
+            'tiles_completed': player_scores.get(player, {}).get('tiles', 0),
+            'drop_count': stats.get('drop_count', 0),
+            'gp_total': stats.get('gp_total', 0),
+            'distinct_days': len(stats.get('days', set())),
+            'most_valuable_drop': {'item': most_valuable[1], 'value': most_valuable[0]} if most_valuable else None,
+            'rarest_drop': {'item': rarest[1], 'rarity': rarest[2]} if rarest else None,
+            'kc_gained': kc_gained.get(player, 0),
+            'first_tile': tile_dates.get('first_tile'),
+            'first_tile_at': tile_dates.get('first'),
+            'last_tile': tile_dates.get('last_tile'),
+            'last_tile_at': tile_dates.get('last'),
+            'badges': badges
+        }
+
+    return recap
+
+
+@app.route('/event/recap/<player_name>', methods=['GET'])
+def get_event_recap(player_name):
+    """Live per-player event recap, scoped to the current event_config window."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
+        if not event_config or not event_config.get('enabled'):
+            return jsonify({'error': 'No event is currently configured'}), 404
+
+        recap = compute_event_recap(
+            collections,
+            event_config.get('startDate'),
+            event_config.get('endDate')
+        )
+
+        player_recap = recap.get(player_name)
+        if not player_recap:
+            return jsonify({'error': f'No recorded activity for {player_name} this event'}), 404
+
+        return jsonify({
+            'player': player_name,
+            'eventName': event_config.get('eventName', 'Bingo Event'),
+            'startDate': event_config.get('startDate'),
+            'endDate': event_config.get('endDate'),
+            **player_recap
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/archive', methods=['POST'])
+def archive_event():
+    """Snapshot the current event's recap data + board tiles into the archive (admin only)."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    data = request.json or {}
+    if data.get('password') != ADMIN_PASSWORD:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
+        if not event_config:
+            return jsonify({'error': 'No event is currently configured'}), 404
+
+        board = collections['bingo'].find_one({'type': 'current_board'}) or {}
+        recap = compute_event_recap(
+            collections,
+            event_config.get('startDate'),
+            event_config.get('endDate'),
+            board_doc=board
+        )
+
+        archive_doc = {
+            'event_name': event_config.get('eventName', 'Bingo Event'),
+            'start_date': event_config.get('startDate'),
+            'end_date': event_config.get('endDate'),
+            'archived_at': datetime.utcnow().isoformat(),
+            'players': recap,
+            'player_names': sorted(recap.keys()),
+            'tiles_snapshot': board.get('tiles', [])
+        }
+        result = collections['archive'].insert_one(archive_doc)
+
+        print(f"[OK] Archived event '{archive_doc['event_name']}' ({len(recap)} players)")
+
+        return jsonify({
+            'success': True,
+            'message': f"Archived '{archive_doc['event_name']}' with {len(recap)} players",
+            'archive_id': str(result.inserted_id)
+        })
+    except Exception as e:
+        print(f"[X] Error archiving event: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/archive/list', methods=['GET'])
+def list_event_archives():
+    """List past archived events, newest first."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        archives = list(collections['archive'].find({}, {'players': 0, 'tiles_snapshot': 0}).sort('archived_at', -1))
+        for a in archives:
+            a['_id'] = str(a['_id'])
+        return jsonify({'archives': archives})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/archive/<archive_id>/player/<player_name>', methods=['GET'])
+def get_archived_player_recap(archive_id, player_name):
+    """A single player's frozen recap from a past archived event."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        from bson import ObjectId
+        archive_doc = collections['archive'].find_one({'_id': ObjectId(archive_id)})
+        if not archive_doc:
+            return jsonify({'error': 'Archive not found'}), 404
+
+        player_recap = archive_doc.get('players', {}).get(player_name)
+        if not player_recap:
+            return jsonify({'error': f'No recorded activity for {player_name} in this event'}), 404
+
+        return jsonify({
+            'player': player_name,
+            'eventName': archive_doc.get('event_name', 'Bingo Event'),
+            'startDate': archive_doc.get('start_date'),
+            'endDate': archive_doc.get('end_date'),
+            **player_recap
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/deaths/by-player-npc', methods=['GET'])
