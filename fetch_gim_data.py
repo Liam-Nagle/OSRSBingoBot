@@ -20,49 +20,114 @@ except ImportError:
 GROUP_NAME = 'unsociables'
 GROUP_SIZE = 5
 MAX_PAGES = 150
+PAGE_SIZE = 20  # groups listed per hiscores page
 
-SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
+ZENROWS_API_KEY = os.environ.get('ZENROWS_API_KEY')
+API_URL = os.environ.get('API_URL', 'https://osrsbingobot.onrender.com')
 
 
-def fetch_gim_data():
-    """Fetch GIM highscore data from RuneScape"""
+def get_last_known_data():
+    """
+    Ask the backend for our last recorded rank/prestige rank so we can search
+    near the rank instead of re-scanning the hiscores from page 1 every run.
+    Our rank only drifts a little between runs, but a full scan from page 1
+    costs ~100 requests every time just to relocate a group sitting around
+    rank #2000 - that's what blew through the ScraperAPI quota.
+    """
+    try:
+        response = requests.get(f'{API_URL}/rank/latest', timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        return result.get('data') or {}
+    except Exception as e:
+        print(f'⚠️  Could not fetch last known rank ({e}), falling back to a full scan')
+        return {}
+
+
+def build_page_order(last_page):
+    """
+    Pages to check, in priority order: centered on the last known page and
+    expanding outward one step at a time. Naturally covers the full 1..MAX_PAGES
+    range if the group isn't found nearby (e.g. first run, or a big rank jump) -
+    it just tries the likely spot first instead of always starting at page 1.
+    """
+    if last_page is None:
+        return list(range(1, MAX_PAGES + 1))
+
+    order = [last_page]
+    radius = 1
+    while len(order) < MAX_PAGES:
+        for candidate in (last_page - radius, last_page + radius):
+            if 1 <= candidate <= MAX_PAGES and candidate not in order:
+                order.append(candidate)
+        radius += 1
+
+    return order
+
+
+def fetch_gim_data(full_scan=False):
+    """
+    Fetch GIM highscore data from RuneScape.
+
+    full_scan=False (default, used by the regular 3-day cron): searches near
+    the last known rank only. Cheap (a handful of requests), but can't produce
+    an accurate prestige_rank - that requires counting every prestige group
+    from page 1 onwards, which this mode skips. prestige_rank is carried over
+    unchanged from the last snapshot instead of being recomputed.
+
+    full_scan=True (used by the periodic full-scan cron / manual dispatch):
+    walks every page from 1, like the original script did. Expensive, but
+    produces an exact, up-to-date prestige_rank.
+    """
     print(f'🔍 Searching for group: {GROUP_NAME}')
+    print(f'🔎 Mode: {"full scan (exact prestige rank)" if full_scan else "targeted search (cheap, prestige rank carried over)"}')
 
-    if SCRAPER_API_KEY:
-        print('Using ScraperAPI to bypass Cloudflare')
+    if ZENROWS_API_KEY:
+        print('Using ZenRows to bypass Cloudflare')
     elif HAS_CURL_CFFI:
         print('Using curl_cffi to bypass Cloudflare')
     else:
-        print('❌ No bypass method available! Set SCRAPER_API_KEY environment variable.')
+        print('❌ No bypass method available! Set ZENROWS_API_KEY environment variable.')
         return None
+
+    last_known = get_last_known_data()
+    last_rank = last_known.get('overall_rank')
+    last_page = None
+    if last_rank:
+        last_page = max(1, ((last_rank - 1) // PAGE_SIZE) + 1)
+        print(f'📍 Last known rank #{last_rank:,} -> page {last_page}')
 
     overall_rank = None
     total_xp = None
     prestige_count = 0
     found = False
 
-    # Search through pages
-    for page in range(1, MAX_PAGES + 1):
+    page_order = list(range(1, MAX_PAGES + 1)) if full_scan else build_page_order(last_page)
+
+    # Search through pages, closest to our last known rank first
+    for check_num, page in enumerate(page_order, start=1):
         if found:
             break
 
         base_url = f'https://secure.runescape.com/m=hiscore_oldschool_ironman/group-ironman/?groupSize={GROUP_SIZE}&page={page}'
 
         try:
-            print(f'📄 Fetching page {page}...')
+            print(f'📄 [{check_num}/{len(page_order)} checked] Fetching page {page}...')
 
             # Retry logic
             max_retries = 3
             retry_delay = 2
+            response = None
 
             for attempt in range(max_retries):
                 try:
-                    if SCRAPER_API_KEY:
+                    if ZENROWS_API_KEY:
                         response = requests.get(
-                            'http://api.scraperapi.com',
+                            'https://api.zenrows.com/v1/',
                             params={
-                                'api_key': SCRAPER_API_KEY,
-                                'url': base_url
+                                'apikey': ZENROWS_API_KEY,
+                                'url': base_url,
+                                'premium_proxy': 'true'
                             },
                             timeout=60
                         )
@@ -81,21 +146,21 @@ def fetch_gim_data():
 
                 if response.status_code == 200:
                     break
-                elif response.status_code == 503:
+                elif response.status_code in (429, 503):
                     if attempt < max_retries - 1:
-                        print(f'⏳ Page {page} returned 503, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})')
+                        print(f'⏳ Page {page} returned {response.status_code}, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})')
                         time.sleep(retry_delay)
                         retry_delay *= 2
                     else:
-                        print(f'❌ Page {page} returned 503 after {max_retries} attempts')
-                elif response.status_code == 403:
-                    print(f'❌ Page {page} returned 403 - Blocked by Cloudflare')
+                        print(f'❌ Page {page} returned {response.status_code} after {max_retries} attempts')
+                elif response.status_code in (401, 403):
+                    print(f'❌ Page {page} returned {response.status_code} - blocked or bad API key: {response.text[:300]}')
                     return None
                 else:
-                    print(f'❌ Page {page} returned {response.status_code}')
+                    print(f'❌ Page {page} returned {response.status_code}: {response.text[:300]}')
                     break
 
-            if response.status_code != 200:
+            if response is None or response.status_code != 200:
                 continue
 
             # Add delay between requests to avoid rate limiting
@@ -156,8 +221,8 @@ def fetch_gim_data():
                     continue
 
             # Progress indicator
-            if page % 10 == 0 and not found:
-                print(f'💤 Scanned {page * 20} groups, found {prestige_count} prestige groups...')
+            if check_num % 10 == 0 and not found:
+                print(f'💤 Checked {check_num} pages so far...')
 
         except Exception as e:
             print(f'❌ Error fetching page {page}: {e}')
@@ -167,7 +232,11 @@ def fetch_gim_data():
         print('❌ Group not found in top 3000')
         return None
 
-    prestige_rank = prestige_count if prestige_count > 0 else None
+    if full_scan:
+        prestige_rank = prestige_count if prestige_count > 0 else None
+    else:
+        prestige_rank = last_known.get('prestige_rank')
+        print(f'↻ Reusing cached prestige rank (not recomputed in targeted-search mode): {prestige_rank}')
 
     print('📊 RESULTS:')
     print(f'   Overall: #{overall_rank:,}')
@@ -222,11 +291,13 @@ def save_via_api(data):
 
 
 def main():
+    full_scan = os.environ.get('FULL_SCAN', 'false').strip().lower() == 'true'
+
     print('🚀 Starting GIM data fetch...')
     print(f'Time: {datetime.utcnow().isoformat()}')
     print()
 
-    data = fetch_gim_data()
+    data = fetch_gim_data(full_scan=full_scan)
 
     if data:
         success = save_via_api(data)

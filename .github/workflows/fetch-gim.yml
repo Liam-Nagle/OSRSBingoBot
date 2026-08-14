@@ -2,12 +2,20 @@ name: Fetch GIM Highscores
 
 on:
   schedule:
-    # Every 3 days — deliberately throttled (not a typo). GIM data scrapes RuneScape's
-    # hiscores through ScraperAPI to get past Cloudflare, and this cadence was
-    # calculated to just about stay within the ScraperAPI plan's usage limit.
-    # Do not bump this to hourly/daily without checking ScraperAPI quota headroom first.
+    # Every 3 days — targeted search near the last known rank (cheap, a handful
+    # of requests). Do not bump this to hourly/daily without checking ZenRows
+    # quota headroom first.
     - cron: '0 0 */3 * *'
+    # Weekly, Sunday midnight — full scan from page 1. This is the only run
+    # that recomputes an exact prestige_rank (see fetch_gim_data.py docstring);
+    # the cheap runs above just carry the last full-scan's value forward.
+    - cron: '0 0 * * 0'
   workflow_dispatch: # Allow manual trigger
+    inputs:
+      full_scan:
+        description: 'Force a full scan (recomputes exact prestige rank, costs ~100 requests)'
+        type: boolean
+        default: false
 
 jobs:
   fetch-gim:
@@ -26,10 +34,20 @@ jobs:
         run: |
           pip install requests beautifulsoup4 curl_cffi
 
+      - name: Determine scan mode
+        id: scan_mode
+        run: |
+          if [ "${{ github.event.schedule }}" = "0 0 * * 0" ] || [ "${{ github.event.inputs.full_scan }}" = "true" ]; then
+            echo "full_scan=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full_scan=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch GIM data
         env:
-          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+          ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
           API_URL: https://osrsbingobot.onrender.com
+          FULL_SCAN: ${{ steps.scan_mode.outputs.full_scan }}
         run: |
           python fetch_gim_data.py
 
