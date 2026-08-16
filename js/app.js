@@ -6254,6 +6254,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.8",
+                date: "2026-08-16",
+                title: "Drop source formatting fix",
+                changes: [
+                    { type: "fix", text: "Collection log drop sources (e.g. \"Tombs of Amascut: Expert Mode\") no longer show stray code-block formatting characters around the name in the analytics drilldown" },
+                ]
+            },
+            {
                 version: "v2.13.7",
                 date: "2026-08-16",
                 title: "Loot value table",

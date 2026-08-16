@@ -637,6 +637,9 @@ def parse_drop_embed(embed, message):
 
         if field_value.startswith('From:') or field_name == 'Source':
             source_text = field_value.replace('From:', '').replace('Source:', '').strip()
+            # Dink wraps some source values (e.g. raid names) in a Discord code block
+            # (```\nName\n```) — strip the fences so we store just the plain name.
+            source_text = re.sub(r'^```\w*\s*|\s*```$', '', source_text).strip()
             drop_info['source'] = source_text
 
         if 'Kill Count' in field_name or 'Completion Count' in field_name:
