@@ -2325,6 +2325,8 @@
         let analyticsCharts = {};
         let _analyticsMode = 'bingo'; // 'bingo' = current event only, 'alltime' = full history
         let _analyticsEventConfig = null;
+        let _lootTableViewMode = 'everyone'; // 'everyone' = one combined table, 'byPlayer' = one table per player
+        let _lootTableDrops = []; // last-rendered filtered drops, cached so the view toggle can re-render without refetching
 
         function openAnalyticsModal() {
             document.getElementById('analyticsModal').classList.add('active');
@@ -2812,6 +2814,13 @@
             if (targetPlayer) params.append('player', targetPlayer);
             if (dateStart) params.append('start_date', `${dateStart}T00:00:00Z`);
             if (dateEnd)   params.append('end_date',   `${dateEnd}T23:59:59Z`);
+            // If the drilldown wasn't opened from a date-scoped chart click, still respect
+            // the current-event scoping (Bingo mode) that the underlying charts were built with —
+            // otherwise a player/item click bypasses it and pulls their all-time history instead.
+            if (!dateStart) {
+                const eventStartDate = getAnalyticsStartDate();
+                if (eventStartDate) params.append('start_date', eventStartDate);
+            }
 
             try {
                 const response = await fetch(`${API_URL}/history?${params}`);
@@ -3072,6 +3081,7 @@
                 generateKeyStats(drops);
                 generatePlayerActivityChart(drops);
                 generateValueLeaderboardChart(drops);
+                generateLootValueTable(drops);
                 generateMonthComparisonChart(drops);
 
                 loadingDiv.style.display = 'none';
@@ -3963,6 +3973,125 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             });
         }
 
+        // Reusable value-tier styling (mirrors the drilldown panel's row colours) so the
+        // loot table's badges look consistent with the ones you see after clicking through.
+        function lootValueTierStyle(value, isCL) {
+            if (isCL)                return { border: '#2E7D32', bg: '#E8F5E9', color: '#2E7D32' };
+            if (value >= 10_000_000) return { border: '#F9A825', bg: '#FFF8E1', color: '#F57F17' };
+            if (value >= 1_000_000)  return { border: '#7B1FA2', bg: '#F3E5F5', color: '#6A1B9A' };
+            if (value >= 100_000)    return { border: '#1565C0', bg: '#E3F2FD', color: '#1565C0' };
+            return { border: '#bbb', bg: '#f5f5f5', color: '#666' };
+        }
+
+        let _lootTableExpandOpen = false;
+
+        function switchLootTableView(mode) {
+            _lootTableViewMode = mode;
+            document.getElementById('lootTableViewEveryone').classList.toggle('active', mode === 'everyone');
+            document.getElementById('lootTableViewByPlayer').classList.toggle('active', mode === 'byPlayer');
+            document.getElementById('lootTableViewEveryoneExpanded').classList.toggle('active', mode === 'everyone');
+            document.getElementById('lootTableViewByPlayerExpanded').classList.toggle('active', mode === 'byPlayer');
+            renderLootValueTable(_lootTableDrops, 'lootValueTableWrap', 'lootValueTableMeta');
+            if (_lootTableExpandOpen) renderLootValueTable(_lootTableDrops, 'lootValueTableWrapExpanded', 'lootValueTableMetaExpanded');
+        }
+
+        // Called alongside the other generate*Chart functions with the same filtered drop set
+        // (already scoped to Current Bingo / All Time and the analytics filter bar) — cached so
+        // the Everyone / By Player toggle (and the expand modal) can re-render instantly without
+        // a refetch.
+        function generateLootValueTable(drops) {
+            _lootTableDrops = drops;
+            renderLootValueTable(drops, 'lootValueTableWrap', 'lootValueTableMeta');
+            if (_lootTableExpandOpen) renderLootValueTable(drops, 'lootValueTableWrapExpanded', 'lootValueTableMetaExpanded');
+        }
+
+        // Opens a big modal version of the loot table — same data, same view-mode toggle, just
+        // full-size with nothing capped (the inline card view is unlimited too, this is purely
+        // about screen real estate, same as expanding one of the Chart.js charts).
+        function openLootTableExpand() {
+            _lootTableExpandOpen = true;
+            document.getElementById('lootTableExpandModal').classList.add('active');
+            renderLootValueTable(_lootTableDrops, 'lootValueTableWrapExpanded', 'lootValueTableMetaExpanded');
+        }
+
+        function closeLootTableExpand() {
+            _lootTableExpandOpen = false;
+            document.getElementById('lootTableExpandModal').classList.remove('active');
+        }
+
+        function renderLootValueTable(drops, wrapId, metaId) {
+            const wrap = document.getElementById(wrapId);
+            const meta = document.getElementById(metaId);
+            if (!wrap) return;
+
+            // Loot only — drops with an actual GE value. Collection Log completions for
+            // untradeable items (or ones the price lookup missed) carry no GP value at all, and
+            // showing those in a table titled "by value" just fills it with meaningless "no
+            // value" rows. This is a different, narrower count than "Most Dropped Items" /
+            // "Total Drops by Player" on purpose — those count every drop event, this counts loot.
+            const valued = drops.filter(d => (d.value || 0) > 0).sort((a, b) => (b.value || 0) - (a.value || 0));
+
+            if (valued.length === 0) {
+                meta.textContent = '';
+                wrap.innerHTML = '<div style="text-align:center;padding:30px;color:#888;">No valued drops match the current filters.</div>';
+                return;
+            }
+
+            const rowHtml = (d, showPlayer) => {
+                const v = d.value || 0;
+                const isCL = d.drop_type === 'collection_log';
+                const tier = lootValueTierStyle(v, isCL);
+                const dateStr = d.timestamp.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                const clTag = isCL ? `<span style="background:#2E7D32;color:white;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:bold;margin-left:5px;">CL</span>` : '';
+                return `<tr style="border-left:4px solid ${tier.border};">
+                    ${showPlayer ? `<td style="padding:7px 10px;white-space:nowrap;"><span style="background:#2c1810;color:#ffcc33;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:bold;">${d.player}</span></td>` : ''}
+                    <td style="padding:7px 10px;">${d.item}${clTag}</td>
+                    <td style="padding:7px 10px;text-align:right;white-space:nowrap;"><span style="background:${tier.bg};color:${tier.color};border:1px solid ${tier.border}40;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:bold;">${formatGP(v)} gp</span></td>
+                    <td style="padding:7px 10px;color:#999;font-size:11px;white-space:nowrap;">${dateStr}</td>
+                </tr>`;
+            };
+
+            const tableOpen = (showPlayer) => `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead style="position:sticky;top:0;background:#2c1810;color:#ffcc33;">
+                    <tr>
+                        ${showPlayer ? '<th style="padding:8px 10px;text-align:left;">Player</th>' : ''}
+                        <th style="padding:8px 10px;text-align:left;">Item</th>
+                        <th style="padding:8px 10px;text-align:right;">Value</th>
+                        <th style="padding:8px 10px;text-align:left;">Date</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            const tableClose = '</tbody></table>';
+
+            const totalValue = valued.reduce((sum, d) => sum + (d.value || 0), 0);
+
+            if (_lootTableViewMode === 'everyone') {
+                meta.innerHTML = `<strong style="color:#cd8b2d;">${valued.length}</strong> valued drop${valued.length !== 1 ? 's' : ''} &nbsp;·&nbsp; Total: <strong>${formatGP(totalValue)} gp</strong>`;
+                wrap.innerHTML = tableOpen(true) + valued.map(d => rowHtml(d, true)).join('') + tableClose;
+            } else {
+                // Group by player, order players by their combined value (richest first)
+                const byPlayer = {};
+                valued.forEach(d => { (byPlayer[d.player] = byPlayer[d.player] || []).push(d); });
+                const players = Object.keys(byPlayer).sort((a, b) =>
+                    byPlayer[b].reduce((s, d) => s + (d.value || 0), 0) - byPlayer[a].reduce((s, d) => s + (d.value || 0), 0)
+                );
+
+                meta.innerHTML = `<strong style="color:#cd8b2d;">${players.length}</strong> player${players.length !== 1 ? 's' : ''} &nbsp;·&nbsp; Total: <strong>${formatGP(totalValue)} gp</strong>`;
+
+                wrap.innerHTML = players.map(player => {
+                    const rows = byPlayer[player];
+                    const playerTotal = rows.reduce((s, d) => s + (d.value || 0), 0);
+                    return `<div style="margin-bottom:4px;">
+                        <div style="background:#f4ecdc;padding:6px 10px;font-weight:bold;color:#2c1810;font-size:13px;display:flex;justify-content:space-between;position:sticky;top:0;">
+                            <span>👤 ${player}</span>
+                            <span style="color:#8b6914;">${formatGP(playerTotal)} gp · ${rows.length} drop${rows.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        ${tableOpen(false) + rows.map(d => rowHtml(d, false)).join('') + tableClose}
+                    </div>`;
+                }).join('');
+            }
+        }
+
         function generateMonthComparisonChart(drops) {
             const ctx = document.getElementById('monthComparisonChart').getContext('2d');
 
@@ -4332,6 +4461,7 @@ async function loadAnalyticsWithFilters() {
                 generateKeyStats(filteredHistory);
                 generatePlayerActivityChart(filteredHistory);
                 generateValueLeaderboardChart(filteredHistory);
+                generateLootValueTable(filteredHistory);
                 generateMonthComparisonChart(filteredHistory);
 
             } catch (error) {
@@ -6123,6 +6253,22 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.7",
+                date: "2026-08-16",
+                title: "Loot value table",
+                changes: [
+                    { type: "feature", text: "Added a Loot Table to Analytics → Items & Value — every priced drop sorted highest to lowest (unlimited, nothing capped), with a toggle between one combined list for everyone and separate lists per player. Click it to pop it open full-size, same as the other charts. Respects the Current Bingo / All Time toggle and the existing filters" },
+                ]
+            },
+            {
+                version: "v2.13.6",
+                date: "2026-08-15",
+                title: "Analytics drilldown scoping fix",
+                changes: [
+                    { type: "fix", text: "Clicking a player in the Items & Value drop-down leaderboards (or other chart drilldowns) now correctly shows only drops from the current bingo event instead of that player's all-time history" },
+                ]
+            },
             {
                 version: "v2.13.5",
                 date: "2026-08-13",

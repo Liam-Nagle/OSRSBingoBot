@@ -573,6 +573,20 @@ Dragon warhammer"></textarea>
                             <canvas id="valueLeaderboardChart"></canvas>
                         </div>
                     </div>
+
+                    <!-- Loot Table (sorted by value) -->
+                    <div class="chart-container">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 4px;">
+                            <h3 style="color: #2c1810; margin: 0;">📋 Loot Table (By Value)</h3>
+                            <div style="display: flex; gap: 8px;">
+                                <button onclick="switchLootTableView('everyone')" id="lootTableViewEveryone" class="kc-mode-btn active" style="padding: 6px 14px; font-size: 12px;">🌍 Everyone</button>
+                                <button onclick="switchLootTableView('byPlayer')" id="lootTableViewByPlayer" class="kc-mode-btn" style="padding: 6px 14px; font-size: 12px;">👤 By Player</button>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #a89878; font-style: italic; margin-bottom: 10px;">Only counts drops with a known GE value — untradeable Collection Log items aren't included</div>
+                        <div id="lootValueTableMeta" style="font-size: 12px; color: #8b7355; margin-bottom: 10px;"></div>
+                        <div id="lootValueTableWrap" onclick="openLootTableExpand()" title="Click to view full-size" style="max-height: 480px; overflow-y: auto; border: 1px solid #e5dcc8; border-radius: 6px; cursor: pointer;"></div>
+                    </div>
                 </div>
 
             </div>
@@ -993,6 +1007,28 @@ Dragon warhammer"></textarea>
 
             <!-- Drop list -->
             <div id="drilldownPanelContent" style="overflow-y: auto; flex: 1; padding: 14px 18px; display: flex; flex-direction: column; gap: 7px; background: #faf6f0;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Loot Table Expanded (full-size, everything, no caps) -->
+    <div id="lootTableExpandModal" class="modal" style="z-index: 10003;">
+        <div class="modal-content" style="max-width: 1100px; width: 94vw; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: 10px;">
+
+            <!-- Header banner -->
+            <div style="background: linear-gradient(135deg, #2c1810 0%, #4a2c1a 100%); padding: 20px 52px 16px 24px; flex-shrink: 0; position: relative;">
+                <button onclick="closeLootTableExpand()" class="close-btn" style="color: rgba(255,255,255,0.7); top: 14px; right: 14px;">✕</button>
+                <h2 style="color: #ffcc33; margin: 0 0 4px 0; font-size: 19px; font-weight: bold;">📋 Loot Table (By Value)</h2>
+                <div style="font-size: 11px; color: rgba(255,255,255,0.5); font-style: italic; margin-bottom: 10px;">Only counts drops with a known GE value — untradeable Collection Log items aren't included</div>
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="switchLootTableView('everyone')" id="lootTableViewEveryoneExpanded" class="kc-mode-btn active" style="padding: 6px 14px; font-size: 12px;">🌍 Everyone</button>
+                    <button onclick="switchLootTableView('byPlayer')" id="lootTableViewByPlayerExpanded" class="kc-mode-btn" style="padding: 6px 14px; font-size: 12px;">👤 By Player</button>
+                </div>
+                <div id="lootValueTableMetaExpanded" style="color: rgba(255,255,255,0.75); font-size: 13px; margin-top: 8px;"></div>
+            </div>
+
+            <!-- Full table -->
+            <div id="lootValueTableWrapExpanded" style="overflow-y: auto; flex: 1; padding: 14px 18px; background: #faf6f0;">
             </div>
         </div>
     </div>
