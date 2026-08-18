@@ -6019,6 +6019,70 @@ async function loadAnalyticsWithFilters() {
         }
 
         // ============================================
+        // EXPORT DATA MODAL
+        // ============================================
+
+        const EXPORT_DATASET_ICONS = {
+            history: '📜',
+            kc: '⚔️',
+            personal_bests: '🏆',
+            rank_history: '📈'
+        };
+
+        function openExportModal() {
+            document.getElementById('exportModal').classList.add('active');
+            document.getElementById('exportLoading').style.display = 'block';
+            document.getElementById('exportList').style.display = 'none';
+            document.getElementById('exportList').innerHTML = '';
+            loadExportMeta();
+        }
+
+        function closeExportModal() {
+            document.getElementById('exportModal').classList.remove('active');
+        }
+
+        async function loadExportMeta() {
+            const loadingEl = document.getElementById('exportLoading');
+            const listEl = document.getElementById('exportList');
+
+            try {
+                const response = await fetch(`${API_URL}/export/meta`);
+                const data = await response.json();
+
+                if (!data.datasets || data.datasets.length === 0) {
+                    listEl.innerHTML = '<p style="text-align:center; color:#666;">No data available to export yet.</p>';
+                } else {
+                    listEl.innerHTML = data.datasets.map(ds => `
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:15px; background: rgba(255,255,255,0.3); border: 2px solid #8B6914; border-radius: 8px; padding: 15px 18px; margin-bottom: 12px;">
+                            <div>
+                                <div style="font-weight:bold; color:#2c1810; font-size:15px;">${EXPORT_DATASET_ICONS[ds.key] || '📄'} ${ds.label}</div>
+                                <div style="font-size:12px; color:#666; margin-top:3px;">${ds.description}</div>
+                                <div style="font-size:11px; color:#8b7355; margin-top:5px;">${ds.count.toLocaleString()} record${ds.count === 1 ? '' : 's'}</div>
+                            </div>
+                            <button class="btn-save" style="white-space:nowrap;" onclick="downloadExport('${ds.key}')" ${ds.count === 0 ? 'disabled' : ''}>⬇️ Download CSV</button>
+                        </div>
+                    `).join('');
+                }
+
+                loadingEl.style.display = 'none';
+                listEl.style.display = 'block';
+            } catch (error) {
+                console.error('Failed to load export metadata:', error);
+                loadingEl.innerHTML = '<p style="color:#8b1a1a; text-align:center;">Failed to load export data. Please try again.</p>';
+            }
+        }
+
+        // Downloads via a real navigation (not fetch), so the browser just saves the
+        // file using the server's Content-Disposition header - no CORS involved.
+        function downloadExport(key) {
+            const link = document.createElement('a');
+            link.href = `${API_URL}/export/${key}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // ============================================
         // PERSONAL BESTS MODAL
         // ============================================
 
@@ -6253,6 +6317,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.9",
+                date: "2026-08-17",
+                title: "Export your own data",
+                changes: [
+                    { type: "feature", text: "New 📤 Export Data button lets anyone download the raw drop history, boss kill counts, personal bests, and rank history as CSV files, ready to open in Excel/Sheets for your own analytics" },
+                ]
+            },
             {
                 version: "v2.13.8",
                 date: "2026-08-16",

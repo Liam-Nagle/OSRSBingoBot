@@ -91,6 +91,7 @@
                 <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
                 <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
                 <button id="pbsBtn" onclick="openPBsModal()" class="secondary">🏆 Personal Bests</button>
+                <button id="exportDataBtn" onclick="openExportModal()" class="secondary">📤 Export Data</button>
                 <button onclick="openChangelogModal()" class="secondary" style="position: relative;">📝 Changelog<span id="changelogBadge" class="changelog-badge" style="display: none;">NEW</span></button>
 
                 <!-- Login Button (Shows when not admin) -->
@@ -896,6 +897,24 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
+    <!-- Export Data Modal -->
+    <div class="modal" id="exportModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <button onclick="closeExportModal()" class="close-btn">✕</button>
+            <h2>📤 Export Data</h2>
+            <p style="color: #666; margin-bottom: 20px;">Download the raw data behind the board as CSV files, so you can build your own charts and stats in Excel, Google Sheets, or wherever you like.</p>
+
+            <!-- Loading State -->
+            <div id="exportLoading" style="text-align: center; padding: 40px;">
+                <div style="font-size: 40px; margin-bottom: 15px;">⏳</div>
+                <div style="color: #2c1810; font-weight: bold;">Loading available datasets...</div>
+            </div>
+
+            <!-- Dataset List -->
+            <div id="exportList" style="display: none;"></div>
+        </div>
+    </div>
+
     <!-- Player KC Detail Modal -->
     <div class="modal" id="playerKCDetailModal">
         <div class="modal-content" style="max-width: 600px; max-height: 80vh;">
@@ -1040,6 +1059,6 @@ Dragon warhammer"></textarea>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- External JavaScript -->
-    <script src="js/app.js?v=3.1"></script>
+    <script src="js/app.js?v=3.2"></script>
 </body>
 </html>

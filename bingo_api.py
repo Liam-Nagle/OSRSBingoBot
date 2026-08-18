@@ -1,8 +1,12 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import json
 import os
 import re
+import csv
+import io
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 import requests
@@ -16,6 +20,13 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
+
+# Rate limiting - currently only applied to the /export/* endpoints (see below),
+# since those run the heaviest, uncapped queries in the app. In-memory storage
+# is fine as long as this runs as a single Render instance; if it's ever scaled
+# to multiple instances this stops being per-app-wide and would need a shared
+# backend (e.g. Redis) to stay accurate.
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
 # MongoDB Configuration
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
@@ -92,6 +103,34 @@ def get_tenant_from_request():
     return get_tenant_by_id(DEFAULT_TENANT_ID)
 
 
+# Collections are queried with .sort('timestamp', ...) (and sometimes filtered
+# by player) all over this file - without an index that's a full collection
+# scan plus an in-memory sort on every request, which gets slow (and on
+# Atlas's free M0 tier, can hit its 32MB in-memory sort limit) as history grows.
+# Indexes are created lazily, once per tenant per process, the first time that
+# tenant's collections are touched - avoids a separate migration step while
+# keeping these queries fast. create_index() is a no-op if the index already
+# exists, so this is safe to (rarely) call more than once.
+_indexed_tenant_subdomains = set()
+
+
+def _ensure_tenant_indexes(collections, subdomain):
+    if subdomain in _indexed_tenant_subdomains:
+        return
+    try:
+        collections['history'].create_index([('timestamp', -1)])
+        collections['history'].create_index([('player', 1)])
+        collections['deaths'].create_index([('timestamp', -1)])
+        collections['deaths'].create_index([('player', 1)])
+        collections['rank_history'].create_index([('timestamp', -1)])
+        collections['kc'].create_index([('player', 1), ('timestamp', -1)])
+        collections['personal_bests'].create_index([('player', 1), ('boss', 1)])
+        collections['personal_bests'].create_index([('time_seconds', 1)])
+        _indexed_tenant_subdomains.add(subdomain)
+    except Exception as e:
+        print(f"[!] Failed to create indexes for tenant '{subdomain}': {e}")
+
+
 def get_tenant_collections(tenant_id=None):
     """
     Get MongoDB collections for a specific tenant.
@@ -109,7 +148,7 @@ def get_tenant_collections(tenant_id=None):
 
     subdomain = tenant['subdomain'] if tenant else 'unsociables'
 
-    return {
+    collections = {
         'bingo': db[f'tenant_{subdomain}_bingo'],
         'history': db[f'tenant_{subdomain}_history'],
         'deaths': db[f'tenant_{subdomain}_deaths'],
@@ -118,6 +157,8 @@ def get_tenant_collections(tenant_id=None):
         'personal_bests': db[f'tenant_{subdomain}_personal_bests'],
         'archive': db[f'tenant_{subdomain}_archive']
     }
+    _ensure_tenant_indexes(collections, subdomain)
+    return collections
 
 
 def parse_rarity_denominator(raw):
@@ -2629,6 +2670,186 @@ def gim_proxy():
             'message': str(e),
             'using_cloudscraper': HAS_CLOUDSCRAPER
         }), 500
+
+
+# ============================================
+# DATA EXPORT (public CSV downloads)
+# ============================================
+# Lets anyone pull the raw data behind the board (drop history, boss KC,
+# personal bests, rank history) as CSV, to build their own analytics in
+# Excel/Sheets/etc. Read-only and unauthenticated, same as the other GET
+# endpoints these datasets are drawn from (/history, /kc/all, /pbs, /rank/history).
+
+EXPORT_DATASETS = {
+    'history': 'Drop History',
+    'kc': 'Boss Kill Counts',
+    'personal_bests': 'Personal Bests',
+    'rank_history': 'Rank History',
+}
+
+
+def _csv_response(rows, fieldnames, filename):
+    """Build a Flask CSV file-download response from a list of dict rows."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+
+    return Response(
+        buffer.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
+
+
+@app.route('/export/meta', methods=['GET'])
+@limiter.limit("20 per minute")
+def export_meta():
+    """Record counts per exportable dataset, so the UI can show what's available before downloading."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        datasets = [
+            {
+                'key': 'history',
+                'label': 'Drop History',
+                'description': 'Every recorded drop and collection log entry.',
+                'count': collections['history'].count_documents({})
+            },
+            {
+                'key': 'kc',
+                'label': 'Boss Kill Counts',
+                'description': "Each player's latest kill count per boss.",
+                'count': len(collections['kc'].distinct('player'))
+            },
+            {
+                'key': 'personal_bests',
+                'label': 'Personal Bests',
+                'description': 'Fastest recorded time per player/boss.',
+                'count': collections['personal_bests'].count_documents({})
+            },
+            {
+                'key': 'rank_history',
+                'label': 'Group Rank History',
+                'description': 'GIM group rank/prestige/XP snapshots over time.',
+                'count': collections['rank_history'].count_documents({})
+            }
+        ]
+        return jsonify({'datasets': datasets})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/export/<dataset>', methods=['GET'])
+@limiter.limit("10 per minute")
+def export_dataset(dataset):
+    """Download a full dataset as CSV, for players who want to build their own analytics."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    if dataset not in EXPORT_DATASETS:
+        return jsonify({'error': f'Unknown dataset "{dataset}". Choose from: {", ".join(EXPORT_DATASETS)}'}), 404
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        if dataset == 'history':
+            docs = list(collections['history'].find({}, {'_id': 0}).sort('timestamp', -1))
+            rows = []
+            for d in docs:
+                ts = d.get('timestamp')
+                rows.append({
+                    'timestamp': ts.isoformat() if hasattr(ts, 'isoformat') else ts,
+                    'player': d.get('player'),
+                    'item': d.get('item'),
+                    'drop_type': d.get('drop_type'),
+                    'value': d.get('value'),
+                    'value_string': d.get('value_string'),
+                    'rarity': d.get('rarity'),
+                    'rarity_1_in': d.get('rarity_1_in'),
+                    'source': d.get('source'),
+                })
+            fieldnames = ['timestamp', 'player', 'item', 'drop_type', 'value', 'value_string', 'rarity', 'rarity_1_in', 'source']
+
+        elif dataset == 'kc':
+            pipeline = [
+                {'$sort': {'timestamp': -1}},
+                {'$group': {'_id': '$player', 'latest_snapshot': {'$first': '$$ROOT'}}}
+            ]
+            results = list(collections['kc'].aggregate(pipeline))
+            _excluded = {'Brutus'}
+            rows = []
+            for result in results:
+                player = result['_id']
+                snapshot = result['latest_snapshot']
+                ts = snapshot.get('timestamp')
+                ts_iso = ts.isoformat() if hasattr(ts, 'isoformat') else ts
+                for boss, kc in snapshot.get('bosses', {}).items():
+                    if boss in _excluded:
+                        continue
+                    rows.append({
+                        'player': player,
+                        'boss': boss,
+                        'kill_count': kc,
+                        'snapshot_type': snapshot.get('snapshot_type'),
+                        'snapshot_timestamp': ts_iso,
+                    })
+            rows.sort(key=lambda r: (r['player'].lower(), r['boss'].lower()))
+            fieldnames = ['player', 'boss', 'kill_count', 'snapshot_type', 'snapshot_timestamp']
+
+        elif dataset == 'personal_bests':
+            all_records = list(collections['personal_bests'].find({}, {'_id': 0}).sort('time_seconds', 1))
+            best = {}
+            for rec in all_records:
+                if not rec.get('boss') or not rec.get('player'):
+                    continue
+                key = (rec['player'].lower(), rec['boss'].lower(), rec.get('party_size', 1), rec.get('invocation_level'))
+                if key not in best or rec['time_seconds'] < best[key]['time_seconds']:
+                    best[key] = rec
+            result = sorted(best.values(), key=lambda x: (x['boss'].lower(), x['player'].lower()))
+            rows = []
+            for rec in result:
+                ts = rec.get('timestamp')
+                rows.append({
+                    'player': rec.get('player'),
+                    'boss': rec.get('boss'),
+                    'time_string': rec.get('time_string'),
+                    'time_seconds': rec.get('time_seconds'),
+                    'party_size': rec.get('party_size'),
+                    'invocation_level': rec.get('invocation_level'),
+                    'timestamp': ts.isoformat() if hasattr(ts, 'isoformat') else ts,
+                })
+            fieldnames = ['player', 'boss', 'time_string', 'time_seconds', 'party_size', 'invocation_level', 'timestamp']
+
+        elif dataset == 'rank_history':
+            docs = list(collections['rank_history'].find({}, {'_id': 0}).sort('timestamp', 1))
+            rows = []
+            for d in docs:
+                ts = d.get('timestamp')
+                rows.append({
+                    'timestamp': ts.isoformat() if hasattr(ts, 'isoformat') else ts,
+                    'rank': d.get('rank'),
+                    'prestige_rank': d.get('prestigeRank'),
+                    'total_xp': d.get('totalXp'),
+                    'rank_change': d.get('rankChange'),
+                    'prestige_rank_change': d.get('prestigeRankChange'),
+                    'xp_change': d.get('xpChange'),
+                })
+            fieldnames = ['timestamp', 'rank', 'prestige_rank', 'total_xp', 'rank_change', 'prestige_rank_change', 'xp_change']
+
+        filename = f'{dataset}_export_{datetime.utcnow().strftime("%Y%m%d")}.csv'
+        return _csv_response(rows, fieldnames, filename)
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to export {dataset}: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
