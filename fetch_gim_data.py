@@ -274,7 +274,10 @@ def save_via_api(data):
         response = requests.post(
             f'{api_url}/rank/snapshot',
             json=payload,
-            headers={'Content-Type': 'application/json'},
+            headers={
+                'Content-Type': 'application/json',
+                'X-API-Key': os.environ.get('DROP_API_KEY', '')
+            },
             timeout=10
         )
 

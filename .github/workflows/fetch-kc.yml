@@ -14,11 +14,13 @@ jobs:
       - name: Trigger KC snapshot on the API
         env:
           API_URL: https://osrsbingobot.onrender.com
+          DROP_API_KEY: ${{ secrets.DROP_API_KEY }}
         run: |
           # --max-time is generous because Render's free tier spins the API down
           # when idle, so the first request of the day may have to cold-start it.
           response=$(curl -s -w "\n%{http_code}" --max-time 90 -X POST "$API_URL/kc/snapshot" \
             -H "Content-Type: application/json" \
+            -H "X-API-Key: $DROP_API_KEY" \
             -d '{"type": "current"}')
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
