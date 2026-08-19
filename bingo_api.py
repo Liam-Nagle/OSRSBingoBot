@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from werkzeug.security import check_password_hash
 import json
 import os
 import re
@@ -67,8 +68,19 @@ def get_tenant_by_subdomain(subdomain):
 
 def get_tenant_from_request():
     """
-    Identify tenant from the current request.
+    Identify tenant from the current request, for read access and as the
+    "which tenant is this browser talking to" starting point for admin
+    actions (see verify_admin_password below).
     Priority: API key header > subdomain > default tenant
+
+    Deliberately does NOT trust a `?tenant_id=` query param: that's an
+    unauthenticated field anyone can set to any value, so honoring it here
+    let any request impersonate any tenant on every endpoint that used this
+    for its identity. Reads are public data by design, so browsers/scripts
+    without a matching Origin or API key just fall through to the default
+    tenant. Endpoints that actually change data must not rely on this
+    function alone - see get_authenticated_tenant_by_api_key/
+    get_authenticated_tenant/verify_admin_password for the write path.
     """
     # Check for API key in header
     api_key = request.headers.get('X-API-Key') or request.headers.get('Authorization')
@@ -92,15 +104,63 @@ def get_tenant_from_request():
                 if tenant:
                     return tenant
 
-    # Check for tenant_id in query params (useful for testing)
-    tenant_id = request.args.get('tenant_id')
-    if tenant_id:
-        tenant = get_tenant_by_id(tenant_id)
-        if tenant:
-            return tenant
-
     # Default to your personal tenant (backward compatibility)
     return get_tenant_by_id(DEFAULT_TENANT_ID)
+
+
+def verify_admin_password(tenant, password):
+    """
+    Check a submitted admin password against the given tenant's own
+    credential. A tenant gets its own hashed password once one is set via
+    manage_tenant_credentials.py; until then this falls back to the single
+    global ADMIN_PASSWORD env var, so the existing deployment keeps working
+    without a forced migration step. Once every tenant has its own hash,
+    the global fallback stops being reachable.
+    """
+    if not tenant or not password:
+        return False
+    pw_hash = tenant.get('admin_password_hash')
+    if pw_hash:
+        return check_password_hash(pw_hash, password)
+    return password == ADMIN_PASSWORD
+
+
+def get_authenticated_tenant_by_api_key():
+    """
+    Strict tenant resolution for bot/automation writes: the tenant is
+    identified ONLY by a valid X-API-Key/Authorization header matching that
+    tenant's own stored api_key - never by an Origin header or a tenant_id
+    query param, both of which a non-browser client can set to anything.
+    Returns the tenant dict, or None if no valid key was supplied (caller
+    should respond 401).
+    """
+    api_key = request.headers.get('X-API-Key') or request.headers.get('Authorization')
+    if not api_key:
+        return None
+    if api_key.startswith('Bearer '):
+        api_key = api_key[7:]
+    if not api_key:
+        return None
+    return get_tenant_by_api_key(api_key)
+
+
+def get_authenticated_tenant():
+    """
+    Combined auth for endpoints triggered by BOTH automation (a valid
+    tenant API key) and the admin UI (a valid admin password) - e.g. the
+    "fetch KC now" button, which a scheduled GitHub Action also hits.
+    Tries the API key first, then falls back to a password checked against
+    the tenant resolved from the request (Origin subdomain, or default).
+    """
+    tenant = get_authenticated_tenant_by_api_key()
+    if tenant:
+        return tenant
+    data = request.get_json(silent=True) or {}
+    password = data.get('password') or request.args.get('password')
+    candidate = get_tenant_from_request()
+    if verify_admin_password(candidate, password):
+        return candidate
+    return None
 
 
 # Collections are queried with .sort('timestamp', ...) (and sometimes filtered
@@ -218,13 +278,20 @@ except Exception as e:
     BINGO_FILE = '/data/bingo_data.json' if os.path.exists('/data') else 'bingo_data.json'
 
 # Configuration
+# ADMIN_PASSWORD is the legacy global fallback verify_admin_password() uses
+# for any tenant that hasn't been given its own admin_password_hash yet (see
+# manage_tenant_credentials.py). DROP_API_KEY is no longer checked directly
+# anywhere - each tenant's own 'api_key' field is what get_tenant_by_api_key
+# matches against - but it's kept here because it's still the value
+# migrate_to_tenant.py seeds new/legacy tenants' api_key with, and the value
+# DinkParser.py/fetch_gim_data.py send as X-API-Key.
 ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
 
 print(
-    f"🔐 Admin password is set {'from environment variable' if os.environ.get('BINGO_ADMIN_PASSWORD') else 'to default (change this!)'}")
+    f"🔐 Fallback admin password is set {'from environment variable' if os.environ.get('BINGO_ADMIN_PASSWORD') else 'to default (change this!)'} (only used by tenants without their own admin_password_hash)")
 print(
-    f"🔑 Drop API key is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'}")
+    f"🔑 Legacy drop API key env var is set {'from environment variable' if os.environ.get('DROP_API_KEY') else 'to default (change this!)'} (only relevant as the seed value for tenants' own api_key)")
 print()
 
 
@@ -391,14 +458,16 @@ def fetch_osrs_highscores(player_name):
 
 
 @app.route('/kc/fetch/<player_name>', methods=['POST'])
+@limiter.limit("20 per minute")
 def fetch_player_kc(player_name):
     """Fetch and store a player's current KC"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-    # Get tenant collections
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     # Fetch from OSRS
@@ -427,6 +496,7 @@ def fetch_player_kc(player_name):
 
 
 @app.route('/kc/snapshot', methods=['POST'])
+@limiter.limit("10 per minute")
 def create_kc_snapshot():
     """Create KC snapshot for all players"""
     debug_log = []
@@ -439,9 +509,10 @@ def create_kc_snapshot():
             'debug': debug_log
         }), 503
 
-    # Get tenant collections
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized', 'debug': debug_log}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     data = request.json
@@ -809,14 +880,16 @@ def get_players():
 
 
 @app.route('/kc/save', methods=['POST'])
+@limiter.limit("60 per minute")
 def save_kc():
     """Save KC data (called from browser)"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-    # Get tenant collections
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     data = request.json
@@ -962,18 +1035,21 @@ def get_bingo():
     return jsonify(load_bingo_data(tenant_id))
 
 @app.route('/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def admin_login():
     """Authenticate admin user"""
     data = request.json
     password = data.get('password')
+    tenant = get_tenant_from_request()
 
-    if password == ADMIN_PASSWORD:
+    if verify_admin_password(tenant, password):
         return jsonify({'success': True, 'message': 'Login successful'})
     else:
         return jsonify({'success': False, 'message': 'Incorrect password'}), 401
 
 
 @app.route('/drop', methods=['POST'])
+@limiter.limit("300 per minute")
 def record_drop():
     """Receive drop from Discord bot - checks tiles AND saves to history"""
     data = request.json
@@ -987,9 +1063,10 @@ def record_drop():
     rarity_1_in = parse_rarity_denominator(rarity)
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
-    # Get tenant from request
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     # Check if within event window
@@ -1140,18 +1217,19 @@ def record_drop():
 
 
 @app.route('/manual-drop', methods=['POST'])
+@limiter.limit("30 per minute")
 def manual_drop():
     """Manually add a drop to history ONLY (does NOT check tiles)"""
     data = request.json
     password = data.get('password')
+    tenant = get_tenant_from_request()
 
     # Verify admin password
-    if password != ADMIN_PASSWORD:
+    if not verify_admin_password(tenant, password):
         print(f"[X] Unauthorized manual drop attempt")
         return jsonify({'error': 'Unauthorized'}), 401
 
     # Get tenant collections
-    tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -1193,6 +1271,7 @@ def manual_drop():
         return jsonify({'error': 'MongoDB not available'}), 503
 
 @app.route('/history-only', methods=['POST'])
+@limiter.limit("600 per minute")
 def record_history_only():
     """Save drop to history ONLY (no tile checking) - for historical imports"""
     data = request.json
@@ -1206,9 +1285,10 @@ def record_history_only():
     rarity = data.get('rarity')
     rarity_1_in = parse_rarity_denominator(rarity)
 
-    # Get tenant collections
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     if not player_name or not item_name:
@@ -1241,6 +1321,7 @@ def record_history_only():
 
 
 @app.route('/history/backfill-rarity', methods=['POST'])
+@limiter.limit("60 per minute")
 def backfill_rarity():
     """
     Enrich already-saved history documents with rarity/value data re-scraped
@@ -1260,10 +1341,8 @@ def backfill_rarity():
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-    api_key = request.headers.get('X-API-Key') or request.headers.get('Authorization')
-    if api_key and api_key.startswith('Bearer '):
-        api_key = api_key[7:]
-    if api_key != DROP_API_KEY:
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
 
     data = request.json or {}
@@ -1271,8 +1350,7 @@ def backfill_rarity():
     if not isinstance(drops, list):
         return jsonify({'error': 'drops must be a list'}), 400
 
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     MATCH_WINDOW_SECONDS = 120
@@ -1347,6 +1425,7 @@ def backfill_rarity():
 
 
 @app.route('/death', methods=['POST'])
+@limiter.limit("300 per minute")
 def record_death():
     """Record player death"""
     data = request.json
@@ -1354,9 +1433,10 @@ def record_death():
     npc = data.get('npc')
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
-    # Get tenant from request
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     npc_text = f" to {npc}" if npc else ""
@@ -1394,14 +1474,17 @@ def record_death():
 
 
 @app.route('/deaths/cleanup-markdown', methods=['POST'])
+@limiter.limit("5 per minute")
 def cleanup_death_markdown():
     """Clean markdown links from existing death data (admin only)"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-    # Get tenant collections
+    data = request.json or {}
     tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    if not verify_admin_password(tenant, data.get('password')):
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     try:
@@ -1597,14 +1680,16 @@ def get_rank_history():
 
 
 @app.route('/rank/snapshot', methods=['POST'])
+@limiter.limit("10 per minute")
 def save_rank_snapshot():
-    """Save current rank data (called from frontend)"""
+    """Save current rank data (called by fetch_gim_data.py)"""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-    # Get tenant collections
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     try:
@@ -1749,16 +1834,20 @@ def get_total_value_looted():
 
 
 @app.route('/update', methods=['POST'])
+@limiter.limit("60 per minute")
 def update_board():
     """Update entire board (admin only)"""
     data = request.json
-    if not data or data.get('password') != ADMIN_PASSWORD:
+    tenant = get_tenant_from_request()
+    if not data or not verify_admin_password(tenant, data.get('password')):
         return jsonify({'error': 'Unauthorized'}), 401
-    save_bingo_data(data)
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    save_bingo_data(data, tenant_id=tenant_id)
     return jsonify({'success': True})
 
 
 @app.route('/shuffle-board', methods=['POST'])
+@limiter.limit("20 per minute")
 def shuffle_board():
     """Shuffle board tiles randomly (admin only)"""
     if not USE_MONGODB:
@@ -1774,7 +1863,7 @@ def shuffle_board():
         password = data.get('password')
 
         # Verify admin password
-        if password != ADMIN_PASSWORD:
+        if not verify_admin_password(tenant, password):
             print(f"[X] Unauthorized shuffle attempt")
             return jsonify({'error': 'Unauthorized'}), 401
 
@@ -1851,6 +1940,7 @@ def get_event_config():
 
 
 @app.route('/event/config', methods=['POST'])
+@limiter.limit("20 per minute")
 def set_event_config():
     """Set event configuration (admin only)"""
     if not USE_MONGODB:
@@ -1866,7 +1956,7 @@ def set_event_config():
         password = data.get('password')
 
         # Verify admin password
-        if password != ADMIN_PASSWORD:
+        if not verify_admin_password(tenant, password):
             print(f"[X] Unauthorized event config attempt")
             return jsonify({'error': 'Unauthorized'}), 401
 
@@ -2145,8 +2235,10 @@ def get_event_recap(player_name):
     Live per-player event recap, scoped to the current event_config window.
     Locked to admins only until the event's endDate has passed — players
     shouldn't see final-stats/badges (MVP, biggest drop, etc.) while the
-    event is still in progress. Pass ?password=<admin password> to preview
-    early.
+    event is still in progress. Pass the admin password in an
+    X-Admin-Password header to preview early — deliberately not a query
+    param, since query strings end up in server logs, browser history, and
+    the Referer header sent to any resource the recap page loads.
     """
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
@@ -2168,7 +2260,7 @@ def get_event_recap(player_name):
             # so this compares safely against the naive datetime.utcnow() below.
             end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
             event_over = datetime.utcnow() > end_dt
-        is_admin = request.args.get('password') == ADMIN_PASSWORD
+        is_admin = verify_admin_password(tenant, request.headers.get('X-Admin-Password'))
 
         if not event_over and not is_admin:
             event_name = event_config.get('eventName', 'Bingo Event')
@@ -2196,16 +2288,17 @@ def get_event_recap(player_name):
 
 
 @app.route('/event/archive', methods=['POST'])
+@limiter.limit("10 per minute")
 def archive_event():
     """Snapshot the current event's recap data + board tiles into the archive (admin only)."""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
     data = request.json or {}
-    if data.get('password') != ADMIN_PASSWORD:
+    tenant = get_tenant_from_request()
+    if not verify_admin_password(tenant, data.get('password')):
         return jsonify({'error': 'Unauthorized'}), 401
 
-    tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -2350,6 +2443,7 @@ def get_deaths_by_player_npc():
 
 
 @app.route('/pb', methods=['POST'])
+@limiter.limit("300 per minute")
 def record_pb():
     """Record a personal best from the Discord bot"""
     data = request.json
@@ -2364,13 +2458,10 @@ def record_pb():
     if not player_name or not boss_name or time_seconds is None:
         return jsonify({'error': 'Missing player, boss, or time'}), 400
 
-    # Verify API key
-    api_key = request.headers.get('X-API-Key')
-    if api_key != DROP_API_KEY:
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
-
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
     if not USE_MONGODB:
@@ -2462,18 +2553,18 @@ def get_personal_bests():
 
 
 @app.route('/manual-override', methods=['POST'])
+@limiter.limit("60 per minute")
 def manual_override():
     """Manual tile completion override (admin only)"""
     data = request.json
     password = data.get('password')
+    tenant = get_tenant_from_request()
 
     # Verify admin password
-    if password != ADMIN_PASSWORD:
+    if not verify_admin_password(tenant, password):
         print(f"[X] Unauthorized manual override attempt")
         return jsonify({'error': 'Unauthorized'}), 401
 
-    # Get tenant
-    tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
 
     tile_index = data.get('tileIndex')

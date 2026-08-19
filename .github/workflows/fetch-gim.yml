@@ -48,6 +48,7 @@ jobs:
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
           API_URL: https://osrsbingobot.onrender.com
           FULL_SCAN: ${{ steps.scan_mode.outputs.full_scan }}
+          DROP_API_KEY: ${{ secrets.DROP_API_KEY }}
         run: |
           python fetch_gim_data.py
 

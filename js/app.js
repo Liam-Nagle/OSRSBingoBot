@@ -462,13 +462,15 @@
             renderRecapModalContent({ loading: true });
 
             // Admins can preview recaps before the event ends — pass along the session
-            // password so the backend's own gate (not just this button being hidden) lets it through.
+            // password (as a header, not a query param, so it doesn't end up in server
+            // logs/browser history/Referer headers) so the backend's own gate lets it through.
             const adminPassword = isAdmin ? sessionStorage.getItem('adminPassword') : null;
-            const url = `${API_URL}/event/recap/${encodeURIComponent(targetPlayer)}` +
-                (adminPassword ? `?password=${encodeURIComponent(adminPassword)}` : '');
+            const url = `${API_URL}/event/recap/${encodeURIComponent(targetPlayer)}`;
 
             try {
-                const res = await fetch(url);
+                const res = await fetch(url, {
+                    headers: adminPassword ? { 'X-Admin-Password': adminPassword } : {}
+                });
                 const data = await res.json();
                 if (!res.ok) {
                     renderRecapModalContent({ error: data.error || 'No recap available for this event yet.' });
@@ -4482,7 +4484,8 @@ async function loadAnalyticsWithFilters() {
             try {
                 const response = await fetch(`${API_URL}/deaths/cleanup-markdown`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: sessionStorage.getItem('adminPassword') })
                 });
 
                 const result = await response.json();
