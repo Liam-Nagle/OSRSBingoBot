@@ -86,7 +86,10 @@
         function updateUIForPlan() {
             console.log('🎨 Updating UI for plan:', tenantPlan);
 
-            const isPremium = tenantPlan === 'premium' || tenantPlan === 'owner';
+            // 'premium' is kept for backward compatibility with any tenant docs
+            // written before the small/large split; new tenants get
+            // 'premium_small'/'premium_large' from the Stripe webhook.
+            const isPremium = ['premium', 'premium_small', 'premium_large', 'owner'].includes(tenantPlan);
 
             if (isPremium) {
                 // Premium/Owner - show everything
@@ -1349,7 +1352,7 @@
                 alert('⛔ Admin access required!');
                 return;
             }
-            if (tenantPlan === 'free') {
+            if (!['premium', 'premium_small', 'premium_large', 'owner'].includes(tenantPlan)) {
                 const select = document.getElementById('boardSizeSelect');
                 const options = select.querySelectorAll('option');
 

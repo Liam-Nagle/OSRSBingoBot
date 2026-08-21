@@ -243,15 +243,61 @@ def check_tenant_feature(tenant, feature):
     if not tenant:
         return False
 
-    # Owner plan has all features
-    if tenant.get('plan') == 'owner':
+    # Owner and paid plans have every feature - no need to also list every
+    # feature in settings.features for them.
+    if tenant.get('plan') in PREMIUM_PLANS:
         return True
 
-    # Check settings
+    # Check settings (the escape hatch for one-off grants on an otherwise-free tenant)
     settings = tenant.get('settings', {})
     features = settings.get('features', [])
 
     return 'all' in features or feature in features
+
+
+def require_premium_feature(tenant, feature):
+    """
+    Gate for a route that's entirely premium (personal bests, death tracking,
+    boss KC, rank history, data export). Returns a (response, 403) tuple to
+    `return` straight out of the route when the tenant doesn't have the
+    feature, or None when it's fine to continue:
+
+        blocked = require_premium_feature(tenant, 'boss_kc')
+        if blocked:
+            return blocked
+    """
+    if check_tenant_feature(tenant, feature):
+        return None
+    return jsonify({
+        'error': 'premium_feature_required',
+        'feature': feature,
+        'message': f"'{feature}' requires a Premium plan."
+    }), 403
+
+
+# Plan -> default limits. A tenant's own settings.max_players/max_board_size
+# (set explicitly at signup, or by the Stripe webhook on upgrade) take
+# precedence over these; this is just the fallback for tenants that predate
+# a given field, or that never got settings written at all.
+PREMIUM_PLANS = {'premium_small', 'premium_large', 'owner'}
+PLAN_LIMITS = {
+    'free': {'max_players': 3, 'max_board_size': 5},
+    'premium_small': {'max_players': 5, 'max_board_size': 9},
+    'premium_large': {'max_players': None, 'max_board_size': 9},
+    'owner': {'max_players': None, 'max_board_size': None},
+}
+
+
+def get_tenant_limits(tenant):
+    """Resolve the effective {max_players, max_board_size} for a tenant. None means unlimited."""
+    if not tenant:
+        return PLAN_LIMITS['free']
+    plan_defaults = PLAN_LIMITS.get(tenant.get('plan'), PLAN_LIMITS['free'])
+    settings = tenant.get('settings') or {}
+    return {
+        'max_players': settings['max_players'] if 'max_players' in settings else plan_defaults['max_players'],
+        'max_board_size': settings['max_board_size'] if 'max_board_size' in settings else plan_defaults['max_board_size'],
+    }
 
 
 # ============================================
@@ -467,6 +513,9 @@ def fetch_player_kc(player_name):
     tenant = get_authenticated_tenant()
     if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -512,6 +561,9 @@ def create_kc_snapshot():
     tenant = get_authenticated_tenant()
     if not tenant:
         return jsonify({'success': False, 'error': 'Unauthorized', 'debug': debug_log}), 401
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -606,6 +658,9 @@ def get_player_kc(player_name):
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -664,6 +719,9 @@ def get_boss_leaderboard(boss_name):
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -711,6 +769,9 @@ def get_all_kc():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -795,6 +856,9 @@ def get_kc_effort():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -889,6 +953,9 @@ def save_kc():
     tenant = get_authenticated_tenant()
     if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
+    blocked = require_premium_feature(tenant, 'boss_kc')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -1078,6 +1145,19 @@ def record_drop():
             'success': False,
             'message': f'Drop rejected: Outside {event_name} event window'
         })
+
+    # Enforce the plan's tracked-player cap: a brand new player only counts
+    # against the cap once they're about to get their first drop recorded -
+    # players already in history keep being tracked regardless of order.
+    max_players = get_tenant_limits(tenant)['max_players']
+    if max_players is not None and player_name:
+        known_players = collections['history'].distinct('player')
+        if player_name not in known_players and len(known_players) >= max_players:
+            print(f"[!] Drop rejected: player cap reached ({len(known_players)}/{max_players})")
+            return jsonify({
+                'success': False,
+                'message': f'Drop rejected: this board already tracks {max_players} players (plan limit). Upgrade to track more.'
+            })
 
     print(f"\n{'=' * 60}")
     print(f"[DROP] Received from Discord bot:")
@@ -1436,6 +1516,9 @@ def record_death():
     tenant = get_authenticated_tenant_by_api_key()
     if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
+    blocked = require_premium_feature(tenant, 'death_tracking')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -1484,6 +1567,9 @@ def cleanup_death_markdown():
     tenant = get_tenant_from_request()
     if not verify_admin_password(tenant, data.get('password')):
         return jsonify({'error': 'Unauthorized'}), 401
+    blocked = require_premium_feature(tenant, 'death_tracking')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -1545,6 +1631,9 @@ def get_deaths():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'death_tracking')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -1600,6 +1689,9 @@ def get_deaths_by_npc():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'death_tracking')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -1660,6 +1752,9 @@ def get_rank_history():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'rank_history')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -1689,6 +1784,9 @@ def save_rank_snapshot():
     tenant = get_authenticated_tenant_by_api_key()
     if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
+    blocked = require_premium_feature(tenant, 'rank_history')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -1841,6 +1939,16 @@ def update_board():
     tenant = get_tenant_from_request()
     if not data or not verify_admin_password(tenant, data.get('password')):
         return jsonify({'error': 'Unauthorized'}), 401
+
+    max_board_size = get_tenant_limits(tenant)['max_board_size']
+    board_size = data.get('boardSize')
+    if max_board_size is not None and board_size and board_size > max_board_size:
+        return jsonify({
+            'error': 'board_size_limit',
+            'message': f'Your plan is limited to {max_board_size}x{max_board_size} boards. Upgrade for bigger boards.',
+            'limit': max_board_size
+        }), 403
+
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     save_bingo_data(data, tenant_id=tenant_id)
     return jsonify({'success': True})
@@ -2326,6 +2434,18 @@ def archive_event():
         }
         result = collections['archive'].insert_one(archive_doc)
 
+        # Free tenants only keep the most recent archived event - prune the
+        # rest right after inserting the new one, rather than blocking the
+        # archive action itself.
+        if not check_tenant_feature(tenant, 'unlimited_archive'):
+            old_ids = [
+                a['_id'] for a in
+                collections['archive'].find({}, {'_id': 1}).sort('archived_at', -1).skip(1)
+            ]
+            if old_ids:
+                collections['archive'].delete_many({'_id': {'$in': old_ids}})
+                print(f"[*] Pruned {len(old_ids)} older archive(s) (free plan keeps only the latest)")
+
         print(f"[OK] Archived event '{archive_doc['event_name']}' ({len(recap)} players)")
 
         return jsonify({
@@ -2396,6 +2516,9 @@ def get_deaths_by_player_npc():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'death_tracking')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -2461,6 +2584,9 @@ def record_pb():
     tenant = get_authenticated_tenant_by_api_key()
     if not tenant:
         return jsonify({'error': 'Unauthorized'}), 401
+    blocked = require_premium_feature(tenant, 'personal_bests')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id']
     collections = get_tenant_collections(tenant_id)
 
@@ -2512,6 +2638,9 @@ def get_personal_bests():
         return jsonify({'error': 'MongoDB not available'}), 503
 
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'personal_bests')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -2630,11 +2759,8 @@ def get_tenant_info():
 
     # Get plan details
     plan = tenant.get('plan', 'free')
-    settings = tenant.get('settings', {})
-    features = settings.get('features', [])
-
-    # Determine what features are available
-    is_premium = plan in ['premium', 'owner']
+    is_premium = plan in PREMIUM_PLANS
+    limits = get_tenant_limits(tenant)
 
     return jsonify({
         'success': True,
@@ -2645,21 +2771,20 @@ def get_tenant_info():
             'plan': plan
         },
         'features': {
-            'analytics': is_premium or 'analytics' in features,
-            'death_tracking': is_premium or 'death_tracking' in features,
-            'boss_kc': is_premium or 'boss_kc' in features,
-            'event_timer': is_premium or 'event_timer' in features,
-            'export_data': is_premium or 'export_data' in features,
-            'custom_colors': is_premium or 'custom_colors' in features,
-            'view_history': is_premium or 'view_history' in features,  # NEW
-            'rank_history': is_premium or 'rank_history' in features,  # NEW
-            'unlimited_history': is_premium,
-            'unlimited_board_size': is_premium
+            'analytics': is_premium,
+            'death_tracking': check_tenant_feature(tenant, 'death_tracking'),
+            'boss_kc': check_tenant_feature(tenant, 'boss_kc'),
+            'event_timer': is_premium,
+            'export_data': check_tenant_feature(tenant, 'export_data'),
+            'custom_colors': is_premium,
+            'personal_bests': check_tenant_feature(tenant, 'personal_bests'),
+            'rank_history': check_tenant_feature(tenant, 'rank_history'),
+            'unlimited_events': check_tenant_feature(tenant, 'unlimited_archive'),
+            'unlimited_board_size': limits['max_board_size'] is None or limits['max_board_size'] >= 9
         },
         'limits': {
-            'board_size': 9 if is_premium else 3,
-            'drop_history': None if is_premium else 50,
-            'admins': 10 if is_premium else 1
+            'board_size': limits['max_board_size'],
+            'max_players': limits['max_players']
         }
     })
 
@@ -2672,6 +2797,9 @@ def get_latest_rank():
 
     # Get tenant collections
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'rank_history')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -2802,6 +2930,9 @@ def export_meta():
         return jsonify({'error': 'MongoDB not available'}), 503
 
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'export_data')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
@@ -2848,6 +2979,9 @@ def export_dataset(dataset):
         return jsonify({'error': f'Unknown dataset "{dataset}". Choose from: {", ".join(EXPORT_DATASETS)}'}), 404
 
     tenant = get_tenant_from_request()
+    blocked = require_premium_feature(tenant, 'export_data')
+    if blocked:
+        return blocked
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
 
