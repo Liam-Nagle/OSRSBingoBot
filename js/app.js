@@ -6321,6 +6321,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.10",
+                date: "2026-08-22",
+                title: "Confetti congrats popup",
+                changes: [
+                    { type: "feature", text: "First-time visitors now get a one-off congratulations popup with a confetti blast, celebrating MothersFeet as the first in the group to complete both the Inferno (Infernal Cape) and the Quiver of Completion" },
+                ]
+            },
+            {
                 version: "v2.13.9",
                 date: "2026-08-17",
                 title: "Export your own data",
@@ -7011,6 +7019,138 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        // ============================================
+        // CONGRATS POPUP & CONFETTI
+        // (Bump the key's suffix whenever a new achievement should re-trigger the popup)
+        // ============================================
+
+        const CONGRATS_SEEN_KEY = 'bingoSeenCongrats_mothersfeet_infernoQuiver_v1';
+
+        let confettiAnimationId = null;
+        let confettiParticles = [];
+
+        function resizeConfettiCanvas() {
+            const canvas = document.getElementById('confettiCanvas');
+            if (!canvas) return;
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeConfettiCanvas);
+
+        function launchConfetti() {
+            const canvas = document.getElementById('confettiCanvas');
+            if (!canvas) return;
+            resizeConfettiCanvas();
+            const ctx = canvas.getContext('2d');
+
+            const colors = ['#FFD700', '#FF8C00', '#e6360d', '#4CAF50', '#3498db', '#f4e4c1', '#ffffff'];
+            // Blast from a few points near the top so it rains down across the whole screen
+            const origins = [
+                { x: canvas.width * 0.15, y: canvas.height * 0.1 },
+                { x: canvas.width * 0.85, y: canvas.height * 0.1 },
+                { x: canvas.width * 0.5, y: canvas.height * 0.05 }
+            ];
+
+            origins.forEach(origin => {
+                for (let i = 0; i < 55; i++) {
+                    const angle = (Math.random() * Math.PI * 0.6) + Math.PI * 0.2;
+                    const speed = 4 + Math.random() * 8;
+                    confettiParticles.push({
+                        x: origin.x,
+                        y: origin.y,
+                        vx: Math.cos(angle) * speed * (Math.random() < 0.5 ? -1 : 1),
+                        vy: -Math.abs(Math.sin(angle) * speed) - 3,
+                        size: 5 + Math.random() * 6,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        rotation: Math.random() * 360,
+                        rotationSpeed: (Math.random() - 0.5) * 12,
+                        shape: Math.random() < 0.5 ? 'rect' : 'circle',
+                        life: 0,
+                        maxLife: 180 + Math.random() * 60
+                    });
+                }
+            });
+
+            // If the animation loop is already running, the new particles above
+            // will just get picked up on the next frame — no need for a second loop.
+            if (confettiAnimationId) return;
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                confettiParticles.forEach(p => {
+                    p.life++;
+                    p.vy += 0.18; // gravity
+                    p.vx *= 0.99; // air drag
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.rotation += p.rotationSpeed;
+
+                    const fadeStart = p.maxLife * 0.75;
+                    const opacity = p.life > fadeStart
+                        ? Math.max(0, 1 - (p.life - fadeStart) / (p.maxLife - fadeStart))
+                        : 1;
+
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rotation * Math.PI / 180);
+                    ctx.globalAlpha = opacity;
+                    ctx.fillStyle = p.color;
+                    if (p.shape === 'rect') {
+                        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+                    } else {
+                        ctx.beginPath();
+                        ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                });
+
+                confettiParticles = confettiParticles.filter(p => p.life <= p.maxLife);
+
+                if (confettiParticles.length > 0) {
+                    confettiAnimationId = requestAnimationFrame(animate);
+                } else {
+                    confettiAnimationId = null;
+                }
+            }
+
+            confettiAnimationId = requestAnimationFrame(animate);
+        }
+
+        function openCongratsModal() {
+            const modal = document.getElementById('congratsModal');
+            if (!modal) return;
+            modal.classList.add('active');
+            launchConfetti();
+            // A couple of follow-up bursts so it keeps blasting for a bit rather than one quick puff
+            setTimeout(launchConfetti, 700);
+            setTimeout(launchConfetti, 1500);
+        }
+
+        function closeCongratsModal() {
+            const modal = document.getElementById('congratsModal');
+            if (modal) modal.classList.remove('active');
+
+            if (confettiAnimationId) {
+                cancelAnimationFrame(confettiAnimationId);
+                confettiAnimationId = null;
+            }
+            confettiParticles = [];
+
+            const canvas = document.getElementById('confettiCanvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        function checkForCongrats() {
+            if (localStorage.getItem(CONGRATS_SEEN_KEY)) return;
+            localStorage.setItem(CONGRATS_SEEN_KEY, '1');
+            setTimeout(openCongratsModal, 600);
+        }
+
         function addCloseButtonsToModals() {
             const modals = [
                 { id: 'loginModal', closeFunc: 'closeLoginModal()' },
@@ -7689,6 +7829,7 @@ function startEventCountdown(config) {
         document.addEventListener('DOMContentLoaded', function() {
             addCloseButtonsToModals();
             checkForNewChangelog();
+            checkForCongrats();
 
             // Close any modal by clicking on the backdrop (outside the modal-content box)
             document.querySelectorAll('.modal').forEach(modal => {
