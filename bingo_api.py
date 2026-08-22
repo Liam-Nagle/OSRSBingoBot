@@ -71,15 +71,25 @@ def get_tenant_from_request():
     Identify tenant from the current request, for read access and as the
     "which tenant is this browser talking to" starting point for admin
     actions (see verify_admin_password below).
-    Priority: API key header > subdomain > default tenant
+    Priority: API key header > `board` query param > subdomain > default tenant
+
+    Trusts a `?board=<slug>` query param (matched against each tenant's
+    `subdomain` field, reused here as its public URL slug - see Phase 1,
+    board routing without real subdomains). This is safe for the same reason
+    reads are already public: `board` only picks WHICH tenant's already-public
+    data a read returns, or which tenant's password a write endpoint checks
+    a submitted password against - it can't skip or weaken any auth check
+    itself. That's different from the still-deliberately-unhonored
+    `?tenant_id=` param below: pure impersonation with no auth of its own,
+    not "which public tenant am I looking at".
 
     Deliberately does NOT trust a `?tenant_id=` query param: that's an
     unauthenticated field anyone can set to any value, so honoring it here
     let any request impersonate any tenant on every endpoint that used this
     for its identity. Reads are public data by design, so browsers/scripts
-    without a matching Origin or API key just fall through to the default
-    tenant. Endpoints that actually change data must not rely on this
-    function alone - see get_authenticated_tenant_by_api_key/
+    without a matching `board` param, Origin, or API key just fall through
+    to the default tenant. Endpoints that actually change data must not rely
+    on this function alone - see get_authenticated_tenant_by_api_key/
     get_authenticated_tenant/verify_admin_password for the write path.
     """
     # Check for API key in header
@@ -88,6 +98,17 @@ def get_tenant_from_request():
         if api_key.startswith('Bearer '):
             api_key = api_key[7:]
         tenant = get_tenant_by_api_key(api_key)
+        if tenant:
+            return tenant
+
+    # Public board URL: yoursite.com/?board=<slug> - the no-subdomain routing path.
+    # Accepts either the query param directly (shareable links) or an
+    # X-Board-Slug header (what the frontend actually sends on every fetch,
+    # once it's parsed `board` out of its own page URL once at load) - same
+    # trust level either way, see docstring above.
+    board_slug = request.args.get('board') or request.headers.get('X-Board-Slug')
+    if board_slug:
+        tenant = get_tenant_by_subdomain(board_slug)
         if tenant:
             return tenant
 

@@ -41,6 +41,26 @@
         const API_URL = 'https://osrsbingobot.onrender.com'; //Production ENV Oracle Cloud
         //const API_URL = 'http://localhost:5000'; //Local Testing
 
+        // Public board routing (no subdomains - see bingo_api.py's get_tenant_from_request).
+        // A URL like yoursite.com/?board=clanname picks which tenant this page
+        // talks to. When it's absent, every fetch behaves exactly as before -
+        // the backend falls through to its own default tenant, so the site's
+        // current root URL keeps showing today's board unchanged.
+        const BOARD_SLUG = new URLSearchParams(window.location.search).get('board');
+        if (BOARD_SLUG) {
+            const _nativeFetch = window.fetch.bind(window);
+            window.fetch = (input, init) => {
+                const url = typeof input === 'string' ? input : (input && input.url) || '';
+                if (url.startsWith(API_URL)) {
+                    init = init || {};
+                    const headers = new Headers(init.headers || (typeof input !== 'string' && input.headers) || {});
+                    headers.set('X-Board-Slug', BOARD_SLUG);
+                    init.headers = headers;
+                }
+                return _nativeFetch(input, init);
+            };
+        }
+
         // Tenant & Plan tracking
         let currentTenant = null;
         let tenantPlan = 'free';
@@ -72,6 +92,18 @@
                     console.log('   Features:', tenantFeatures);
                     console.log('   Limits:', tenantLimits);
 
+                    // The page ships hardcoded as "Unsociables Bingo Board" (its
+                    // original single-tenant branding). Once a board is reached via
+                    // ?board=<slug>, relabel it to whichever tenant actually loaded
+                    // so a visitor never sees someone else's clan name on their own
+                    // board (or vice versa). Leave the default/no-param load as-is.
+                    if (BOARD_SLUG && currentTenant.name) {
+                        document.title = `${currentTenant.name} Bingo Board`;
+                        const heading = document.querySelector('.container > h1');
+                        if (heading) heading.textContent = `⚔️ ${currentTenant.name} Bingo Board ⚔️`;
+                    }
+                    renderBoardSwitcher();
+
                     // Update UI based on plan
                     updateUIForPlan();
                 } else {
@@ -81,6 +113,50 @@
             } catch (error) {
                 console.error('❌ Error loading tenant info:', error);
             }
+        }
+
+        // Small "which board am I looking at, and how do I look at another one"
+        // bar - the public routing UI for Phase 1. Deliberately not a full
+        // landing/signup page (that's Phase 2); this just makes multiple
+        // tenants' boards reachable and distinguishable from one page.
+        function renderBoardSwitcher() {
+            if (document.getElementById('boardSwitcher')) return; // render once per load
+
+            const bar = document.createElement('div');
+            bar.id = 'boardSwitcher';
+            bar.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:6px 0 12px;font-size:0.85em;opacity:0.85;';
+
+            const label = document.createElement('span');
+            label.textContent = currentTenant && currentTenant.name
+                ? `📋 Viewing: ${currentTenant.name}`
+                : '📋 Viewing the default board';
+            bar.appendChild(label);
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'boardSwitcherInput';
+            input.placeholder = 'another board name...';
+            input.style.cssText = 'width:160px;font-size:0.9em;';
+
+            const goBtn = document.createElement('button');
+            goBtn.textContent = 'Switch board';
+            goBtn.className = 'secondary';
+            goBtn.onclick = () => {
+                const slug = input.value.trim().toLowerCase();
+                if (!slug) return;
+                const params = new URLSearchParams(window.location.search);
+                params.set('board', slug);
+                window.location.search = params.toString();
+            };
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') goBtn.click();
+            });
+
+            bar.appendChild(input);
+            bar.appendChild(goBtn);
+
+            const heading = document.querySelector('.container > h1');
+            if (heading) heading.insertAdjacentElement('afterend', bar);
         }
 
         function updateUIForPlan() {
@@ -6323,6 +6399,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.10",
+                date: "2026-08-21",
+                title: "Multiple clan boards",
+                changes: [
+                    { type: "feature", text: "This site can now host more than one clan's bingo board. A small \"Viewing: [clan]\" bar under the title lets you jump to another board by name, and board links look like ?board=clanname so they're easy to share" },
+                ]
+            },
             {
                 version: "v2.13.9",
                 date: "2026-08-17",
