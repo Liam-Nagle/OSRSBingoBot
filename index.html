@@ -6,7 +6,7 @@
     <title>Unsociables Bingo Board</title>
 
     <!-- External Stylesheet -->
-    <link rel="stylesheet" href="css/style.css?v=2.8">
+    <link rel="stylesheet" href="css/style.css?v=2.9">
 </head>
 <body>
     <div class="container">
@@ -1052,6 +1052,20 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
+    <!-- Congratulations Popup (fires once on first visit after a new achievement, with a confetti blast) -->
+    <div class="modal congrats-modal" id="congratsModal">
+        <canvas id="confettiCanvas"></canvas>
+        <div class="modal-content congrats-modal-content">
+            <button class="close-btn" onclick="closeCongratsModal()">✕</button>
+            <div class="congrats-icon">🏆🔥🏹🏆</div>
+            <h2>Congratulations, MothersFeet!</h2>
+            <p class="congrats-line">🔥 Completed the Inferno and earned the <strong>Infernal Cape</strong>!</p>
+            <p class="congrats-line">🏹 Also Completed the Colosseum and earned the <strong>Dizana's Quiver</strong>!</p>
+            <p class="congrats-subline">First in the group to land both! 🏆</p>
+            <button class="congrats-close-btn" onclick="closeCongratsModal()">Congratulations! 🎉</button>
+        </div>
+    </div>
+
     <!-- Chart.js Library (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
@@ -1059,6 +1073,6 @@ Dragon warhammer"></textarea>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- External JavaScript -->
-    <script src="js/app.js?v=3.2"></script>
+    <script src="js/app.js?v=3.3"></script>
 </body>
 </html>
