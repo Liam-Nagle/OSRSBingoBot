@@ -2698,12 +2698,14 @@
             50% { transform: translateY(-8px); }
         }
 
-        .congrats-modal-content h2 {
+        .congrats-modal-content h2:first-of-type {
             font-size: 24px;
             margin-bottom: 14px;
             /* Override the shared modal h2 rule's right-padding gutter (for the close
                button) — it throws centered text off-center since there's no matching
-               left padding. The close button floats fine here without the gutter. */
+               left padding. The close button floats fine here without the gutter.
+               Needs :first-of-type to match the base rule's specificity, otherwise
+               the base rule's padding-right: 50px wins and this has no effect. */
             padding-right: 0;
         }
 
