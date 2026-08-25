@@ -152,8 +152,14 @@
                 if (e.key === 'Enter') goBtn.click();
             });
 
+            const createBtn = document.createElement('button');
+            createBtn.textContent = '✨ Create your own board';
+            createBtn.className = 'secondary';
+            createBtn.onclick = () => openSignupModal();
+
             bar.appendChild(input);
             bar.appendChild(goBtn);
+            bar.appendChild(createBtn);
 
             const heading = document.querySelector('.container > h1');
             if (heading) heading.insertAdjacentElement('afterend', bar);
@@ -287,6 +293,149 @@
             if (modal) {
                 modal.remove();
             }
+        }
+
+        // ============================================
+        // SELF-SERVE SIGNUP (Phase 2)
+        // ============================================
+
+        function slugifyBoardName(name) {
+            return name
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/[\s_]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '')
+                .slice(0, 30);
+        }
+
+        function openSignupModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.id = 'signupModal';
+
+            modal.innerHTML = `
+                <div class="modal-content upgrade-modal-content">
+                    <button class="close-btn" onclick="closeSignupModal()">×</button>
+
+                    <div class="upgrade-modal-icon">🎲</div>
+                    <h2 class="upgrade-modal-title">Create your own board</h2>
+                    <p class="upgrade-modal-subtitle">
+                        Free to start - up to 3 tracked players on a 5x5 board.
+                    </p>
+
+                    <div id="signupError" style="display:none; color:#e05252; margin-bottom:10px; font-weight:bold;"></div>
+
+                    <div style="text-align:left; display:flex; flex-direction:column; gap:10px;">
+                        <label>
+                            Clan / board name
+                            <input type="text" id="signupName" placeholder="e.g. Unsociables" maxlength="50" style="width:100%; box-sizing:border-box;">
+                        </label>
+                        <label>
+                            Board URL
+                            <div style="display:flex; align-items:center; gap:4px; font-size:0.85em; opacity:0.8;">
+                                <span>?board=</span>
+                                <input type="text" id="signupSlug" placeholder="unsociables" maxlength="30" style="flex:1; box-sizing:border-box;">
+                            </div>
+                        </label>
+                        <label>
+                            Admin password (min. 8 characters)
+                            <input type="password" id="signupPassword" style="width:100%; box-sizing:border-box;">
+                        </label>
+                        <label>
+                            Confirm password
+                            <input type="password" id="signupPasswordConfirm" style="width:100%; box-sizing:border-box;">
+                        </label>
+                    </div>
+
+                    <button class="upgrade-btn-primary" onclick="submitSignup()" style="margin-top:14px;">
+                        Create my board
+                    </button>
+                    <button class="upgrade-btn-secondary" onclick="closeSignupModal()">
+                        Cancel
+                    </button>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            const nameInput = document.getElementById('signupName');
+            const slugInput = document.getElementById('signupSlug');
+            let slugEditedByHand = false;
+            slugInput.addEventListener('input', () => { slugEditedByHand = true; });
+            nameInput.addEventListener('input', () => {
+                if (!slugEditedByHand) slugInput.value = slugifyBoardName(nameInput.value);
+            });
+            nameInput.focus();
+        }
+
+        function closeSignupModal() {
+            const modal = document.getElementById('signupModal');
+            if (modal) modal.remove();
+        }
+
+        function showSignupError(message) {
+            const el = document.getElementById('signupError');
+            if (!el) return;
+            el.textContent = message;
+            el.style.display = 'block';
+        }
+
+        async function submitSignup() {
+            const name = document.getElementById('signupName').value.trim();
+            const slug = slugifyBoardName(document.getElementById('signupSlug').value);
+            const password = document.getElementById('signupPassword').value;
+            const passwordConfirm = document.getElementById('signupPasswordConfirm').value;
+
+            if (!name) return showSignupError('Enter a clan/board name.');
+            if (slug.length < 3) return showSignupError('Board URL needs to be at least 3 characters.');
+            if (password.length < 8) return showSignupError('Password must be at least 8 characters.');
+            if (password !== passwordConfirm) return showSignupError('Passwords don\'t match.');
+
+            try {
+                const response = await fetch(`${API_URL}/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, slug, password })
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    return showSignupError(data.error || 'Something went wrong creating your board.');
+                }
+
+                renderSignupSuccess(data);
+            } catch (error) {
+                console.error('Signup error:', error);
+                showSignupError('Could not reach the server. Please try again.');
+            }
+        }
+
+        function renderSignupSuccess(data) {
+            const modal = document.getElementById('signupModal');
+            if (!modal) return;
+
+            modal.querySelector('.modal-content').innerHTML = `
+                <div class="upgrade-modal-icon">🎉</div>
+                <h2 class="upgrade-modal-title">${data.message}</h2>
+
+                <div style="text-align:left; margin: 14px 0;">
+                    <p><strong>Your API key</strong> (save this now - it's only shown once, your Discord bot integration needs it):</p>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <input type="text" readonly value="${data.api_key}" style="flex:1; font-family:monospace; font-size:0.85em;" onclick="this.select()">
+                        <button class="secondary" onclick="navigator.clipboard.writeText('${data.api_key}')">📋 Copy</button>
+                    </div>
+                </div>
+
+                <div style="text-align:left; margin-bottom: 14px;">
+                    ${data.next_steps.map(step => `<p>✓ ${step}</p>`).join('')}
+                </div>
+
+                <button class="upgrade-btn-primary" onclick="window.location.href = window.location.pathname + '${data.board_url}'">
+                    Go to my board
+                </button>
+            `;
         }
 
         function changePlayer() {
@@ -6399,6 +6548,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.11",
+                date: "2026-08-22",
+                title: "Create your own board",
+                changes: [
+                    { type: "feature", text: "New \"✨ Create your own board\" button lets anyone spin up their own free bingo board in seconds - pick a name, a board URL, and a password, and you're set up with your own board and Discord bot API key" },
+                ]
+            },
             {
                 version: "v2.13.10",
                 date: "2026-08-21",

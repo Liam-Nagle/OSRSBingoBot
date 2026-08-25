@@ -2,10 +2,11 @@ from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import os
 import re
+import secrets
 import csv
 import io
 from datetime import datetime, timedelta
@@ -1121,6 +1122,100 @@ def get_bingo():
     tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     return jsonify(load_bingo_data(tenant_id))
+
+# board/tenant_id slugs: lowercase letters, digits, hyphens, 3-30 chars, no
+# leading/trailing hyphen. Same shape a subdomain would need, since `slug`
+# doubles as the tenant's `subdomain` field (see get_tenant_by_subdomain).
+SLUG_PATTERN = re.compile(r'^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$')
+RESERVED_SLUGS = {'www', 'api', 'app', 'admin', 'signup', 'board', 'login', 'help', 'support', 'static', 'assets', 'billing'}
+
+
+@app.route('/signup', methods=['POST'])
+@limiter.limit("5 per hour")
+def signup():
+    """
+    Self-serve tenant creation: a brand new free-plan tenant with its own
+    admin password, its own bot API key, and its own empty board - no manual
+    migrate_to_tenant.py/manage_tenant_credentials.py step needed.
+
+    No email verification in v1 - the tradeoff is a public tenant-creation
+    endpoint with only slug-uniqueness and rate limiting standing between it
+    and spam signups. Revisit (captcha/honeypot/email verify) if that's
+    actually abused; not worth the extra flow for a first launch.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    slug = (data.get('slug') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not name or len(name) > 50:
+        return jsonify({'error': 'Board/clan name is required (max 50 characters).'}), 400
+    if '<' in name or '>' in name:
+        # The name gets echoed back into the signup-success screen (and shown
+        # elsewhere as the board's display name) via innerHTML, not just
+        # textContent - reject markup outright rather than trust every
+        # render site to escape it correctly.
+        return jsonify({'error': 'Board/clan name can\'t contain "<" or ">".'}), 400
+    if not SLUG_PATTERN.match(slug):
+        return jsonify({
+            'error': 'Board URL name must be 3-30 characters: lowercase letters, numbers, and hyphens only (no leading/trailing hyphen).'
+        }), 400
+    if slug in RESERVED_SLUGS:
+        return jsonify({'error': f'"{slug}" is reserved - please choose a different board URL name.'}), 400
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters.'}), 400
+
+    # Slug doubles as tenant_id, so one lookup by either covers both collisions.
+    if get_tenant_by_subdomain(slug) or get_tenant_by_id(slug):
+        return jsonify({'error': f'"{slug}" is already taken - please choose a different board URL name.'}), 409
+
+    api_key = secrets.token_urlsafe(32)
+    link_code = secrets.token_urlsafe(6)
+
+    tenant_doc = {
+        'tenant_id': slug,
+        'name': name,
+        'subdomain': slug,
+        'plan': 'free',
+        'created_at': datetime.utcnow(),
+        'settings': {
+            'max_board_size': PLAN_LIMITS['free']['max_board_size'],
+            'max_players': PLAN_LIMITS['free']['max_players'],
+            'features': []
+        },
+        'api_key': api_key,
+        'admin_password_hash': generate_password_hash(password),
+        'status': 'active',
+        # Set once the admin invites the Discord bot and runs `!link <link_code>`
+        # in their server (see Phase 3 - multi-tenant Discord bot).
+        'discord_guild_id': None,
+        'link_code': link_code
+    }
+
+    try:
+        tenants_collection.insert_one(tenant_doc)
+    except Exception as e:
+        return jsonify({'error': f'Failed to create board: {str(e)}'}), 500
+
+    print(f"[OK] New self-serve tenant created: '{name}' ({slug})")
+
+    return jsonify({
+        'success': True,
+        'message': f"'{name}' is ready!",
+        'tenant_id': slug,
+        'board_url': f'?board={slug}',
+        'api_key': api_key,
+        'link_code': link_code,
+        'next_steps': [
+            'Save your API key now - it is only shown once, and your Discord bot integration will need it.',
+            f'Bookmark your board at ?board={slug} (or use the board switcher on the site).',
+            'Log in as admin from your board using the password you just set.'
+        ]
+    })
+
 
 @app.route('/login', methods=['POST'])
 @limiter.limit("10 per minute")
