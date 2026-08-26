@@ -24,15 +24,62 @@ BINGO_API_BASE = os.environ.get('BINGO_API_URL', 'http://localhost:5000')
 if BINGO_API_BASE.endswith('/drop'):
     BINGO_API_BASE = BINGO_API_BASE[:-5]
 
-DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
+# ============================================
+# MULTI-TENANT GUILD ROUTING
+# ============================================
+# This bot can now sit in more than one clan's Discord server. Each server is
+# linked to exactly one tenant (via the `!link <code>` command below, which
+# calls POST /discord/link), and every forwarded message must be routed using
+# THAT tenant's own api_key - the old single global DROP_API_KEY env var is
+# no longer read here, or two clans' drops would end up mixed onto one board.
+#
+# Reads the tenants collection directly (same Mongo cluster bingo_api.py
+# uses) rather than adding a bot-auth HTTP endpoint just for this lookup.
+MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+_mongo_client = MongoClient(MONGODB_URI)
+_tenants_collection = _mongo_client['osrs_bingo']['tenants']
 
-def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, value=0, value_string='', rarity=None):
+# guild_id (str) -> (tenant_id, api_key) | (None, None) for "known unlinked"
+_guild_tenant_cache = {}
+_guild_tenant_cache_at = {}
+GUILD_TENANT_CACHE_TTL = 300  # seconds - long enough to not hammer Mongo on every
+                               # message, short enough that a fresh !link takes
+                               # effect without a bot restart
+
+
+def get_tenant_for_guild(guild_id):
+    """
+    Resolve a Discord guild to its tenant's (tenant_id, api_key), via the
+    tenants collection's discord_guild_id field. Cached per-guild for
+    GUILD_TENANT_CACHE_TTL seconds. Returns (None, None) if this guild isn't
+    linked to any tenant yet.
+    """
+    guild_id = str(guild_id)
+    now = time.time()
+    cached = _guild_tenant_cache.get(guild_id)
+    if cached and (now - _guild_tenant_cache_at.get(guild_id, 0)) < GUILD_TENANT_CACHE_TTL:
+        return cached
+
+    try:
+        tenant = _tenants_collection.find_one({'discord_guild_id': guild_id})
+    except Exception as e:
+        print(f"❌ Tenant lookup error for guild {guild_id}: {e}")
+        # Serve the last known mapping (if any) rather than going dark on a transient Mongo error
+        return cached if cached else (None, None)
+
+    result = (tenant['tenant_id'], tenant['api_key']) if tenant else (None, None)
+    _guild_tenant_cache[guild_id] = result
+    _guild_tenant_cache_at[guild_id] = now
+    return result
+
+
+def send_to_bingo_api(player_name, item_name, api_key, drop_type='loot', source=None, value=0, value_string='', rarity=None):
     """Send drop to bingo board API with value information"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/drop",
             headers={
                 'Content-Type': 'application/json',
-                'X-API-Key': DROP_API_KEY
+                'X-API-Key': api_key
             },
             json={
                 'player': player_name,
@@ -54,7 +101,7 @@ def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, val
             else:
                 print(f"ℹ️  Bingo API: {result.get('message')}")
         elif response.status_code == 401:
-            print(f"❌ Bingo API: Unauthorized - Check DROP_API_KEY environment variable")
+            print(f"❌ Bingo API: Unauthorized - this guild's linked tenant's api_key was rejected (rotated/invalid?)")
         else:
             print(f"⚠️  Bingo API returned status {response.status_code}")
     except requests.exceptions.RequestException as e:
@@ -63,13 +110,13 @@ def send_to_bingo_api(player_name, item_name, drop_type='loot', source=None, val
         print(f"❌ Bingo API error: {e}")
 
 
-def send_to_history_only(player_name, item_name, drop_type='loot', source=None, timestamp=None, value=0, value_string='', rarity=None):
+def send_to_history_only(player_name, item_name, api_key, drop_type='loot', source=None, timestamp=None, value=0, value_string='', rarity=None):
     """Send drop to history-only endpoint (no tile checking)"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/history-only",
                                  headers={
                                      'Content-Type': 'application/json',
-                                     'X-API-Key': DROP_API_KEY
+                                     'X-API-Key': api_key
                                  },
                                  json={
                                      'player': player_name,
@@ -92,13 +139,13 @@ def send_to_history_only(player_name, item_name, drop_type='loot', source=None, 
         return False, False
 
 
-def send_death_to_api(player_name, npc=None, timestamp=None):
+def send_death_to_api(player_name, api_key, npc=None, timestamp=None):
     """Send death to bingo board API"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/death",
                                  headers={
                                      'Content-Type': 'application/json',
-                                     'X-API-Key': DROP_API_KEY
+                                     'X-API-Key': api_key
                                  },
                                  json={
                                      'player': player_name,
@@ -345,7 +392,7 @@ def parse_pb_embed(embed, message):
     return pb_info if pb_info['player'] else None
 
 
-def send_pb_to_api(player_name, boss_name, time_seconds, time_string, party_size=1, invocation_level=None, timestamp=None):
+def send_pb_to_api(player_name, boss_name, time_seconds, time_string, api_key, party_size=1, invocation_level=None, timestamp=None):
     """Send personal best to bingo board API"""
     payload = {
         'player': player_name,
@@ -356,7 +403,7 @@ def send_pb_to_api(player_name, boss_name, time_seconds, time_string, party_size
         'invocation_level': invocation_level,
         'timestamp': timestamp or datetime.utcnow().isoformat()
     }
-    headers = {'Content-Type': 'application/json', 'X-API-Key': DROP_API_KEY}
+    headers = {'Content-Type': 'application/json', 'X-API-Key': api_key}
     for attempt in range(3):
         try:
             response = requests.post(
@@ -484,6 +531,7 @@ async def on_ready():
     print(f'{bot.user} is now tracking Dink notifications!')
     print('Listening for: Loot Drops, Collection Logs, Deaths')
     print('Commands available:')
+    print('  !link <code> - Link this server to a bingo board tenant')
     print('  !import_history [channel_id] [limit] - Import drop history')
     print('  !import_deaths [channel_id] [limit] - Import death history')
     print('  !import_pbs [channel_id] [limit] - Import personal best history')
@@ -501,6 +549,15 @@ async def on_message(message):
         return
 
     if not message.embeds:
+        return
+
+    if not message.guild:
+        return  # can't resolve a tenant without a guild (e.g. a DM webhook)
+
+    tenant_id, api_key = get_tenant_for_guild(message.guild.id)
+    if not api_key:
+        print(f"⚠️  Guild '{message.guild.name}' ({message.guild.id}) isn't linked to a bingo board yet - "
+              f"an admin needs to run `!link <code>` here. Skipping message.")
         return
 
     embed = message.embeds[0]
@@ -524,6 +581,7 @@ async def on_message(message):
 
         if drop_data:
             drop_data['drop_type'] = drop_type  # Add drop type to data
+            drop_data['guild_id'] = message.guild.id
             drops_data.append(drop_data)
             print_drop_info(drop_data)
 
@@ -543,6 +601,7 @@ async def on_message(message):
                     send_to_bingo_api(
                         player_name=drop_data['player'],
                         item_name=item['name'],
+                        api_key=api_key,
                         drop_type=drop_type,  # ← PASS THE DROP TYPE
                         source=drop_data.get('source'),
                         value=item_value,
@@ -573,6 +632,7 @@ async def on_message(message):
                 boss_name=pb_data['boss'],
                 time_seconds=pb_data['time_seconds'],
                 time_string=pb_data['time_string'],
+                api_key=api_key,
                 party_size=pb_data['party_size'],
                 invocation_level=pb_data.get('invocation_level'),
                 timestamp=pb_data['timestamp']
@@ -590,7 +650,7 @@ async def on_message(message):
                 print(f"Cause: {death_data['npc']}")
             print(f"{'=' * 50}\n")
 
-            send_death_to_api(death_data['player'], death_data.get('npc'), death_data['timestamp'])
+            send_death_to_api(death_data['player'], api_key, death_data.get('npc'), death_data['timestamp'])
 
 
 def parse_drop_embed(embed, message):
@@ -784,12 +844,59 @@ def save_drop_to_file(drop_data):
 
 
 @bot.command()
+async def link(ctx, link_code: str = None):
+    """
+    Link this Discord server to a bingo board tenant.
+
+    Usage:
+      !link ABC123   - Claim this server for the tenant whose link code is
+                        ABC123 (shown once at signup, or re-fetched from the
+                        board's admin panel by anyone with the admin password).
+
+    Deliberately a separate, short secret from the tenant's real API key -
+    it's fine to paste this one into a Discord channel; the API key never
+    needs to be.
+    """
+    if not ctx.guild:
+        await ctx.send("❌ This command only works inside a Discord server, not in DMs.")
+        return
+
+    if not ctx.author.guild_permissions.manage_guild:
+        await ctx.send("❌ Only someone with the **Manage Server** permission can link this server to a board.")
+        return
+
+    if not link_code:
+        await ctx.send("❌ Usage: `!link <code>` — get your code from your board's signup confirmation or admin panel.")
+        return
+
+    try:
+        response = requests.post(f"{BINGO_API_BASE}/discord/link",
+            headers={'Content-Type': 'application/json'},
+            json={'link_code': link_code, 'guild_id': str(ctx.guild.id)},
+            timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            # Force a fresh lookup next message instead of waiting out the cache TTL
+            _guild_tenant_cache.pop(str(ctx.guild.id), None)
+            await ctx.send(f"✅ This server is now linked to **{result.get('name', 'your board')}**! Drops posted here will be tracked on that board.")
+        elif response.status_code == 404:
+            await ctx.send("❌ That link code wasn't recognized. Double check it and try again.")
+        else:
+            await ctx.send(f"❌ Link failed (status {response.status_code}). Try again shortly.")
+    except Exception as e:
+        await ctx.send(f"❌ Could not reach the bingo API: {e}")
+
+
+@bot.command()
 async def stats(ctx, player_name: str = None):
     """Get drop statistics for a player"""
+    # drops_data is shared across every guild this bot process is in - scope
+    # to this guild only, or !stats leaks other clans' drop counts.
+    guild_drops = [d for d in drops_data if d.get('guild_id') == (ctx.guild.id if ctx.guild else None)]
     if player_name:
-        player_drops = [d for d in drops_data if d['player'].lower() == player_name.lower()]
+        player_drops = [d for d in guild_drops if d['player'].lower() == player_name.lower()]
     else:
-        player_drops = drops_data
+        player_drops = guild_drops
 
     if not player_drops:
         await ctx.send(f"No drops found{' for ' + player_name if player_name else ''}!")
@@ -834,6 +941,12 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
             return
     else:
         target_channel = ctx.channel
+
+    guild = getattr(target_channel, 'guild', None) or ctx.guild
+    tenant_id, api_key = get_tenant_for_guild(guild.id) if guild else (None, None)
+    if not api_key:
+        await ctx.send("❌ This server isn't linked to a bingo board yet - run `!link <code>` first.")
+        return
 
     progress_msg = await ctx.send(
         f"🔍 Importing drop history from {target_channel.mention}...\n"
@@ -884,6 +997,7 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                                 success, is_dup = send_to_history_only(
                                     drop_data['player'],
                                     item['name'],
+                                    api_key,
                                     drop_type=drop_data['drop_type'],
                                     source=drop_data.get('source'),
                                     timestamp=drop_data['timestamp'],
@@ -946,6 +1060,12 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
     else:
         target_channel = ctx.channel
 
+    guild = getattr(target_channel, 'guild', None) or ctx.guild
+    tenant_id, api_key = get_tenant_for_guild(guild.id) if guild else (None, None)
+    if not api_key:
+        await ctx.send("❌ This server isn't linked to a bingo board yet - run `!link <code>` first.")
+        return
+
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     except ValueError:
@@ -973,7 +1093,7 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
             return
         try:
             response = requests.post(f"{BINGO_API_BASE}/history/backfill-rarity",
-                headers={'Content-Type': 'application/json', 'X-API-Key': DROP_API_KEY},
+                headers={'Content-Type': 'application/json', 'X-API-Key': api_key},
                 json={'drops': candidates},
                 timeout=30)
             if response.status_code == 200:
@@ -1080,6 +1200,12 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
     else:
         target_channel = ctx.channel
 
+    guild = getattr(target_channel, 'guild', None) or ctx.guild
+    tenant_id, api_key = get_tenant_for_guild(guild.id) if guild else (None, None)
+    if not api_key:
+        await ctx.send("❌ This server isn't linked to a bingo board yet - run `!link <code>` first.")
+        return
+
     progress_msg = await ctx.send(
         f"💀 Importing death history from {target_channel.mention}...\n"
         f"📨 Scanning up to **{limit:,}** messages — I'll update every 5,000."
@@ -1115,6 +1241,7 @@ async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
                     if death_data and death_data['player']:
                         success = send_death_to_api(
                             death_data['player'],
+                            api_key,
                             npc=death_data.get('npc'),
                             timestamp=death_data['timestamp']
                         )
@@ -1162,6 +1289,12 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
             return
     else:
         target_channel = ctx.channel
+
+    guild = getattr(target_channel, 'guild', None) or ctx.guild
+    tenant_id, api_key = get_tenant_for_guild(guild.id) if guild else (None, None)
+    if not api_key:
+        await ctx.send("❌ This server isn't linked to a bingo board yet - run `!link <code>` first.")
+        return
 
     progress_msg = await ctx.send(
         f"🏆 Scanning {target_channel.mention} for Personal Bests...\n"
@@ -1322,6 +1455,7 @@ async def import_pbs(ctx, channel_id: str = None, limit: int = 5000):
                 boss_name=pb_data['boss'],
                 time_seconds=pb_data['time_seconds'],
                 time_string=pb_data['time_string'],
+                api_key=api_key,
                 party_size=pb_data['party_size'],
                 invocation_level=pb_data.get('invocation_level'),
                 timestamp=pb_data['timestamp']

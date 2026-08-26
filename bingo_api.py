@@ -1217,6 +1217,78 @@ def signup():
     })
 
 
+@app.route('/tenant/link-code', methods=['POST'])
+def get_or_create_link_code():
+    """
+    Returns this tenant's Discord link code (the short secret `!link <code>`
+    consumes), generating and persisting one if it doesn't have one yet -
+    tenants created before Phase 3 (e.g. via migrate_to_tenant.py, like the
+    original unsociables_001 tenant) predate this field.
+
+    Admin-authenticated the same way any other tenant-management action is
+    (bot api_key or admin password), so only someone who already controls
+    the board can pull the code that lets a Discord server claim it.
+    """
+    tenant = get_authenticated_tenant()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    link_code = tenant.get('link_code')
+    if not link_code:
+        link_code = secrets.token_urlsafe(6)
+        tenants_collection.update_one(
+            {'tenant_id': tenant['tenant_id']},
+            {'$set': {'link_code': link_code}}
+        )
+
+    return jsonify({
+        'success': True,
+        'link_code': link_code,
+        'discord_guild_id': tenant.get('discord_guild_id')
+    })
+
+
+@app.route('/discord/link', methods=['POST'])
+@limiter.limit("10 per hour")
+def discord_link():
+    """
+    Claims a Discord guild for a tenant via its short link_code - what the
+    bot's `!link <code>` command calls. Deliberately a separate secret from
+    api_key: this one is safe to paste into a Discord channel, so linking a
+    server never requires exposing the tenant's real bot credential in chat.
+
+    No stronger auth than "knows the link_code" is required here on purpose -
+    that mirrors how `!link` itself is meant to be run (any admin who has the
+    code, pasted straight into the target Discord server).
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    data = request.json or {}
+    link_code = (data.get('link_code') or '').strip()
+    guild_id = str(data.get('guild_id') or '').strip()
+
+    if not link_code or not guild_id:
+        return jsonify({'error': 'link_code and guild_id are required'}), 400
+
+    tenant = tenants_collection.find_one({'link_code': link_code})
+    if not tenant:
+        return jsonify({'error': 'Invalid link code'}), 404
+
+    tenants_collection.update_one(
+        {'tenant_id': tenant['tenant_id']},
+        {'$set': {'discord_guild_id': guild_id}}
+    )
+
+    print(f"[OK] Linked Discord guild {guild_id} to tenant '{tenant['tenant_id']}'")
+
+    return jsonify({
+        'success': True,
+        'tenant_id': tenant['tenant_id'],
+        'name': tenant.get('name')
+    })
+
+
 @app.route('/login', methods=['POST'])
 @limiter.limit("10 per minute")
 def admin_login():

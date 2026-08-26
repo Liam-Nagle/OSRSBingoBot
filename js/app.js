@@ -6549,6 +6549,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.12",
+                date: "2026-08-26",
+                title: "Link your own Discord server",
+                changes: [
+                    { type: "feature", text: "The drop-tracking Discord bot can now serve more than one clan at once - invite it to your own server and run !link <code> (from your board's signup confirmation) to start tracking your clan's drops, deaths, and personal bests separately from everyone else's board" },
+                ]
+            },
+            {
                 version: "v2.13.11",
                 date: "2026-08-22",
                 title: "Create your own board",
