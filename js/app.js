@@ -6321,6 +6321,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.11",
+                date: "2026-08-26",
+                title: "Fixed broken charts",
+                changes: [
+                    { type: "fix", text: "Rank History, Analytics, and Timeline had all stopped rendering their charts - a stray HTML comment was silently commenting out the Chart.js library include, so none of the charting screens had access to it. Fixed." },
+                ]
+            },
+            {
                 version: "v2.13.10",
                 date: "2026-08-22",
                 title: "Confetti congrats popup",
