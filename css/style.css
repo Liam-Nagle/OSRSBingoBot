@@ -46,10 +46,225 @@
         }
 
         .container {
-            max-width: 1600px;
+            max-width: 1700px;
             margin: 0 auto;
             position: relative;
             z-index: 2;
+        }
+
+        /* ============================================
+           Left-hand Tree Navigation
+           Sits inline with the board as a third column alongside
+           the leaderboard, rather than spanning the full page height.
+           A hamburger toggle collapses it down to a slim icon-only
+           rail (icons stay put) and expands it back out to the full
+           labeled tree.
+           ============================================ */
+
+        .side-nav-backdrop {
+            display: none;
+        }
+
+        .side-nav {
+            width: 250px;
+            height: fit-content;
+            justify-self: start;
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
+            border: 3px solid #8B6914;
+            border-radius: 8px;
+            box-shadow:
+                inset 0 2px 5px rgba(255,255,255,0.1),
+                0 5px 15px rgba(0,0,0,0.5);
+            padding-bottom: 12px;
+            z-index: 2;
+            transition: width 0.25s ease;
+        }
+
+        .side-nav.collapsed {
+            width: 56px;
+        }
+
+        .side-nav-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 2px solid rgba(139,105,20,0.5);
+            margin-bottom: 8px;
+        }
+
+        .side-nav-toggle-btn {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            border-radius: 5px;
+            font-size: 15px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .side-nav-toggle-btn:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+        }
+
+        .side-nav-title {
+            font-weight: bold;
+            color: #ffcc33;
+            letter-spacing: 1px;
+            text-shadow: 2px 2px 3px rgba(0,0,0,0.5);
+            white-space: nowrap;
+        }
+
+        .side-nav-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px 12px;
+        }
+
+        .nav-icon {
+            flex-shrink: 0;
+        }
+
+        .side-nav-group button {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-align: left;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            padding: 9px 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 1px rgba(255,255,255,0.3);
+        }
+
+        .side-nav-group button:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+            transform: translateX(3px);
+        }
+
+        .side-nav-group button.secondary {
+            background: linear-gradient(135deg, #6b4423 0%, #4a2c1a 100%);
+            color: #f4e4c1;
+        }
+
+        .side-nav-group button.secondary:hover {
+            background: linear-gradient(135deg, #7d5229 0%, #5c3d2e 100%);
+        }
+
+        .side-nav-group button.danger {
+            background: linear-gradient(135deg, #8b1a1a 0%, #660000 100%);
+            color: #f4e4c1;
+            border-color: #4d0000;
+        }
+
+        .side-nav-group button.danger:hover {
+            background: linear-gradient(135deg, #a32020 0%, #7a0000 100%);
+        }
+
+        .side-nav-flat {
+            border-top: 2px solid rgba(139,105,20,0.5);
+            border-bottom: 2px solid rgba(139,105,20,0.5);
+            margin: 4px 0;
+            padding: 12px;
+        }
+
+        .side-nav-tree summary,
+        .side-nav-subtree summary {
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            margin: 4px 8px;
+            font-weight: bold;
+            font-size: 13px;
+            color: #ffcc33;
+            background: rgba(0,0,0,0.25);
+            border-radius: 5px;
+            user-select: none;
+        }
+
+        .side-nav-tree summary::-webkit-details-marker,
+        .side-nav-subtree summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .side-nav-tree summary .nav-label,
+        .side-nav-subtree summary .nav-label {
+            flex: 1;
+        }
+
+        .side-nav-tree summary .nav-chevron,
+        .side-nav-subtree summary .nav-chevron {
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+
+        .side-nav-tree[open] > summary .nav-chevron,
+        .side-nav-subtree[open] > summary .nav-chevron {
+            transform: rotate(90deg);
+        }
+
+        .side-nav-subtree {
+            margin-left: 4px;
+        }
+
+        .side-nav-subtree summary {
+            background: rgba(0,0,0,0.15);
+            font-size: 12px;
+        }
+
+        .side-nav-subtree .side-nav-group {
+            padding: 6px 8px 6px 16px;
+        }
+
+        /* Icon-only rail: hide every label, hide chevrons, and hide
+           anything nested inside a tree (there's no room for it and
+           its top-level summary icon is still visible above it) */
+        .side-nav.collapsed .nav-label,
+        .side-nav.collapsed .nav-chevron {
+            display: none;
+        }
+
+        .side-nav.collapsed details .side-nav-group {
+            display: none;
+        }
+
+        .side-nav.collapsed .side-nav-title {
+            display: none;
+        }
+
+        .side-nav.collapsed .side-nav-group,
+        .side-nav.collapsed .side-nav-flat {
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        .side-nav.collapsed .side-nav-group button,
+        .side-nav.collapsed .side-nav-tree summary,
+        .side-nav.collapsed .side-nav-subtree summary {
+            justify-content: center;
+            padding: 9px;
         }
 
         h1 {
@@ -226,7 +441,7 @@
 
         .main-content {
             display: grid;
-            grid-template-columns: 1fr 350px;
+            grid-template-columns: auto 1fr 350px;
             gap: 20px;
         }
 
@@ -696,6 +911,16 @@
                 top: 0;
             }
 
+            /* The collapsed rail stays a slim inline strip at every width;
+               only the expanded tree needs to give up sticky/full-height
+               once it's stacked above the board instead of beside it */
+            .side-nav:not(.collapsed) {
+                position: relative;
+                top: 0;
+                width: 100%;
+                max-height: none;
+            }
+
             .view-legend:not(.view-legend-compact) {
                 margin-left: 0;
                 flex-basis: 100%;
@@ -703,6 +928,32 @@
 
             .view-legend-compact {
                 flex-wrap: wrap;
+            }
+        }
+
+        @media (max-width: 640px) {
+            /* Below this, even the stacked/full-width expanded nav from the
+               1200px breakpoint above gets overridden: it becomes an overlay
+               instead so it doesn't crush the board on small screens. The
+               collapsed rail is untouched and stays inline at every width. */
+            .side-nav:not(.collapsed) {
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                bottom: 10px;
+                width: 270px;
+                height: auto;
+                max-height: none;
+                z-index: 2001;
+                box-shadow: 5px 5px 25px rgba(0,0,0,0.6);
+            }
+
+            .side-nav-backdrop.open {
+                display: block;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.6);
+                z-index: 2000;
             }
         }
 

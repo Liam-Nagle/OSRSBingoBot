@@ -6,130 +6,173 @@
     <title>Unsociables Bingo Board</title>
 
     <!-- External Stylesheet -->
-    <link rel="stylesheet" href="css/style.css?v=2.9">
+    <link rel="stylesheet" href="css/style.css?v=2.10">
 </head>
 <body>
+    <div class="side-nav-backdrop" id="sideNavBackdrop" onclick="closeSideNav()"></div>
+
     <div class="container">
-        <h1>⚔️ Unsociables Bingo Board ⚔️</h1>
+            <h1>⚔️ Unsociables Bingo Board ⚔️</h1>
 
-        <!-- Legend (compact, sits right under the title) -->
-        <div class="view-legend view-legend-compact">
-            <div class="legend-item">
-                <div class="legend-box green"></div>
-                <span>You completed</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-box yellow"></div>
-                <span>Others completed</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-box white"></div>
-                <span>Not completed</span>
-            </div>
-        </div>
-
-        <div class="controls">
-            <!-- Player View Selector -->
-            <div class="player-selector">
-                <label>👤 View as:</label>
-                <select id="playerSelect" onchange="changePlayer()">
-                    <option value="">Everyone (No Filter)</option>
-                </select>
-                <button class="star-btn" id="favoriteBtn" onclick="toggleFavorite()" title="Set as favorite player">
-                    ⭐ Favorite
-                </button>
-                <button class="secondary" id="recapBtn" onclick="openRecapModal()" title="View your personal event recap" style="display: none;">
-                    🎁 My Event Recap
-                </button>
+            <!-- Legend (compact, sits right under the title) -->
+            <div class="view-legend view-legend-compact">
+                <div class="legend-item">
+                    <div class="legend-box green"></div>
+                    <span>You completed</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box yellow"></div>
+                    <span>Others completed</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box white"></div>
+                    <span>Not completed</span>
+                </div>
             </div>
 
-            <!-- Event Timer Widget (Centered) -->
-            <div id="eventTimerWidget" class="event-timer-widget">
-                <div class="event-timer-container">
-                    <div class="event-timer-header">
-                        <div class="event-timer-name" id="eventName">Bingo Event</div>
-                    </div>
-                    <div class="event-timer-countdown" id="eventCountdown">--:--:--</div>
-                    <div class="event-timer-status-container">
-                        <div class="event-timer-status-badge">
-                            <div class="event-timer-status status-active" id="eventStatus">Event Active</div>
+            <div class="controls">
+                <!-- Player View Selector -->
+                <div class="player-selector">
+                    <label>👤 View as:</label>
+                    <select id="playerSelect" onchange="changePlayer()">
+                        <option value="">Everyone (No Filter)</option>
+                    </select>
+                    <button class="star-btn" id="favoriteBtn" onclick="toggleFavorite()" title="Set as favorite player">
+                        ⭐ Favorite
+                    </button>
+                    <button class="secondary" id="recapBtn" onclick="openRecapModal()" title="View your personal event recap" style="display: none;">
+                        🎁 My Event Recap
+                    </button>
+                </div>
+
+                <!-- Event Timer Widget (Centered) -->
+                <div id="eventTimerWidget" class="event-timer-widget">
+                    <div class="event-timer-container">
+                        <div class="event-timer-header">
+                            <div class="event-timer-name" id="eventName">Bingo Event</div>
+                        </div>
+                        <div class="event-timer-countdown" id="eventCountdown">--:--:--</div>
+                        <div class="event-timer-status-container">
+                            <div class="event-timer-status-badge">
+                                <div class="event-timer-status status-active" id="eventStatus">Event Active</div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- GIM Highscore Widget -->
-            <div class="group-highscore">
-                <div class="group-highscore-content">
-                    <div class="group-icon">🛡️</div>
-                    <div class="group-info">
-                        <div class="group-name" id="groupName">Loading...</div>
-                        <div class="group-stats">
-                            <span id="groupRank">Overall: --</span>
-                            <span id="groupPrestige">Prestige: --</span>
-                            <span id="groupXP">Total XP: --</span>
+                <!-- GIM Highscore Widget -->
+                <div class="group-highscore">
+                    <div class="group-highscore-content">
+                        <div class="group-icon">🛡️</div>
+                        <div class="group-info">
+                            <div class="group-name" id="groupName">Loading...</div>
+                            <div class="group-stats">
+                                <span id="groupRank">Overall: --</span>
+                                <span id="groupPrestige">Prestige: --</span>
+                                <span id="groupXP">Total XP: --</span>
+                            </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Total Value Looted Widget -->
+                <div class="value-looted-widget" title="Total GP looted so far this bingo">
+                    <div class="value-looted-icon">💰</div>
+                    <div class="value-looted-info">
+                        <div class="value-looted-label" id="valueLootedLabel">Total Value Looted</div>
+                        <div class="value-looted-amount" id="totalValueLootedMain">--</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Total Value Looted Widget -->
-            <div class="value-looted-widget" title="Total GP looted so far this bingo">
-                <div class="value-looted-icon">💰</div>
-                <div class="value-looted-info">
-                    <div class="value-looted-label" id="valueLootedLabel">Total Value Looted</div>
-                    <div class="value-looted-amount" id="totalValueLootedMain">--</div>
+            <div class="main-content">
+                <!-- Left-hand Tree Navigation -->
+                <nav class="side-nav" id="sideNav">
+                    <div class="side-nav-header">
+                        <button class="side-nav-toggle-btn" id="sideNavToggle" onclick="toggleSideNav()" title="Toggle menu">☰</button>
+                        <span class="side-nav-title">Menu</span>
+                    </div>
+
+                    <details class="side-nav-tree" open>
+                        <summary><span class="nav-icon">📊</span><span class="nav-label">Stats &amp; Records</span><span class="nav-chevron">▸</span></summary>
+                        <div class="side-nav-group">
+                            <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary"><span class="nav-icon">📊</span><span class="nav-label">Boss KC</span></button>
+                            <button id="viewHistoryBtn" onclick="openHistoryModal()"><span class="nav-icon">📜</span><span class="nav-label">Drop History</span></button>
+                            <button id="rankHistoryBtn" onclick="openRankHistoryModal()"><span class="nav-icon">📈</span><span class="nav-label">Rank History</span></button>
+                            <button id="analyticsBtn" onclick="openAnalyticsModal()"><span class="nav-icon">📊</span><span class="nav-label">Analytics</span></button>
+                            <button id="timelineBtn" onclick="openTimelineModal()"><span class="nav-icon">📅</span><span class="nav-label">Timeline</span></button>
+                            <button id="pbsBtn" onclick="openPBsModal()"><span class="nav-icon">🏆</span><span class="nav-label">Personal Bests</span></button>
+                        </div>
+                    </details>
+
+                    <details class="side-nav-tree">
+                        <summary><span class="nav-icon">🎮</span><span class="nav-label">Board Tools</span><span class="nav-chevron">▸</span></summary>
+                        <div class="side-nav-group">
+                            <button onclick="toggleBonusOverlay()" id="bonusToggleBtn"><span class="nav-icon">🎁</span><span class="nav-label">Show Bonuses</span></button>
+                            <button id="exportDataBtn" onclick="openExportModal()"><span class="nav-icon">📤</span><span class="nav-label">Export Data</span></button>
+                        </div>
+                    </details>
+
+                    <div class="side-nav-group side-nav-flat">
+                        <button onclick="openChangelogModal()" style="position: relative;"><span class="nav-icon">📝</span><span class="nav-label">Changelog</span><span id="changelogBadge" class="changelog-badge" style="display: none;">NEW</span></button>
+
+                        <!-- Login Button (Shows when not admin) -->
+                        <button onclick="openLoginModal()" id="loginBtn"><span class="nav-icon">🔐</span><span class="nav-label">Admin Login</span></button>
+                    </div>
+
+                    <!-- Admin Controls (Hidden by default) -->
+                    <details class="side-nav-tree admin-tree" id="adminControls" style="display: none;" open>
+                        <summary><span class="nav-icon">🛠️</span><span class="nav-label">Admin</span><span class="nav-chevron">▸</span></summary>
+                        <div class="side-nav-group">
+                            <button onclick="toggleEditMode()" id="editBtn"><span class="nav-icon">📝</span><span class="nav-label">Edit Mode</span></button>
+
+                            <details class="side-nav-subtree" open>
+                                <summary><span class="nav-icon">🎯</span><span class="nav-label">Tiles &amp; Board</span><span class="nav-chevron">▸</span></summary>
+                                <div class="side-nav-group">
+                                    <button onclick="openManualOverrideModal()"><span class="nav-icon">✏️</span><span class="nav-label">Manual Override</span></button>
+                                    <button onclick="openBoardSizeModal()"><span class="nav-icon">📐</span><span class="nav-label">Board Size</span></button>
+                                    <button onclick="shuffleBoard()"><span class="nav-icon">🔀</span><span class="nav-label">Shuffle Board</span></button>
+                                    <button onclick="undoShuffle()"><span class="nav-icon">↩️</span><span class="nav-label">Undo Shuffle</span></button>
+                                    <button onclick="clearBoard()" class="danger"><span class="nav-icon">🗑️</span><span class="nav-label">Clear Board</span></button>
+                                </div>
+                            </details>
+
+                            <details class="side-nav-subtree">
+                                <summary><span class="nav-icon">📅</span><span class="nav-label">Event</span><span class="nav-chevron">▸</span></summary>
+                                <div class="side-nav-group">
+                                    <button id="eventTimerBtn" onclick="openEventConfigModal()"><span class="nav-icon">⏱️</span><span class="nav-label">Event Timer</span></button>
+                                    <button onclick="openBonusConfig()"><span class="nav-icon">⚙️</span><span class="nav-label">Configure Bonuses</span></button>
+                                    <button onclick="archiveCurrentEvent()"><span class="nav-icon">📦</span><span class="nav-label">Archive Current Event</span></button>
+                                    <button onclick="openArchiveModal()"><span class="nav-icon">🏛️</span><span class="nav-label">Event Archive</span></button>
+                                </div>
+                            </details>
+
+                            <details class="side-nav-subtree">
+                                <summary><span class="nav-icon">💾</span><span class="nav-label">Data</span><span class="nav-chevron">▸</span></summary>
+                                <div class="side-nav-group">
+                                    <button id="exportBtn" onclick="exportBoard()"><span class="nav-icon">💾</span><span class="nav-label">Export</span></button>
+                                    <button onclick="importBoard()"><span class="nav-icon">📥</span><span class="nav-label">Import</span></button>
+                                    <button onclick="showApiInfo()"><span class="nav-icon">🔗</span><span class="nav-label">API Info</span></button>
+                                </div>
+                            </details>
+
+                            <button onclick="logout()" class="danger"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></button>
+                        </div>
+                    </details>
+                </nav>
+
+                <div class="board-container">
+                    <div class="bingo-board" id="bingoBoard"></div>
+                </div>
+
+                <div class="leaderboard">
+                    <h2>🏆 Leaderboard 🏆</h2>
+                    <div id="playerStats">
+                        <div class="no-players">No drops recorded yet!</div>
+                    </div>
                 </div>
             </div>
-
-            <!-- Public Controls - Centered Below -->
-            <div style="flex-basis: 100%; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
-                <button id="viewHistoryBtn" onclick="openHistoryModal()" class="secondary">📜 View History</button>
-                <button id="rankHistoryBtn" onclick="openRankHistoryModal()" class="secondary">📈 Rank History</button>
-                <button id="analyticsBtn" onclick="openAnalyticsModal()" class="secondary">📊 Analytics</button>
-                <button id="timelineBtn" onclick="openTimelineModal()" class="secondary">📅 Timeline</button>
-                <button onclick="toggleBonusOverlay()" id="bonusToggleBtn" class="secondary">🎁 Show Bonuses</button>
-                <button id="bossKCBtn" onclick="openKCModal()" class="btn-primary">📊 Boss KC</button>
-                <button id="pbsBtn" onclick="openPBsModal()" class="secondary">🏆 Personal Bests</button>
-                <button id="exportDataBtn" onclick="openExportModal()" class="secondary">📤 Export Data</button>
-                <button onclick="openChangelogModal()" class="secondary" style="position: relative;">📝 Changelog<span id="changelogBadge" class="changelog-badge" style="display: none;">NEW</span></button>
-
-                <!-- Login Button (Shows when not admin) -->
-                <button onclick="openLoginModal()" id="loginBtn" class="secondary">🔐 Admin Login</button>
-            </div>
-
-            <!-- Admin Controls (Hidden by default) -->
-            <div id="adminControls" style="display: none; flex-basis: 100%; margin-top: 10px;">
-                <button onclick="toggleEditMode()" id="editBtn">📝 Edit Mode</button>
-                <button onclick="openManualOverrideModal()" class="secondary">✏️ Manual Override</button>
-                <button onclick="openBoardSizeModal()" class="secondary">📐 Board Size</button>
-                <button onclick="openBonusConfig()" class="secondary">⚙️ Configure Bonuses</button>
-                <button id="eventTimerBtn" onclick="openEventConfigModal()" class="secondary">⏱️ Event Timer</button>
-                <button onclick="shuffleBoard()" class="secondary">🔀 Shuffle Board</button>
-                <button onclick="undoShuffle()" class="secondary">↩️ Undo Shuffle</button>
-                <button onclick="clearBoard()" class="danger">🗑️ Clear Board</button>
-                <button id="exportBtn" onclick="exportBoard()" class="secondary">💾 Export</button>
-                <button onclick="importBoard()" class="secondary">📥 Import</button>
-                <button onclick="archiveCurrentEvent()" class="secondary">📦 Archive Current Event</button>
-                <button onclick="openArchiveModal()" class="secondary">🏛️ Event Archive</button>
-                <button onclick="showApiInfo()" class="secondary">🔗 API Info</button>
-                <button onclick="logout()" class="danger">🚪 Logout</button>
-            </div>
         </div>
-
-        <div class="main-content">
-            <div class="board-container">
-                <div class="bingo-board" id="bingoBoard"></div>
-            </div>
-
-            <div class="leaderboard">
-                <h2>🏆 Leaderboard 🏆</h2>
-                <div id="playerStats">
-                    <div class="no-players">No drops recorded yet!</div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Admin Login Modal -->
     <div class="modal" id="loginModal">
@@ -1073,6 +1116,6 @@ Dragon warhammer"></textarea>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- External JavaScript -->
-    <script src="js/app.js?v=3.4"></script>
+    <script src="js/app.js?v=3.5"></script>
 </body>
 </html>

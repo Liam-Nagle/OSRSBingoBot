@@ -893,10 +893,7 @@
         }
 
         function showAdminControls() {
-            document.getElementById('adminControls').style.display = 'flex';
-            document.getElementById('adminControls').style.gap = '10px';
-            document.getElementById('adminControls').style.flexWrap = 'wrap';
-            document.getElementById('adminControls').style.justifyContent = 'center';
+            document.getElementById('adminControls').style.display = 'block';
             document.getElementById('loginBtn').style.display = 'none';
             updateFavoriteButton(); // admin can now see the recap button early, before the event ends
         }
@@ -905,9 +902,37 @@
             document.getElementById('adminControls').style.display = 'none';
             document.getElementById('loginBtn').style.display = 'block';
             const btn = document.getElementById('editBtn');
-            btn.textContent = '📝 Edit Mode';
+            btn.querySelector('.nav-label').textContent = 'Edit Mode';
             btn.style.background = 'linear-gradient(135deg, #cd8b2d 0%, #a67318 100%)';
             updateFavoriteButton(); // recap button goes back to hidden (unless the event has actually ended)
+        }
+
+        // Left-hand tree navigation - hamburger toggle collapses the sidebar
+        // down to a slim icon-only rail, and expands it back to the full
+        // labeled tree. The collapsed/expanded choice is remembered per-browser.
+        const SIDE_NAV_COLLAPSED_KEY = 'sideNavCollapsed';
+
+        function applySideNavState(collapsed) {
+            const nav = document.getElementById('sideNav');
+            if (!nav) return;
+            nav.classList.toggle('collapsed', collapsed);
+            // On narrow screens an expanded sidebar becomes an overlay - dim the page behind it
+            const backdrop = document.getElementById('sideNavBackdrop');
+            if (backdrop) {
+                backdrop.classList.toggle('open', !collapsed && window.innerWidth <= 640);
+            }
+        }
+
+        function toggleSideNav() {
+            const nav = document.getElementById('sideNav');
+            const collapsed = !nav.classList.contains('collapsed');
+            applySideNavState(collapsed);
+            try { localStorage.setItem(SIDE_NAV_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch (e) {}
+        }
+
+        function closeSideNav() {
+            applySideNavState(true);
+            try { localStorage.setItem(SIDE_NAV_COLLAPSED_KEY, '1'); } catch (e) {}
         }
 
         function formatItemName(itemName) {
@@ -1248,7 +1273,8 @@
             }
             editMode = !editMode;
             const btn = document.getElementById('editBtn');
-            btn.textContent = editMode ? '✓ Edit Mode ON' : '📝 Edit Mode';
+            btn.querySelector('.nav-icon').textContent = editMode ? '✓' : '📝';
+            btn.querySelector('.nav-label').textContent = editMode ? 'Edit Mode ON' : 'Edit Mode';
             btn.style.background = editMode ? 'linear-gradient(135deg, #FF8C00 0%, #FF7000 100%)' : 'linear-gradient(135deg, #cd8b2d 0%, #a67318 100%)';
         }
 
@@ -2913,11 +2939,11 @@
             const btn = document.getElementById('bonusToggleBtn');
 
             if (bonusOverlayVisible) {
-                btn.textContent = '🎁 Hide Bonuses';
+                btn.querySelector('.nav-label').textContent = 'Hide Bonuses';
                 btn.style.background = 'linear-gradient(135deg, #FF8C00 0%, #FF7000 100%)';
                 showBonusOverlay();
             } else {
-                btn.textContent = '🎁 Show Bonuses';
+                btn.querySelector('.nav-label').textContent = 'Show Bonuses';
                 btn.style.background = 'linear-gradient(135deg, #2196F3 0%, #0b7dda 100%)';
                 hideBonusOverlay();
             }
@@ -6321,6 +6347,15 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.12",
+                date: "2026-08-27",
+                title: "New sidebar navigation",
+                changes: [
+                    { type: "feature", text: "Replaced the long row of buttons up top with a menu down the left side, grouped into Stats & Records, Board Tools, and (for admins) Admin, so it's much easier to find things." },
+                    { type: "feature", text: "Click the ☰ at the top of the menu to collapse it down to just icons (or expand it back out) — like the sidebar in most apps. Your choice is remembered next time you visit." },
+                ]
+            },
+            {
                 version: "v2.13.11",
                 date: "2026-08-26",
                 title: "Fixed broken charts",
@@ -7854,6 +7889,37 @@ function startEventCountdown(config) {
             if (expandedOverlay) {
                 expandedOverlay.addEventListener('click', function(e) {
                     if (e.target === this) closeExpandedChart();
+                });
+            }
+
+            // Left-hand nav: restore the collapsed/expanded choice from last visit
+            let navStartsCollapsed = false;
+            try { navStartsCollapsed = localStorage.getItem(SIDE_NAV_COLLAPSED_KEY) === '1'; } catch (e) {}
+            if (navStartsCollapsed) applySideNavState(true);
+
+            const sideNav = document.getElementById('sideNav');
+            if (sideNav) {
+                // Clicking a category icon while collapsed should expand the rail back
+                // out AND land on that category open - force it open rather than letting
+                // the native toggle run, since the category may have been left open (and
+                // would otherwise just toggle shut) before the rail was last collapsed
+                sideNav.querySelectorAll('summary').forEach(summary => {
+                    summary.addEventListener('click', function(e) {
+                        if (sideNav.classList.contains('collapsed')) {
+                            e.preventDefault();
+                            applySideNavState(false);
+                            try { localStorage.setItem(SIDE_NAV_COLLAPSED_KEY, '0'); } catch (e) {}
+                            summary.parentElement.open = true;
+                        }
+                    });
+                });
+
+                // On the narrow/mobile layout the expanded nav is an overlay - collapse
+                // it back to the rail after picking an action so it gets out of the way
+                sideNav.addEventListener('click', function(e) {
+                    if (e.target.closest('button') && window.innerWidth <= 640) {
+                        closeSideNav();
+                    }
                 });
             }
         });
