@@ -917,12 +917,26 @@
             return itemName.trim().replace(/\s+/g, '_');
         }
 
+        // Wiki file names capitalize each word, except small connector words
+        // (e.g. "Eye of Ayak" -> "Eye_of_Ayak"). Wiki renames occasionally change
+        // just the capitalization of a word (e.g. "ayak" -> "Ayak"), so this is
+        // tried as a fallback alongside the other casing variants below.
+        const WIKI_TITLE_CASE_MINOR_WORDS = new Set(['of', 'the', 'a', 'an', 'in', 'on', 'to', 'and', 'or', 'for', 'with']);
+        function toWikiTitleCase(itemName) {
+            return itemName.trim().split(/\s+/).map((word, i) => {
+                const lower = word.toLowerCase();
+                if (i > 0 && WIKI_TITLE_CASE_MINOR_WORDS.has(lower)) return lower;
+                return lower.charAt(0).toUpperCase() + lower.slice(1);
+            }).join('_');
+        }
+
         function loadItemImage(img, itemName) {
             const baseUrl = 'https://oldschool.runescape.wiki/images/';
 
             const formats = [
                 formatItemName(itemName),
                 itemName.trim().replace(/\s+/g, '_'),
+                toWikiTitleCase(itemName),
                 itemName.trim().toLowerCase().replace(/\s+/g, '_'),
                 itemName.trim().toUpperCase().replace(/\s+/g, '_')
             ];
@@ -6320,6 +6334,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.12",
+                date: "2026-08-27",
+                title: "Fixed missing item icons",
+                changes: [
+                    { type: "fix", text: "Item icons could disappear after the OSRS Wiki renamed a page (e.g. Eye of Ayak) - icon lookups now also try proper title-case capitalization when matching the wiki's image file names." },
+                ]
+            },
             {
                 version: "v2.13.11",
                 date: "2026-08-26",
