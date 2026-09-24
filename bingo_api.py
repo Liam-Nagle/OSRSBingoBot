@@ -824,12 +824,19 @@ def get_all_kc():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def count_unique_drops(docs, window_seconds=5):
+def count_unique_drops(docs, window_seconds=60):
     """
     Count real drop events from history docs, collapsing paired 'loot' + 'collection_log'
     entries that Dink can send for the same physical item pickup (one item, two Discord
     messages) into a single count. Docs are NOT modified or removed - this only affects
     how many "actual drops" we report, not what's stored in history.
+
+    window_seconds default is 60, not 5 - checking real history showed loot/collection_log
+    pairs for the same pickup arriving anywhere from under a second up to ~47 seconds apart
+    (notable/rare drops seem to take longer), so 5s was under-collapsing some of them and
+    inflating counts. An independent second drop of the same item within 60s of the first
+    would require another full kill that fast, which isn't realistic, so this is safe in the
+    other direction too. Matches js/app.js's dedupeDropsForAnalytics, which had the same bug.
     """
     # Group by player so timestamps are only compared within the same player's drops
     by_player = {}
@@ -1316,6 +1323,7 @@ def record_drop():
     value_string = data.get('value_string', '')  #Original value text (e.g., "2.95M")
     rarity = data.get('rarity')  # Raw "1 in X" text from Dink, when known (single-item drops only)
     rarity_1_in = parse_rarity_denominator(rarity)
+    quantity = data.get('quantity', 1)  # How many of the item this single drop event was for
     timestamp = data.get('timestamp', datetime.utcnow().isoformat())
 
     tenant = get_authenticated_tenant_by_api_key()
@@ -1371,6 +1379,7 @@ def record_drop():
                 'value_string': value_string,
                 'rarity': rarity,
                 'rarity_1_in': rarity_1_in,
+                'quantity': quantity,
                 'timestamp': datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp,
                                                                                                     str) else timestamp
             })
@@ -1552,6 +1561,7 @@ def record_history_only():
     value_string = data.get('value_string', '')
     rarity = data.get('rarity')
     rarity_1_in = parse_rarity_denominator(rarity)
+    quantity = data.get('quantity', 1)
 
     tenant = get_authenticated_tenant_by_api_key()
     if not tenant:
@@ -1576,6 +1586,7 @@ def record_history_only():
                 'value_string': value_string,
                 'rarity': rarity,
                 'rarity_1_in': rarity_1_in,
+                'quantity': quantity,
             })
             return jsonify({
                 'success': True,
@@ -1592,11 +1603,12 @@ def record_history_only():
 @limiter.limit("60 per minute")
 def backfill_rarity():
     """
-    Enrich already-saved history documents with rarity/value data re-scraped
-    from old Discord messages (see DinkParser.py's !backfill_rarity command).
-    This never inserts new history entries and never overwrites a document
-    that already has rarity set or a nonzero value — it only fills gaps left
-    by drops logged before those fields existed.
+    Enrich already-saved history documents with rarity/value/quantity data
+    re-scraped from old Discord messages (see DinkParser.py's !backfill_rarity
+    command). This never inserts new history entries and never overwrites a
+    document that already has a field set - it only fills gaps left by drops
+    logged before that field existed (rarity/value predate quantity tracking
+    entirely, so every pre-existing doc is missing it).
 
     Each candidate is matched to an existing history doc by player + item +
     closest timestamp within a short window (drops predating rarity tracking
@@ -1645,6 +1657,7 @@ def backfill_rarity():
         rarity_1_in = parse_rarity_denominator(rarity)
         total_value_numeric = candidate.get('total_value_numeric')
         total_value = candidate.get('total_value')
+        quantity = candidate.get('quantity')
 
         query = {
             'player': player,
@@ -1655,7 +1668,8 @@ def backfill_rarity():
             },
             '$or': [
                 {'rarity': {'$in': [None, '']}},
-                {'value': {'$in': [0, None]}}
+                {'value': {'$in': [0, None]}},
+                {'quantity': {'$exists': False}}
             ]
         }
 
@@ -1678,6 +1692,8 @@ def backfill_rarity():
             update_fields['value'] = total_value_numeric
             if total_value:
                 update_fields['value_string'] = total_value
+        if quantity and 'quantity' not in target_doc:
+            update_fields['quantity'] = quantity
 
         if update_fields:
             collections['history'].update_one({'_id': target_doc['_id']}, {'$set': update_fields})

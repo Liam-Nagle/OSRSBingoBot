@@ -73,7 +73,7 @@ def get_tenant_for_guild(guild_id):
     return result
 
 
-def send_to_bingo_api(player_name, item_name, api_key, drop_type='loot', source=None, value=0, value_string='', rarity=None):
+def send_to_bingo_api(player_name, item_name, api_key, drop_type='loot', source=None, value=0, value_string='', rarity=None, quantity=1):
     """Send drop to bingo board API with value information"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/drop",
@@ -88,7 +88,8 @@ def send_to_bingo_api(player_name, item_name, api_key, drop_type='loot', source=
                 'source': source,
                 'value': value,  # ← NEW: Send numeric value
                 'value_string': value_string,  # ← NEW: Send original text (e.g., "2.95M")
-                'rarity': rarity  # Raw "1 in X" text from Dink's Item Rarity/Rank field, when known
+                'rarity': rarity,  # Raw "1 in X" text from Dink's Item Rarity/Rank field, when known
+                'quantity': quantity  # How many of the item this single drop event was for
             },
             timeout=5)
 
@@ -110,7 +111,7 @@ def send_to_bingo_api(player_name, item_name, api_key, drop_type='loot', source=
         print(f"❌ Bingo API error: {e}")
 
 
-def send_to_history_only(player_name, item_name, api_key, drop_type='loot', source=None, timestamp=None, value=0, value_string='', rarity=None):
+def send_to_history_only(player_name, item_name, api_key, drop_type='loot', source=None, timestamp=None, value=0, value_string='', rarity=None, quantity=1):
     """Send drop to history-only endpoint (no tile checking)"""
     try:
         response = requests.post(f"{BINGO_API_BASE}/history-only",
@@ -126,7 +127,8 @@ def send_to_history_only(player_name, item_name, api_key, drop_type='loot', sour
                                      'timestamp': timestamp or datetime.utcnow().isoformat(),
                                      'value': value,
                                      'value_string': value_string,
-                                     'rarity': rarity
+                                     'rarity': rarity,
+                                     'quantity': quantity
                                  },
                                  timeout=5)
 
@@ -606,7 +608,8 @@ async def on_message(message):
                         source=drop_data.get('source'),
                         value=item_value,
                         value_string=item_value_string,
-                        rarity=drop_data.get('rarity') if is_single_item else None
+                        rarity=drop_data.get('rarity') if is_single_item else None,
+                        quantity=item.get('quantity', 1)
                     )
 
             save_drop_to_file(drop_data)
@@ -1003,7 +1006,8 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
                                     timestamp=drop_data['timestamp'],
                                     value=item_value,
                                     value_string=item_value_string,
-                                    rarity=drop_data.get('rarity') if is_single_item else None
+                                    rarity=drop_data.get('rarity') if is_single_item else None,
+                                    quantity=item.get('quantity', 1)
                                 )
 
                                 if success:
@@ -1033,11 +1037,12 @@ async def import_history(ctx, channel_id: str = None, limit: int = 1000):
 @bot.command()
 async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-01-01"):
     """
-    Re-scan past Loot Drop / Collection Log messages to backfill rarity and
-    fix 'Unknown'-valued single-item drops already saved to history — for
-    drops logged before those fields existed. Does NOT create new history
-    entries and never overwrites a drop that already has good data; the
-    matching + updating happens server-side in bingo_api.py.
+    Re-scan past Loot Drop / Collection Log messages to backfill rarity, fix
+    'Unknown'-valued single-item drops, and fill in quantity (e.g. "3x Echo
+    crystal") on drops already saved to history — for drops logged before
+    those fields existed. Does NOT create new history entries and never
+    overwrites a drop that already has good data; the matching + updating
+    happens server-side in bingo_api.py.
 
     Usage:
       !backfill_rarity                           - Scan current channel from 2026-01-01 onward
@@ -1073,7 +1078,7 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
         return
 
     progress_msg = await ctx.send(
-        f"🔍 Backfilling rarity/value data from {target_channel.mention} since {start_date}...\n"
+        f"🔍 Backfilling rarity/value/quantity data from {target_channel.mention} since {start_date}...\n"
         f"⚠️ Only fills gaps in existing history — won't create or duplicate entries.\n"
         f"📨 I'll update every 2,000 messages scanned."
     )
@@ -1139,13 +1144,15 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
 
             item = drop_data['items'][0]
             needs_value_fix = not item.get('value_numeric', 0) and drop_data.get('total_value_numeric')
-            if not drop_data.get('rarity') and not needs_value_fix:
+            item_quantity = item.get('quantity', 1)
+            if not drop_data.get('rarity') and not needs_value_fix and item_quantity <= 1:
                 continue  # nothing this drop could improve
 
             candidates.append({
                 'player': drop_data['player'],
                 'item': item['name'],
                 'timestamp': message.created_at.isoformat(),
+                'quantity': item_quantity,
                 'rarity': drop_data.get('rarity'),
                 'total_value_numeric': drop_data.get('total_value_numeric'),
                 'total_value': drop_data.get('total_value')
@@ -1157,7 +1164,7 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
 
         await flush_batch()
 
-        summary = f"✅ **Rarity/Value Backfill Complete!**\n"
+        summary = f"✅ **Rarity/Value/Quantity Backfill Complete!**\n"
         summary += f"📨 Messages scanned: {scanned:,}\n"
         summary += f"📤 Candidate drops submitted: {submitted:,}\n"
         summary += f"🎯 Matched to existing history: {matched_total:,}\n"
