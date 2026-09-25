@@ -2495,7 +2495,6 @@
         // fallback we cross-reference drop history: the earliest drop of a
         // matching item is treated as that tile's completion moment.
         let timelineBarChartInstance = null;
-        const TIMELINE_MAX_DAYS = 400; // safety cap so a stale/faraway event start date can't render thousands of rows (events can legitimately run a full year)
 
         function openTimelineModal() {
             document.getElementById('timelineModal').classList.add('active');
@@ -2626,38 +2625,31 @@
 
             resolved.sort((a, b) => a.timestamp - b.timestamp);
 
-            // --- Figure out the day range to render ---
+            // --- Group completions by day (days with no completions are left out) ---
+            // dayNumber still counts from the event start, so gaps in the numbering
+            // (Day 1, Day 2, Day 5) are expected and show the quiet days were skipped.
             const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
             const oneDay = 24 * 60 * 60 * 1000;
 
-            let firstDay = hasEvent
+            const firstDay = hasEvent
                 ? dayStart(eventStart)
                 : dayStart(resolved.length ? resolved[0].timestamp : new Date());
 
-            const lastResolvedDay = resolved.length ? dayStart(resolved[resolved.length - 1].timestamp) : firstDay;
-            const today = dayStart(new Date());
-            const lastDay = new Date(Math.max(lastResolvedDay, today));
-
-            let totalDays = Math.max(1, Math.round((lastDay - firstDay) / oneDay) + 1);
-            if (totalDays > TIMELINE_MAX_DAYS) {
-                // Keep the most recent stretch so "today" is always visible
-                firstDay = new Date(lastDay.getTime() - (TIMELINE_MAX_DAYS - 1) * oneDay);
-                totalDays = TIMELINE_MAX_DAYS;
-            }
-
-            const days = [];
-            for (let i = 0; i < totalDays; i++) {
-                days.push({ dayNumber: i + 1, date: new Date(firstDay.getTime() + i * oneDay), entries: [] });
-            }
-
+            const dayMap = new Map();
             resolved.forEach(entry => {
-                const idx = Math.round((dayStart(entry.timestamp) - firstDay) / oneDay);
-                if (days[idx]) days[idx].entries.push(entry);
+                const day = dayStart(entry.timestamp);
+                const idx = Math.round((day - firstDay) / oneDay);
+                if (idx < 0) return; // completed before the event started
+                if (!dayMap.has(idx)) dayMap.set(idx, { dayNumber: idx + 1, date: day, entries: [] });
+                dayMap.get(idx).entries.push(entry);
             });
+            const days = [...dayMap.values()].sort((a, b) => a.dayNumber - b.dayNumber);
             days.forEach(day => day.entries.sort((a, b) => a.timestamp - b.timestamp));
 
             // --- Render day-by-day timeline ---
-            document.getElementById('timelineDays').innerHTML = days.map(day => renderTimelineDay(day, hasEvent)).join('');
+            document.getElementById('timelineDays').innerHTML = days.length > 0
+                ? days.map(day => renderTimelineDay(day, hasEvent)).join('')
+                : '<p style="text-align: center; color: #999; font-style: italic;">No completions with a known time yet</p>';
 
             // --- Unmatched completions ---
             const unmatchedSection = document.getElementById('timelineUnmatched');
@@ -2681,19 +2673,14 @@
         function renderTimelineDay(day, hasEvent) {
             const dateLabel = day.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
             const heading = hasEvent ? `Day ${day.dayNumber}` : dateLabel;
-            const isEmpty = day.entries.length === 0;
-
-            const entriesHtml = isEmpty
-                ? `<div class="timeline-day-empty-msg">😴 No tiles completed today</div>`
-                : `<div class="timeline-entries">${day.entries.map(renderTimelineEntry).join('')}</div>`;
 
             return `
-                <div class="timeline-day ${isEmpty ? 'empty' : ''}">
+                <div class="timeline-day">
                     <div class="timeline-day-header">
                         <span>📅 ${heading} • ${day.entries.length} tile${day.entries.length === 1 ? '' : 's'}</span>
                         ${hasEvent ? `<span class="timeline-day-date">${dateLabel}</span>` : ''}
                     </div>
-                    ${entriesHtml}
+                    <div class="timeline-entries">${day.entries.map(renderTimelineEntry).join('')}</div>
                 </div>
             `;
         }
@@ -2723,6 +2710,8 @@
             const horizontal = days.length > 10; // long ranges read better as a horizontal bar chart
 
             if (timelineBarChartInstance) timelineBarChartInstance.destroy();
+            timelineBarChartInstance = null;
+            if (days.length === 0) return;
 
             timelineBarChartInstance = new Chart(ctx, {
                 type: 'bar',
@@ -6490,6 +6479,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.14",
+                date: "2026-09-24",
+                title: "Cleaner Tile Race timeline",
+                changes: [
+                    { type: "improvement", text: "The Tile Race timeline now skips days where no tiles were completed - both the day-by-day list and the bar chart only show days with activity (day numbers still count from the event start, so a gap like Day 2 → Day 5 means nothing happened in between)" },
+                ]
+            },
             {
                 version: "v2.13.13",
                 date: "2026-09-10",
