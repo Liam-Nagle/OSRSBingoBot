@@ -46,10 +46,670 @@
         }
 
         .container {
-            max-width: 1600px;
+            max-width: 1700px;
             margin: 0 auto;
             position: relative;
             z-index: 2;
+        }
+
+        /* ============================================
+           Navigation
+           One menu, three layouts - js/nav-layouts.js renders whichever is
+           chosen and sets body[data-nav-layout]:
+             sidebar - left column beside the board (default); the ☰ collapses
+                       it to a slim icon-only rail, remembered per-browser
+             topbar  - sticky bar with dropdown panels
+             drawer  - ☰ Menu button that slides the full tree in from the left
+           ============================================ */
+
+        .nav-icon {
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        /* ---- Tree links (used by the sidebar and the drawer) ---- */
+
+        .nav-links {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 2px 8px 8px 14px;
+        }
+
+        .nav-sublinks {
+            margin: 0 0 4px 14px;
+            padding: 2px 0 2px 10px;
+            border-left: 2px solid rgba(139,105,20,0.55);
+        }
+
+        .nav-link {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: 0;
+            border-radius: 5px;
+            color: #f4e4c1;
+            font-family: inherit;
+            font-size: 13px;
+            padding: 7px 10px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .nav-link:hover {
+            background: rgba(255,204,51,0.14);
+            color: #ffcc33;
+        }
+
+        .nav-link .nav-icon {
+            width: 24px;
+        }
+
+        .nav-link.danger {
+            color: #ff9c8f;
+        }
+
+        .nav-link.danger:hover {
+            background: rgba(200,50,50,0.25);
+            color: #ffb8ae;
+        }
+
+        /* Edit Mode is the one action admins reach for constantly - keep it prominent */
+        .nav-link#editBtn {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .side-nav-tree summary,
+        .side-nav-subtree summary {
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            margin: 4px 8px;
+            font-weight: bold;
+            font-size: 13px;
+            color: #ffcc33;
+            background: rgba(0,0,0,0.25);
+            border-radius: 5px;
+            user-select: none;
+        }
+
+        .side-nav-tree summary::-webkit-details-marker,
+        .side-nav-subtree summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .side-nav-tree summary .nav-label,
+        .side-nav-subtree summary .nav-label {
+            flex: 1;
+        }
+
+        .side-nav-tree summary .nav-chevron,
+        .side-nav-subtree summary .nav-chevron {
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+
+        .side-nav-tree[open] > summary .nav-chevron,
+        .side-nav-subtree[open] > summary .nav-chevron {
+            transform: rotate(90deg);
+        }
+
+        .side-nav-subtree {
+            margin-left: 0;
+        }
+
+        .side-nav-subtree summary {
+            margin: 2px 0;
+            background: rgba(0,0,0,0.15);
+            font-size: 12px;
+        }
+
+        /* Export / Changelog / Admin Login - kept low-key at the bottom */
+        .nav-footer {
+            border-top: 2px solid rgba(139,105,20,0.5);
+            margin-top: 8px;
+            padding: 8px 8px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .nav-footer .nav-link {
+            font-size: 12px;
+            color: #c9b58a;
+        }
+
+        .nav-footer .nav-link:hover {
+            color: #ffcc33;
+        }
+
+        .nav-footer .changelog-badge {
+            top: 6px;
+            right: 8px;
+        }
+
+        /* ---- Layout: sidebar ---- */
+
+        .side-nav-backdrop {
+            display: none;
+        }
+
+        .side-nav {
+            width: 250px;
+            height: fit-content;
+            justify-self: start;
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
+            border: 3px solid #8B6914;
+            border-radius: 8px;
+            box-shadow:
+                inset 0 2px 5px rgba(255,255,255,0.1),
+                0 5px 15px rgba(0,0,0,0.5);
+            padding-bottom: 12px;
+            z-index: 2;
+            transition: width 0.25s ease;
+        }
+
+        .side-nav.collapsed {
+            width: 56px;
+        }
+
+        .side-nav-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 2px solid rgba(139,105,20,0.5);
+            margin-bottom: 8px;
+        }
+
+        .side-nav-toggle-btn {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            border-radius: 5px;
+            font-size: 15px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .side-nav-toggle-btn:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+        }
+
+        .side-nav-title {
+            font-weight: bold;
+            color: #ffcc33;
+            letter-spacing: 1px;
+            text-shadow: 2px 2px 3px rgba(0,0,0,0.5);
+            white-space: nowrap;
+        }
+
+        /* Icon-only rail: hide every label, hide chevrons, and hide
+           anything nested inside a tree (there's no room for it and
+           its top-level summary icon is still visible above it) */
+        .side-nav.collapsed .nav-label,
+        .side-nav.collapsed .nav-chevron {
+            display: none;
+        }
+
+        .side-nav.collapsed details .nav-links {
+            display: none;
+        }
+
+        .side-nav.collapsed .side-nav-title {
+            display: none;
+        }
+
+        .side-nav.collapsed .side-nav-tree summary {
+            justify-content: center;
+            padding: 9px;
+        }
+
+        .side-nav.collapsed .nav-footer {
+            padding: 8px 4px 0;
+        }
+
+        .side-nav.collapsed .nav-footer .nav-link {
+            text-align: center;
+            padding: 8px 0;
+        }
+
+        .side-nav.collapsed .nav-footer .nav-icon {
+            width: auto;
+        }
+
+        .side-nav.collapsed .nav-footer .changelog-badge {
+            top: -2px;
+            right: 0;
+        }
+
+        /* ---- Layout: top bar ---- */
+
+        .menubar {
+            position: sticky;
+            top: 10px;
+            z-index: 900;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
+            border: 3px solid #8B6914;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 20px;
+            box-shadow:
+                inset 0 2px 5px rgba(255,255,255,0.1),
+                0 5px 15px rgba(0,0,0,0.5);
+        }
+
+        .menubar-main,
+        .menubar-utility {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .menu-item {
+            position: relative;
+        }
+
+        .menu-trigger {
+            background: transparent;
+            color: #ffcc33;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .menu-trigger:hover,
+        .menu-item.open > .menu-trigger {
+            background: rgba(0,0,0,0.3);
+            border-color: #8B6914;
+        }
+
+        .caret {
+            font-size: 10px;
+            transition: transform 0.2s;
+        }
+
+        .menu-item.open .caret {
+            transform: rotate(180deg);
+        }
+
+        .menu-panel {
+            display: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            left: 0;
+            gap: 18px;
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
+            border: 3px solid #8B6914;
+            border-radius: 8px;
+            padding: 14px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+        }
+
+        .menu-item.open > .menu-panel {
+            display: flex;
+        }
+
+        .menu-panel-right {
+            left: auto;
+            right: 0;
+        }
+
+        .menu-col {
+            min-width: 235px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .menu-col-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #cd8b2d;
+            font-weight: bold;
+            padding: 0 10px 6px;
+            border-bottom: 1px solid rgba(139,105,20,0.6);
+            margin-bottom: 4px;
+        }
+
+        .menu-link {
+            text-align: left;
+            background: transparent;
+            border: 0;
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            color: #f4e4c1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-family: inherit;
+        }
+
+        .menu-link:hover {
+            background: rgba(255,204,51,0.14);
+        }
+
+        .menu-link-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #ffcc33;
+        }
+
+        .menu-link-desc {
+            font-size: 12px;
+            color: #c9b58a;
+            line-height: 1.3;
+        }
+
+        .menu-link.compact {
+            padding: 6px 10px;
+        }
+
+        .menu-link.compact .menu-link-title {
+            font-size: 13px;
+            color: #f4e4c1;
+        }
+
+        .menu-link.danger .menu-link-title {
+            color: #ff9c8f;
+        }
+
+        .menu-link#editBtn {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            margin-bottom: 4px;
+        }
+
+        .menu-link#editBtn .menu-link-title {
+            color: #2c1810;
+        }
+
+        .util-btn {
+            background: transparent;
+            color: #c9b58a;
+            border: 1px solid rgba(139,105,20,0.5);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .util-btn:hover {
+            color: #ffcc33;
+            border-color: #cd8b2d;
+            background: rgba(0,0,0,0.25);
+        }
+
+        .util-btn .changelog-badge {
+            top: -9px;
+            right: -7px;
+        }
+
+        /* ---- Layout: drawer ---- */
+
+        /* Zero-height sticky wrapper: the button floats over the top-left and follows the
+           scroll without taking up a row (on phones it gets a real row so it can't cover the title) */
+        .hamburger-wrap {
+            position: sticky;
+            top: 10px;
+            z-index: 950;
+            height: 0;
+        }
+
+        .hamburger {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            border: 2px solid #8B6914;
+            border-radius: 8px;
+            padding: 9px 14px 9px 12px;
+            font-size: 15px;
+            font-weight: bold;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+            text-shadow: 1px 1px 1px rgba(255,255,255,0.3);
+        }
+
+        .hamburger:hover {
+            background: linear-gradient(135deg, #e09d3d 0%, #b8811e 100%);
+        }
+
+        .hamburger-icon {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        /* Red dot while there's an unread changelog entry (the Changelog link is inside the drawer) */
+        .menu-dot {
+            display: none;
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 14px;
+            height: 14px;
+            background: #f44336;
+            border: 2px solid #2c1810;
+            border-radius: 50%;
+            animation: changelog-badge-pulse 1.8s ease-in-out infinite;
+        }
+
+        .drawer-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1090;
+            background: rgba(0,0,0,0.6);
+        }
+
+        .drawer-backdrop.open {
+            display: block;
+        }
+
+        .nav-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 310px;
+            max-width: 86vw;
+            z-index: 1100;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-bottom: 14px;
+            background: linear-gradient(135deg, #3d2817 0%, #5c3d2e 100%);
+            border-right: 3px solid #8B6914;
+            box-shadow: 6px 0 30px rgba(0,0,0,0.6);
+            transform: translateX(-105%);
+            transition: transform 0.25s ease;
+            visibility: hidden;
+        }
+
+        .nav-drawer.open {
+            transform: translateX(0);
+            visibility: visible;
+        }
+
+        .drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 12px 14px;
+            border-bottom: 2px solid rgba(139,105,20,0.5);
+            margin-bottom: 8px;
+            position: sticky;
+            top: 0;
+            background: #4a2f1e;
+            z-index: 1;
+        }
+
+        .drawer-title {
+            font-weight: bold;
+            font-size: 17px;
+            color: #ffcc33;
+            letter-spacing: 1px;
+            text-shadow: 2px 2px 3px rgba(0,0,0,0.5);
+        }
+
+        .drawer-close {
+            width: 34px;
+            height: 34px;
+            cursor: pointer;
+            font-size: 15px;
+            color: #f4e4c1;
+            background: transparent;
+            border: 2px solid #8B6914;
+            border-radius: 6px;
+        }
+
+        .drawer-close:hover {
+            background: rgba(0,0,0,0.3);
+        }
+
+        .nav-drawer .nav-link {
+            font-size: 14px;
+            padding: 8px 10px;
+        }
+
+        .nav-drawer .nav-footer .nav-link {
+            font-size: 13px;
+        }
+
+        /* ---- Board toolbar (Show Bonuses lives with the board it affects) ---- */
+
+        .board-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
+
+        .board-chip {
+            background: linear-gradient(135deg, #6b4423 0%, #4a2c1a 100%);
+            color: #f4e4c1;
+            border: 2px solid #8B6914;
+            border-radius: 16px;
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            font-family: inherit;
+        }
+
+        .board-chip:hover {
+            filter: brightness(1.2);
+        }
+
+        /* ---- Temporary layout trial banner (see js/nav-layouts.js) ---- */
+
+        .nav-trial-banner {
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 8px 10px;
+            margin-bottom: 14px;
+            padding: 8px 40px 8px 14px;
+            background: rgba(35,20,10,0.9);
+            border: 2px solid #ffcc33;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #f4e4c1;
+        }
+
+        .ntb-label {
+            font-weight: bold;
+            color: #ffcc33;
+        }
+
+        .ntb-opt {
+            color: #f4e4c1;
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #8B6914;
+            border-radius: 16px;
+            padding: 4px 12px;
+            background: linear-gradient(135deg, #6b4423 0%, #4a2c1a 100%);
+        }
+
+        .ntb-opt:hover:not(:disabled) {
+            border-color: #ffcc33;
+            color: #ffcc33;
+        }
+
+        .ntb-opt.current {
+            background: linear-gradient(135deg, #cd8b2d 0%, #a67318 100%);
+            color: #2c1810;
+            font-weight: bold;
+            border-color: #ffcc33;
+            cursor: default;
+        }
+
+        .ntb-note {
+            color: #c9b58a;
+            font-style: italic;
+        }
+
+        .ntb-close {
+            position: absolute;
+            top: 50%;
+            right: 8px;
+            transform: translateY(-50%);
+            width: 26px;
+            height: 26px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #c9b58a;
+            background: transparent;
+            border: 1px solid rgba(139,105,20,0.6);
+            border-radius: 50%;
+        }
+
+        .ntb-close:hover {
+            color: #ffcc33;
+            border-color: #ffcc33;
         }
 
         h1 {
@@ -228,6 +888,10 @@
             display: grid;
             grid-template-columns: 1fr 350px;
             gap: 20px;
+        }
+
+        body[data-nav-layout="sidebar"] .main-content {
+            grid-template-columns: auto 1fr 350px;
         }
 
         .board-container {
@@ -687,13 +1351,24 @@
         }
 
         @media (max-width: 1200px) {
-            .main-content {
+            .main-content,
+            body[data-nav-layout="sidebar"] .main-content {
                 grid-template-columns: 1fr;
             }
 
             .leaderboard {
                 position: relative;
                 top: 0;
+            }
+
+            /* The collapsed rail stays a slim inline strip at every width;
+               only the expanded tree needs to give up sticky/full-height
+               once it's stacked above the board instead of beside it */
+            .side-nav:not(.collapsed) {
+                position: relative;
+                top: 0;
+                width: 100%;
+                max-height: none;
             }
 
             .view-legend:not(.view-legend-compact) {
@@ -703,6 +1378,69 @@
 
             .view-legend-compact {
                 flex-wrap: wrap;
+            }
+        }
+
+        @media (max-width: 760px) {
+            /* Drawer layout: the menu button gets its own row so it can't cover the title */
+            .hamburger-wrap {
+                height: 54px;
+            }
+
+            /* Top bar layout: dropdown panels become full-width sheets under the bar */
+            .menubar {
+                top: 0;
+            }
+
+            .menu-item {
+                position: static;
+            }
+
+            .menu-panel,
+            .menu-panel-right {
+                left: 0;
+                right: 0;
+                top: 100%;
+                margin-top: 6px;
+                flex-direction: column;
+                gap: 14px;
+                max-height: 70vh;
+                overflow-y: auto;
+            }
+
+            .menu-col {
+                min-width: 0;
+            }
+
+            .menu-trigger {
+                padding: 8px 10px;
+                font-size: 14px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            /* Below this, even the stacked/full-width expanded nav from the
+               1200px breakpoint above gets overridden: it becomes an overlay
+               instead so it doesn't crush the board on small screens. The
+               collapsed rail is untouched and stays inline at every width. */
+            .side-nav:not(.collapsed) {
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                bottom: 10px;
+                width: 270px;
+                height: auto;
+                max-height: none;
+                z-index: 2001;
+                box-shadow: 5px 5px 25px rgba(0,0,0,0.6);
+            }
+
+            .side-nav-backdrop.open {
+                display: block;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.6);
+                z-index: 2000;
             }
         }
 
