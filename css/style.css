@@ -1166,10 +1166,6 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
-        .timeline-day.empty .timeline-day-header {
-            background: linear-gradient(135deg, #9c9182 0%, #7d7364 100%);
-        }
-
         .timeline-day-date {
             font-weight: normal;
             font-size: 12px;
@@ -1239,14 +1235,6 @@
             font-size: 12px;
             color: #4a5c3a;
             font-weight: bold;
-        }
-
-        .timeline-day-empty-msg {
-            color: #999;
-            font-style: italic;
-            font-size: 13px;
-            padding: 4px 0 4px 26px;
-            margin-left: 10px;
         }
 
         .timeline-most-active-item {

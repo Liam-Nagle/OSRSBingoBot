@@ -942,12 +942,26 @@
             return itemName.trim().replace(/\s+/g, '_');
         }
 
+        // Wiki file names capitalize each word, except small connector words
+        // (e.g. "Eye of Ayak" -> "Eye_of_Ayak"). Wiki renames occasionally change
+        // just the capitalization of a word (e.g. "ayak" -> "Ayak"), so this is
+        // tried as a fallback alongside the other casing variants below.
+        const WIKI_TITLE_CASE_MINOR_WORDS = new Set(['of', 'the', 'a', 'an', 'in', 'on', 'to', 'and', 'or', 'for', 'with']);
+        function toWikiTitleCase(itemName) {
+            return itemName.trim().split(/\s+/).map((word, i) => {
+                const lower = word.toLowerCase();
+                if (i > 0 && WIKI_TITLE_CASE_MINOR_WORDS.has(lower)) return lower;
+                return lower.charAt(0).toUpperCase() + lower.slice(1);
+            }).join('_');
+        }
+
         function loadItemImage(img, itemName) {
             const baseUrl = 'https://oldschool.runescape.wiki/images/';
 
             const formats = [
                 formatItemName(itemName),
                 itemName.trim().replace(/\s+/g, '_'),
+                toWikiTitleCase(itemName),
                 itemName.trim().toLowerCase().replace(/\s+/g, '_'),
                 itemName.trim().toUpperCase().replace(/\s+/g, '_')
             ];
@@ -2355,6 +2369,8 @@
         let _analyticsEventConfig = null;
         let _lootTableViewMode = 'everyone'; // 'everyone' = one combined table, 'byPlayer' = one table per player
         let _lootTableDrops = []; // last-rendered filtered drops, cached so the view toggle can re-render without refetching
+        let _gearContributionListMode = 'boss_unique'; // 'boss_unique' or 'tier' - see js/gear-data.js
+        let _gearContributionDrops = []; // last-rendered deduped drops, cached so the list toggle can re-render without refetching
 
         function openAnalyticsModal() {
             document.getElementById('analyticsModal').classList.add('active');
@@ -2423,7 +2439,14 @@
         // collapses same player+item rows that land within a few seconds of each other (i.e.
         // a loot/collection_log pair for the same pickup) into one, before any chart/stat sees
         // them. Does not touch the underlying data - only affects what Analytics computes.
-        function dedupeDropsForAnalytics(drops, windowSeconds = 5) {
+        //
+        // windowSeconds default is 60, not 5 - checking real history turned up loot/
+        // collection_log pairs for the same physical pickup arriving anywhere from under a
+        // second up to ~47 seconds apart (notable/rare drops seem to take longer, maybe extra
+        // Discord formatting), so 5s was silently double-counting some of them. An independent
+        // second copy of the same rare item within 60s of the first is effectively impossible
+        // (it'd require another full kill that fast), so this is safe in the other direction too.
+        function dedupeDropsForAnalytics(drops, windowSeconds = 60) {
             const byPlayer = {};
             drops.forEach(d => {
                 (byPlayer[d.player] = byPlayer[d.player] || []).push(d);
@@ -2443,6 +2466,11 @@
                         if (!match.value && d.value) {
                             match.value = d.value;
                             match.value_string = d.value_string;
+                        }
+                        // ...and whichever carries a real quantity (backfilled docs may have
+                        // it on only one side of the loot/collection_log pair).
+                        if (!match.quantity && d.quantity) {
+                            match.quantity = d.quantity;
                         }
                     } else {
                         kept.push(d);
@@ -2493,7 +2521,6 @@
         // fallback we cross-reference drop history: the earliest drop of a
         // matching item is treated as that tile's completion moment.
         let timelineBarChartInstance = null;
-        const TIMELINE_MAX_DAYS = 400; // safety cap so a stale/faraway event start date can't render thousands of rows (events can legitimately run a full year)
 
         function openTimelineModal() {
             document.getElementById('timelineModal').classList.add('active');
@@ -2624,38 +2651,31 @@
 
             resolved.sort((a, b) => a.timestamp - b.timestamp);
 
-            // --- Figure out the day range to render ---
+            // --- Group completions by day (days with no completions are left out) ---
+            // dayNumber still counts from the event start, so gaps in the numbering
+            // (Day 1, Day 2, Day 5) are expected and show the quiet days were skipped.
             const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
             const oneDay = 24 * 60 * 60 * 1000;
 
-            let firstDay = hasEvent
+            const firstDay = hasEvent
                 ? dayStart(eventStart)
                 : dayStart(resolved.length ? resolved[0].timestamp : new Date());
 
-            const lastResolvedDay = resolved.length ? dayStart(resolved[resolved.length - 1].timestamp) : firstDay;
-            const today = dayStart(new Date());
-            const lastDay = new Date(Math.max(lastResolvedDay, today));
-
-            let totalDays = Math.max(1, Math.round((lastDay - firstDay) / oneDay) + 1);
-            if (totalDays > TIMELINE_MAX_DAYS) {
-                // Keep the most recent stretch so "today" is always visible
-                firstDay = new Date(lastDay.getTime() - (TIMELINE_MAX_DAYS - 1) * oneDay);
-                totalDays = TIMELINE_MAX_DAYS;
-            }
-
-            const days = [];
-            for (let i = 0; i < totalDays; i++) {
-                days.push({ dayNumber: i + 1, date: new Date(firstDay.getTime() + i * oneDay), entries: [] });
-            }
-
+            const dayMap = new Map();
             resolved.forEach(entry => {
-                const idx = Math.round((dayStart(entry.timestamp) - firstDay) / oneDay);
-                if (days[idx]) days[idx].entries.push(entry);
+                const day = dayStart(entry.timestamp);
+                const idx = Math.round((day - firstDay) / oneDay);
+                if (idx < 0) return; // completed before the event started
+                if (!dayMap.has(idx)) dayMap.set(idx, { dayNumber: idx + 1, date: day, entries: [] });
+                dayMap.get(idx).entries.push(entry);
             });
+            const days = [...dayMap.values()].sort((a, b) => a.dayNumber - b.dayNumber);
             days.forEach(day => day.entries.sort((a, b) => a.timestamp - b.timestamp));
 
             // --- Render day-by-day timeline ---
-            document.getElementById('timelineDays').innerHTML = days.map(day => renderTimelineDay(day, hasEvent)).join('');
+            document.getElementById('timelineDays').innerHTML = days.length > 0
+                ? days.map(day => renderTimelineDay(day, hasEvent)).join('')
+                : '<p style="text-align: center; color: #999; font-style: italic;">No completions with a known time yet</p>';
 
             // --- Unmatched completions ---
             const unmatchedSection = document.getElementById('timelineUnmatched');
@@ -2679,19 +2699,14 @@
         function renderTimelineDay(day, hasEvent) {
             const dateLabel = day.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
             const heading = hasEvent ? `Day ${day.dayNumber}` : dateLabel;
-            const isEmpty = day.entries.length === 0;
-
-            const entriesHtml = isEmpty
-                ? `<div class="timeline-day-empty-msg">😴 No tiles completed today</div>`
-                : `<div class="timeline-entries">${day.entries.map(renderTimelineEntry).join('')}</div>`;
 
             return `
-                <div class="timeline-day ${isEmpty ? 'empty' : ''}">
+                <div class="timeline-day">
                     <div class="timeline-day-header">
                         <span>📅 ${heading} • ${day.entries.length} tile${day.entries.length === 1 ? '' : 's'}</span>
                         ${hasEvent ? `<span class="timeline-day-date">${dateLabel}</span>` : ''}
                     </div>
-                    ${entriesHtml}
+                    <div class="timeline-entries">${day.entries.map(renderTimelineEntry).join('')}</div>
                 </div>
             `;
         }
@@ -2721,6 +2736,8 @@
             const horizontal = days.length > 10; // long ranges read better as a horizontal bar chart
 
             if (timelineBarChartInstance) timelineBarChartInstance.destroy();
+            timelineBarChartInstance = null;
+            if (days.length === 0) return;
 
             timelineBarChartInstance = new Chart(ctx, {
                 type: 'bar',
@@ -3065,7 +3082,10 @@
                 const startDate = getAnalyticsStartDate();
                 if (startDate) params.append('start_date', startDate);
 
-                const response = await fetch(`${API_URL}/history?${params}`);
+                const [response] = await Promise.all([
+                    fetch(`${API_URL}/history?${params}`),
+                    GearData.loadGearData()
+                ]);
                 if (!response.ok) throw new Error('Failed to fetch history');
 
                 const data = await response.json();
@@ -3111,6 +3131,27 @@
                 generateValueLeaderboardChart(drops);
                 generateLootValueTable(drops);
                 generateMonthComparisonChart(drops);
+
+                // Gear Contribution is deliberately ALWAYS all-time, independent of the
+                // Bingo/All Time toggle above - the whole point of this widget is "who has
+                // contributed the most/least gear ever", so silently scoping it to the
+                // current event's start date would hide anything from before the event began
+                // (found the hard way: a Twisted bow from Nov 2025 vanished because the event
+                // didn't start until Jan 2026). Only re-fetch if we're not already all-time.
+                if (startDate) {
+                    fetch(`${API_URL}/history?limit=10000`)
+                        .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to fetch all-time history')))
+                        .then(allTimeData => {
+                            const allTimeDrops = dedupeDropsForAnalytics((allTimeData.history || []).map(d => ({
+                                ...d,
+                                timestamp: new Date(d.timestamp)
+                            })));
+                            renderGearContribution(allTimeDrops);
+                        })
+                        .catch(err => console.error('Error loading all-time gear contribution data:', err));
+                } else {
+                    renderGearContribution(drops);
+                }
 
                 loadingDiv.style.display = 'none';
                 contentDiv.style.display = 'block';
@@ -4046,6 +4087,124 @@ function updateExpandedChartWithData(chartId, drops, players, playerColors) {
             _lootTableExpandOpen = false;
             document.getElementById('lootTableExpandModal').classList.remove('active');
         }
+
+        // ── Gear Contribution (👑 Boss/Raid Uniques vs ⚔️ Rune-tier+ PvM Gear) ──
+        // See js/gear-data.js for what each list actually counts and why they're
+        // separate definitions rather than one. Reuses the same deduped drop set
+        // (loot + collection_log pairs already collapsed) as the rest of Analytics.
+
+        const GEAR_LIST_DESCRIPTIONS = {
+            boss_unique: 'The actual chase items - twisted bow, scythe, DT2 weapons, GWD sets, boss-exclusive rings, plus shared PvM tools (Dragon pickaxe, Granite hammer). Excludes anything that\'s just GE-buyable/craftable, even if it happens to drop from a boss\'s junk table too.',
+            tier: 'Any rune-tier-or-better weapon, armour, or shield from a real PvM drop (not a shop, clue casket, or minigame reward) - no value cutoff, and no jewelry or ammo in this list.'
+        };
+
+        function switchGearContributionList(mode) {
+            _gearContributionListMode = mode;
+            document.getElementById('gearListBtnBossUnique').classList.toggle('active', mode === 'boss_unique');
+            document.getElementById('gearListBtnTier').classList.toggle('active', mode === 'tier');
+            renderGearContributionList();
+        }
+
+        // Called alongside the other generate*Chart functions with the same filtered drop set.
+        function renderGearContribution(drops) {
+            _gearContributionDrops = drops;
+            renderGearContributionList();
+        }
+
+        function renderGearContributionList() {
+            const container = document.getElementById('gearContributionContent');
+            const descEl = document.getElementById('gearContributionDescription');
+            if (!container) return;
+            descEl.textContent = GEAR_LIST_DESCRIPTIONS[_gearContributionListMode];
+
+            const isBossUnique = _gearContributionListMode === 'boss_unique';
+            const classify = isBossUnique
+                ? (d => GearData.getBossUniqueInfo(d.item))
+                : (d => (GearData.isTierGear(d.item) ? {} : null));
+
+            const byPlayer = {}; // player -> { count, value, items: { itemName -> { count, value, source } } }
+            _gearContributionDrops.forEach(d => {
+                const info = classify(d);
+                if (!info) return;
+                // A single drop event can be a stack ("3x Echo crystal") - quantity defaults to 1
+                // for older docs saved before quantity tracking existed (run !backfill_rarity to
+                // fill those in retroactively).
+                const qty = d.quantity || 1;
+                const p = (byPlayer[d.player] = byPlayer[d.player] || { count: 0, value: 0, items: {} });
+                p.count += qty;
+                p.value += d.value || 0;
+                const itemEntry = (p.items[d.item] = p.items[d.item] || { count: 0, value: 0, source: info.source });
+                itemEntry.count += qty;
+                itemEntry.value += d.value || 0;
+            });
+
+            const leaderboard = Object.entries(byPlayer)
+                .map(([player, stats]) => ({ player, ...stats }))
+                .sort((a, b) => b.count - a.count);
+
+            if (leaderboard.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No matching gear drops in this range yet.</div>';
+                return;
+            }
+
+            const rowClass = (i) => i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : '';
+            const totalCount = leaderboard.reduce((sum, e) => sum + e.count, 0);
+            const totalValue = leaderboard.reduce((sum, e) => sum + e.value, 0);
+
+            let rows = '';
+            leaderboard.forEach((entry, i) => {
+                const detailId = `gearDetail_${i}`;
+                const itemRows = Object.entries(entry.items)
+                    .sort((a, b) => b[1].count - a[1].count)
+                    .map(([name, stats]) => `
+                        <tr>
+                            <td style="padding:5px 10px;">${name}${stats.source ? ` <span style="color:#888;font-size:11px;">(${stats.source})</span>` : ''}</td>
+                            <td style="padding:5px 10px;text-align:center;">${stats.count}</td>
+                            <td style="padding:5px 10px;text-align:right;">${stats.value > 0 ? formatGP(stats.value) + ' gp' : '-'}</td>
+                        </tr>`).join('');
+
+                rows += `
+                    <tr class="${rowClass(i)}" onclick="toggleGearDetail('${detailId}')" style="cursor:pointer;">
+                        <td>${entry.player}</td>
+                        <td>${entry.count}</td>
+                        <td>${formatGP(entry.value)} gp</td>
+                    </tr>
+                    <tr id="${detailId}" hidden>
+                        <td colspan="3" style="background:rgba(0,0,0,0.03);padding:8px 12px;">
+                            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                                <thead><tr style="color:#888;text-align:left;">
+                                    <th style="padding:5px 10px;">Item</th>
+                                    <th style="padding:5px 10px;text-align:center;">Count</th>
+                                    <th style="padding:5px 10px;text-align:right;">Value</th>
+                                </tr></thead>
+                                <tbody>${itemRows}</tbody>
+                            </table>
+                        </td>
+                    </tr>`;
+            });
+
+            container.innerHTML = `
+                <div style="font-size:11px;color:#a89878;margin-bottom:8px;">Click a row to see which items count towards it</div>
+                <table class="boss-contribution-table">
+                    <thead>
+                        <tr><th>Player</th><th>Gear Items</th><th>Total Value</th></tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                        <tr class="rank-total">
+                            <td>Total</td>
+                            <td>${totalCount}</td>
+                            <td>${formatGP(totalValue)} gp</td>
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+        }
+
+        window.toggleGearDetail = function (id) {
+            const el = document.getElementById(id);
+            if (el) el.hidden = !el.hidden;
+        };
 
         function renderLootValueTable(drops, wrapId, metaId) {
             const wrap = document.getElementById(wrapId);
@@ -6347,12 +6506,38 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
-                version: "v2.13.12",
-                date: "2026-08-27",
+                version: "v2.13.15",
+                date: "2026-09-25",
                 title: "New sidebar navigation",
                 changes: [
                     { type: "feature", text: "Replaced the long row of buttons up top with a menu down the left side, grouped into Stats & Records, Board Tools, and (for admins) Admin, so it's much easier to find things." },
                     { type: "feature", text: "Click the ☰ at the top of the menu to collapse it down to just icons (or expand it back out) — like the sidebar in most apps. Your choice is remembered next time you visit." },
+                ]
+            },
+            {
+                version: "v2.13.14",
+                date: "2026-09-24",
+                title: "Cleaner Tile Race timeline",
+                changes: [
+                    { type: "improvement", text: "The Tile Race timeline now skips days where no tiles were completed - both the day-by-day list and the bar chart only show days with activity (day numbers still count from the event start, so a gap like Day 2 → Day 5 means nothing happened in between)" },
+                ]
+            },
+            {
+                version: "v2.13.13",
+                date: "2026-09-10",
+                title: "Gear Contribution tracking",
+                changes: [
+                    { type: "feature", text: "New \"🛡️ Gear Contribution\" tab in Analytics shows who's actually brought in the most gear all-time - toggle between 👑 Boss/Raid Uniques (twisted bow, DT2 weapons, GWD sets, etc.) and ⚔️ Rune-tier+ PvM Gear (any rune-tier-or-better weapon/armour/shield from a real drop), and click a player to see exactly which items count" },
+                    { type: "fix", text: "Drop counts everywhere in Analytics (charts, loot tables, timeline, Gear Contribution) were quietly double-counting some rare drops when the Loot Drop and Collection Log messages for the same pickup arrived more than 5 seconds apart - the matching window is now 60 seconds" },
+                    { type: "improvement", text: "Drops for a stack of the same item (e.g. \"3x Echo crystal\") now count as 3 instead of 1, once backfilled with the updated !backfill_rarity" },
+                ]
+            },
+            {
+                version: "v2.13.12",
+                date: "2026-08-27",
+                title: "Fixed missing item icons",
+                changes: [
+                    { type: "fix", text: "Item icons could disappear after the OSRS Wiki renamed a page (e.g. Eye of Ayak) - icon lookups now also try proper title-case capitalization when matching the wiki's image file names." },
                 ]
             },
             {

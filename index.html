@@ -574,6 +574,7 @@ Dragon warhammer"></textarea>
                     <button onclick="showAnalyticsTab('trends')" id="analyticsTabTrends" class="analytics-tab active">📈 Trends</button>
                     <button onclick="showAnalyticsTab('activity')" id="analyticsTabActivity" class="analytics-tab">🗓️ Activity</button>
                     <button onclick="showAnalyticsTab('items')" id="analyticsTabItems" class="analytics-tab">🏆 Items &amp; Value</button>
+                    <button onclick="showAnalyticsTab('gear')" id="analyticsTabGear" class="analytics-tab">🛡️ Gear Contribution</button>
                 </div>
 
                 <!-- Trends Tab: drops over time -->
@@ -630,6 +631,26 @@ Dragon warhammer"></textarea>
                         <div style="font-size: 11px; color: #a89878; font-style: italic; margin-bottom: 10px;">Only counts drops with a known GE value — untradeable Collection Log items aren't included</div>
                         <div id="lootValueTableMeta" style="font-size: 12px; color: #8b7355; margin-bottom: 10px;"></div>
                         <div id="lootValueTableWrap" onclick="openLootTableExpand()" title="Click to view full-size" style="max-height: 480px; overflow-y: auto; border: 1px solid #e5dcc8; border-radius: 6px; cursor: pointer;"></div>
+                    </div>
+                </div>
+
+                <!-- Gear Contribution Tab -->
+                <div id="analyticsTabContentGear" class="analytics-tab-content">
+                    <div style="font-size: 12px; color: #a89878; font-style: italic; margin-bottom: 14px;">
+                        Always shows all-time totals, regardless of the Bingo/All Time toggle above - this tab exists specifically
+                        to answer "who's contributed the most/least gear ever", including drops from before the current event started.
+                        Counts each loot/collection-log drop once, times its quantity if it was a stack (e.g. "3x Echo crystal") -
+                        older drops logged before quantity tracking existed count as 1 until <code>!backfill_rarity</code> is re-run.
+                        Item classification is a curated, hand-maintained list (see <code>gear-data/</code>) rather than a perfect
+                        algorithm, so it can miss brand-new items.
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <button onclick="switchGearContributionList('boss_unique')" id="gearListBtnBossUnique" class="kc-mode-btn active" style="padding: 6px 14px; font-size: 12px;">👑 Boss/Raid Uniques</button>
+                        <button onclick="switchGearContributionList('tier')" id="gearListBtnTier" class="kc-mode-btn" style="padding: 6px 14px; font-size: 12px;">⚔️ Rune-tier+ PvM Gear</button>
+                    </div>
+                    <div id="gearContributionDescription" style="font-size: 13px; color: #666; margin-bottom: 14px;"></div>
+                    <div id="gearContributionContent">
+                        <div style="text-align: center; color: #666; padding: 40px;">Loading gear contribution data...</div>
                     </div>
                 </div>
 
@@ -1114,6 +1135,9 @@ Dragon warhammer"></textarea>
 
     <!-- html2canvas Library (CDN) - for rendering the shareable event recap card to PNG -->
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+    <!-- Gear Contribution reference data + classifier (loaded before app.js so its functions exist when analytics needs them) -->
+    <script src="js/gear-data.js?v=1.0"></script>
 
     <!-- External JavaScript -->
     <script src="js/app.js?v=3.5"></script>
