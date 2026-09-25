@@ -6508,10 +6508,11 @@ async function loadAnalyticsWithFilters() {
             {
                 version: "v2.13.15",
                 date: "2026-09-25",
-                title: "New sidebar navigation",
+                title: "New menu layouts",
                 changes: [
-                    { type: "feature", text: "Replaced the long row of buttons up top with a menu down the left side, grouped into Stats & Records, Board Tools, and (for admins) Admin, so it's much easier to find things." },
-                    { type: "feature", text: "Click the ☰ at the top of the menu to collapse it down to just icons (or expand it back out) — like the sidebar in most apps. Your choice is remembered next time you visit." },
+                    { type: "feature", text: "The long row of buttons up top is replaced by a proper menu, grouped into Drops, Bosses and Progress. Every sub-page (Trends, Activity, Items & Value, Gear Contribution, and Boss KC's Overview, Leaderboards, Effort and Boss Contribution) is now listed right in the menu, so one click takes you straight to it." },
+                    { type: "feature", text: "Choose the menu layout you like best - a left-hand sidebar (the default), a top bar with dropdowns, or a ☰ Menu button that slides the menu out from the left. Switch any time from the banner at the top and message me in Discord to say which one you prefer. Your choice is remembered." },
+                    { type: "improvement", text: "Show Bonuses now sits just above the board, and Export Data, Changelog and Admin Login are tucked away at the bottom of the menu." },
                 ]
             },
             {
