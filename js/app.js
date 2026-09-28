@@ -6506,6 +6506,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.16",
+                date: "2026-09-28",
+                title: "Changelog closes on click-off",
+                changes: [
+                    { type: "fix", text: "The Changelog window now closes when you click outside it, matching every other popup window instead of requiring you to scroll up to find the X button." },
+                ]
+            },
+            {
                 version: "v2.13.15",
                 date: "2026-09-25",
                 title: "New menu layouts",
@@ -7237,7 +7245,15 @@ async function loadAnalyticsWithFilters() {
             document.body.insertAdjacentHTML('beforeend', modalHtml);
 
             // Show modal
-            document.getElementById('changelogModal').classList.add('active');
+            const changelogModal = document.getElementById('changelogModal');
+            changelogModal.classList.add('active');
+
+            // Close when clicking the backdrop (outside the modal-content box).
+            // This modal is created after DOMContentLoaded, so it misses the
+            // page's global backdrop-click listener and needs its own.
+            changelogModal.addEventListener('click', function(e) {
+                if (e.target === this) closeChangelogModal();
+            });
         }
 
         function closeChangelogModal() {
