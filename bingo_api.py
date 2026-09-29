@@ -1381,55 +1381,72 @@ def backfill_rarity():
 
         try:
             ts = datetime.fromisoformat(ts_raw.replace('Z', '+00:00'))
+            # Discord timestamps parse as timezone-aware (they carry a +00:00
+            # offset), but MongoClient() here isn't configured with tz_aware=True,
+            # so every timestamp read back from history is naive UTC. Subtracting
+            # a naive datetime from an aware one below (docs.sort()) raises
+            # TypeError and crashes the whole request with an unhandled 500 -
+            # normalize to naive UTC here so it matches what history actually
+            # stores, for both that subtraction and the query bounds below.
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
         except (ValueError, AttributeError):
             unmatched += 1
             continue
 
-        rarity = candidate.get('rarity')
-        rarity_1_in = parse_rarity_denominator(rarity)
-        total_value_numeric = candidate.get('total_value_numeric')
-        total_value = candidate.get('total_value')
-        quantity = candidate.get('quantity')
+        # One bad/unexpected candidate (or a transient Mongo hiccup) shouldn't
+        # take down the other ~199 in this same batch with an unhandled 500 -
+        # count it as unmatched and move on, same as any other "couldn't
+        # confidently match this one" case above.
+        try:
+            rarity = candidate.get('rarity')
+            rarity_1_in = parse_rarity_denominator(rarity)
+            total_value_numeric = candidate.get('total_value_numeric')
+            total_value = candidate.get('total_value')
+            quantity = candidate.get('quantity')
 
-        query = {
-            'player': player,
-            'item': item,
-            'timestamp': {
-                '$gte': ts - timedelta(seconds=MATCH_WINDOW_SECONDS),
-                '$lte': ts + timedelta(seconds=MATCH_WINDOW_SECONDS)
-            },
-            '$or': [
-                {'rarity': {'$in': [None, '']}},
-                {'value': {'$in': [0, None]}},
-                {'quantity': {'$exists': False}}
-            ]
-        }
+            query = {
+                'player': player,
+                'item': item,
+                'timestamp': {
+                    '$gte': ts - timedelta(seconds=MATCH_WINDOW_SECONDS),
+                    '$lte': ts + timedelta(seconds=MATCH_WINDOW_SECONDS)
+                },
+                '$or': [
+                    {'rarity': {'$in': [None, '']}},
+                    {'value': {'$in': [0, None]}},
+                    {'quantity': {'$exists': False}}
+                ]
+            }
 
-        docs = list(collections['history'].find(query))
-        if not docs:
+            docs = list(collections['history'].find(query))
+            if not docs:
+                unmatched += 1
+                continue
+
+            # Multiple candidates near the same time (e.g. repeat drops of a common
+            # item) — take the closest match so we don't guess wrong on an unrelated one.
+            docs.sort(key=lambda d: abs((d['timestamp'] - ts).total_seconds()))
+            target_doc = docs[0]
+            matched += 1
+
+            update_fields = {}
+            if rarity and not target_doc.get('rarity'):
+                update_fields['rarity'] = rarity
+                update_fields['rarity_1_in'] = rarity_1_in
+            if total_value_numeric and not target_doc.get('value'):
+                update_fields['value'] = total_value_numeric
+                if total_value:
+                    update_fields['value_string'] = total_value
+            if quantity and 'quantity' not in target_doc:
+                update_fields['quantity'] = quantity
+
+            if update_fields:
+                collections['history'].update_one({'_id': target_doc['_id']}, {'$set': update_fields})
+                updated += 1
+        except Exception as e:
+            print(f"[!] backfill_rarity: skipping one candidate after an error: {e}")
             unmatched += 1
-            continue
-
-        # Multiple candidates near the same time (e.g. repeat drops of a common
-        # item) — take the closest match so we don't guess wrong on an unrelated one.
-        docs.sort(key=lambda d: abs((d['timestamp'] - ts).total_seconds()))
-        target_doc = docs[0]
-        matched += 1
-
-        update_fields = {}
-        if rarity and not target_doc.get('rarity'):
-            update_fields['rarity'] = rarity
-            update_fields['rarity_1_in'] = rarity_1_in
-        if total_value_numeric and not target_doc.get('value'):
-            update_fields['value'] = total_value_numeric
-            if total_value:
-                update_fields['value_string'] = total_value
-        if quantity and 'quantity' not in target_doc:
-            update_fields['quantity'] = quantity
-
-        if update_fields:
-            collections['history'].update_one({'_id': target_doc['_id']}, {'$set': update_fields})
-            updated += 1
 
     return jsonify({
         'success': True,
