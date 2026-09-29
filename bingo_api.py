@@ -1768,6 +1768,7 @@ def get_history():
         end_date = request.args.get('end_date')
         drop_type = request.args.get('type')  # 'loot' or 'collection_log'
         min_value = request.args.get('minValue')  # minimum value filter
+        max_value = request.args.get('maxValue')  # maximum value filter
         search = request.args.get('search')  # item name search
         limit = int(request.args.get('limit', 100))
 
@@ -1786,16 +1787,32 @@ def get_history():
         if drop_type:
             query['drop_type'] = drop_type
 
-        # Minimum value filter
-        if min_value:
-            query['value'] = {'$gte': int(min_value)}
+        # Value range filter (either bound optional, combined into one $gte/$lte dict
+        # so both can be supplied together - e.g. the History page's "100k-1m" range
+        # filter, or its "=500k" filter translated to a ±10% band)
+        if min_value or max_value:
+            query['value'] = {}
+            if min_value:
+                query['value']['$gte'] = float(min_value)
+            if max_value:
+                query['value']['$lte'] = float(max_value)
 
         # Item search filter (case-insensitive)
         if search:
             query['item'] = {'$regex': search, '$options': 'i'}
 
+        # skip supports the History page's lazy-loading - it fetches page after
+        # page (newest first) rather than everything at once, so this is how it
+        # asks for "the next batch after what I've already got".
+        skip = int(request.args.get('skip', 0))
+
+        # Total documents matching the filters (NOT capped by limit) - the
+        # frontend needs this to know when it's reached the end and to show an
+        # accurate "X of Y" count while only a subset has actually been loaded.
+        total = collections['history'].count_documents(query)
+
         # Fetch history from tenant collection
-        history = list(collections['history'].find(query).sort('timestamp', -1).limit(limit))
+        history = list(collections['history'].find(query).sort('timestamp', -1).skip(skip).limit(limit))
 
         # Format results (remove MongoDB _id)
         for item in history:
@@ -1805,7 +1822,8 @@ def get_history():
 
         return jsonify({
             'history': history,
-            'count': len(history)
+            'count': len(history),
+            'total': total
         })
 
     except Exception as e:
