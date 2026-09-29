@@ -1604,34 +1604,6 @@
             }
         }
 
-        function checkValueFilter(dropValue, filter) {
-            /**
-             * Check if a drop value matches the filter criteria
-             */
-
-            if (!filter) return true;
-
-            const value = dropValue || 0;
-
-            switch (filter.operator) {
-                case '>':
-                    return value > filter.value;
-                case '>=':
-                    return value >= filter.value;
-                case '<':
-                    return value < filter.value;
-                case '<=':
-                    return value <= filter.value;
-                case '=':
-                    // Allow 10% tolerance for exact matches
-                    return Math.abs(value - filter.value) < (filter.value * 0.1);
-                case 'range':
-                    return value >= filter.min && value <= filter.max;
-                default:
-                    return true;
-            }
-        }
-
         function clearBoard() {
             if (confirm('Clear all tiles and player progress?\n\n📦 Reminder: if you want to keep this event\'s stats, click "Archive Current Event" FIRST — clearing the board does not archive anything.')) {
                 const currentSize = bingoData.boardSize;
@@ -1995,8 +1967,9 @@
         function openHistoryModal() {
             document.getElementById('historyModal').classList.add('active');
             populateYearSelector();
-            setDateFilter('all'); // Default to all time
             updateHistoryPlayerFilter();
+            setDateFilter('all'); // Default to all time - also triggers the first loadHistory()
+            setupHistoryLazyLoad(); // no-op after the first call, the listener stays attached
         }
 
         function closeHistoryModal() {
@@ -2098,30 +2071,27 @@
             setDateFilter('all');
         }
 
-        function updateHistoryPlayerFilter(historyData = null) {
+        // Populates the player dropdown from the /players endpoint (every player who's
+        // ever had a drop logged) rather than from whatever history page happens to be
+        // loaded - with lazy-loading, the currently-loaded page is only a slice of
+        // history and could easily miss someone whose drops are all further back.
+        async function updateHistoryPlayerFilter() {
             const select = document.getElementById('historyPlayerFilter');
             const currentValue = select.value;
 
-            // Get all unique players from history data (or fall back to tiles)
-            const allPlayers = new Set();
-
-            if (historyData && historyData.length > 0) {
-                // Use actual history data (better!)
-                historyData.forEach(record => {
-                    if (record.player) {
-                        allPlayers.add(record.player);
-                    }
-                });
-            } else {
-                // Fallback: use tile completions
-                bingoData.tiles.forEach(tile => {
-                    tile.completedBy.forEach(player => allPlayers.add(player));
-                });
+            let sortedPlayers = [];
+            try {
+                const response = await fetch(`${API_URL}/players`);
+                const data = await response.json();
+                sortedPlayers = (data.players || []).slice().sort();
+            } catch (error) {
+                console.error('Failed to load player list:', error);
+                // Fall back to tile completions so the dropdown isn't just empty
+                const allPlayers = new Set();
+                bingoData.tiles.forEach(tile => tile.completedBy.forEach(p => allPlayers.add(p)));
+                sortedPlayers = Array.from(allPlayers).sort();
             }
 
-            const sortedPlayers = Array.from(allPlayers).sort();
-
-            // Rebuild dropdown
             select.innerHTML = '<option value="">All Players</option>';
             sortedPlayers.forEach(player => {
                 const option = document.createElement('option');
@@ -2134,186 +2104,254 @@
             if (currentValue && sortedPlayers.includes(currentValue)) {
                 select.value = currentValue;
             }
-
-            if (document.getElementById('historyModal').classList.contains('active')) {
-                filterHistory();
-            }
         }
 
-        async function loadHistory() {
-            const contentDiv = document.getElementById('historyContent');
-            const countSpan = document.getElementById('historyCount');
+        // ── History modal: lazy-loaded, server-filtered ──────────────────────────
+        // Used to fetch a huge history in one go (as many as 1000 drops at once),
+        // then filtered client-side by hiding/showing whatever happened to already
+        // be on the page. That broke down once history grew past that cap - the
+        // oldest drops were silently missing, not just "not shown yet" - and every
+        // filter (Type/Search/Value) only ever searched what was already loaded.
+        //
+        // Now every filter (player/date/type/search/value) is sent to the API as a
+        // real query param, and results come back in bounded pages: 75 at a time,
+        // newest first. Scrolling #historyContent near its bottom fetches the next
+        // page and appends it - the modal never holds more in the DOM than what's
+        // actually been scrolled to, however large history gets.
+        const HISTORY_PAGE_SIZE = 75;
+        let _historyOffset = 0;
+        let _historyTotal = 0;
+        let _historyLoading = false;
+        let _historyDebounceTimer = null;
+        let _historyLazyLoadAttached = false;
+
+        // Builds the shared filter query params (player/date/type/search/value) -
+        // used by both the first page and every "load more" page so they're always
+        // scoped identically.
+        function buildHistoryFilterParams() {
+            const params = new URLSearchParams();
             const playerFilter = document.getElementById('historyPlayerFilter').value;
+            const typeFilter = document.getElementById('historyTypeFilter').value;
+            const searchFilter = document.getElementById('historySearchFilter').value.trim();
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
+            const valueFilter = parseValueFilter(document.getElementById('historyValueFilter').value);
 
+            if (playerFilter) params.append('player', playerFilter);
+            if (typeFilter) params.append('type', typeFilter);
+            if (searchFilter) params.append('search', searchFilter);
+            if (startDate) params.append('start_date', `${startDate}T00:00:00Z`);
+            if (endDate) params.append('end_date', `${endDate}T23:59:59Z`);
+
+            // Every value filter shape translates to a min/max pair the API's
+            // minValue/maxValue ($gte/$lte) can apply directly, so pagination and the
+            // "showing X of Y" total stay exact instead of guessing around a filter
+            // applied only to whatever page happened to load.
+            if (valueFilter) {
+                if (valueFilter.operator === 'range') {
+                    params.append('minValue', Math.floor(valueFilter.min));
+                    params.append('maxValue', Math.ceil(valueFilter.max));
+                } else if (valueFilter.operator === '=') {
+                    // ±10% tolerance for an exact-match filter, same as this app's other "=" value filters
+                    params.append('minValue', Math.floor(valueFilter.value * 0.9));
+                    params.append('maxValue', Math.ceil(valueFilter.value * 1.1));
+                } else if (valueFilter.operator === '>' || valueFilter.operator === '>=') {
+                    params.append('minValue', Math.floor(valueFilter.value));
+                } else if (valueFilter.operator === '<' || valueFilter.operator === '<=') {
+                    params.append('maxValue', Math.ceil(valueFilter.value));
+                }
+            }
+            return params;
+        }
+
+        function renderHistoryRecordHtml(record) {
+            const timestamp = new Date(record.timestamp);
+            const timeAgo = getTimeAgo(timestamp);
+            const dateStr = timestamp.toLocaleDateString();
+            const timeStr = timestamp.toLocaleTimeString();
+
+            let valueDisplay = '';
+            if (record.value && record.value > 0) {
+                if (record.value >= 1000000) {
+                    valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${(record.value / 1000000).toFixed(2)}M gp)</span>`;
+                } else if (record.value >= 1000) {
+                    valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${(record.value / 1000).toFixed(0)}K gp)</span>`;
+                } else {
+                    valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${record.value.toLocaleString()} gp)</span>`;
+                }
+            }
+
+            const tileInfo = record.tileCompleted && record.tilesInfo && record.tilesInfo.length > 0
+                ? `<div style="margin-top: 5px; padding: 5px; background: rgba(76,175,80,0.2); border-radius: 3px; font-size: 11px;">
+                     ✅ Completed Tile ${record.tilesInfo[0].tile}: ${record.tilesInfo[0].items.join(', ')} (+${record.tilesInfo[0].value} points)
+                   </div>`
+                : '<div style="margin-top: 5px; font-size: 11px; color: #999;">No tile completed</div>';
+
+            const deleteBtn = isAdmin
+                ? `<button onclick="deleteHistoryEntry('${record.player}', '${record.item}', '${record.timestamp}')"
+                           style="padding: 4px 8px; background: linear-gradient(135deg, #8b1a1a 0%, #660000 100%); color: white; border: 1px solid #4d0000; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: bold; margin-left: 10px;">
+                     🗑️ Delete
+                   </button>`
+                : '';
+
+            const collectionLogBadge = record.drop_type === 'collection_log'
+                ? '<span style="background: #4CAF50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 8px; font-weight: bold;">📖 COLLECTION LOG</span>'
+                : '';
+
+            return `
+                <div data-drop-row style="background: white; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
+                        <div style="flex: 1;">
+                            <strong style="color: #ffcc33; background: #2c1810; padding: 2px 8px; border-radius: 3px; font-size: 13px;">${record.player}</strong>
+                            <span style="color: #2c1810; margin-left: 10px; font-weight: bold;">received</span>
+                            <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
+                            ${collectionLogBadge}
+                            ${valueDisplay}
+                            ${deleteBtn}
+                        </div>
+                        <div style="text-align: right; font-size: 11px; color: #666;">
+                            <div>${timeAgo}</div>
+                            <div>${dateStr} ${timeStr}</div>
+                        </div>
+                    </div>
+                    ${tileInfo}
+                </div>
+            `;
+        }
+
+        function updateHistoryCountLabel() {
+            const countSpan = document.getElementById('historyCount');
+            const loadedCount = document.querySelectorAll('#historyContent > div[data-drop-row]').length;
+            countSpan.textContent = _historyTotal > 0
+                ? `(showing ${loadedCount.toLocaleString()} of ${_historyTotal.toLocaleString()} drop${_historyTotal !== 1 ? 's' : ''})`
+                : '(0 drops)';
+        }
+
+        // Fresh load - resets to page 1. Called whenever a filter changes or the modal opens.
+        async function loadHistory() {
+            const contentDiv = document.getElementById('historyContent');
             contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">Loading history...</div>';
-            countSpan.textContent = '';
+            document.getElementById('historyCount').textContent = '';
+            _historyOffset = 0;
+            _historyTotal = 0;
 
             try {
-                let url = `${API_URL}/history?limit=1000`;
+                const params = buildHistoryFilterParams();
+                params.append('limit', HISTORY_PAGE_SIZE);
+                params.append('skip', 0);
 
-                if (playerFilter) {
-                    url += `&player=${encodeURIComponent(playerFilter)}`;
-                }
-
-                if (startDate) {
-                    url += `&start_date=${startDate}T00:00:00Z`;
-                }
-
-                if (endDate) {
-                    url += `&end_date=${endDate}T23:59:59Z`;
-                }
-
-                console.log('Fetching history:', url);
-
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error('Failed to fetch history');
-                }
+                const response = await fetch(`${API_URL}/history?${params}`);
+                if (!response.ok) throw new Error('Failed to fetch history');
 
                 const data = await response.json();
+                _historyTotal = data.total ?? data.count ?? 0;
 
-                if (!data.history  || data.history.length === 0) {
+                if (!data.history || data.history.length === 0) {
                     contentDiv.innerHTML = '<div style="text-align: center; color: #666; padding: 40px;">No drops found for this time period!</div>';
-                    countSpan.textContent = '(0 drops)';
+                    document.getElementById('historyCount').textContent = '(0 drops)';
                     return;
                 }
 
-                // Update count
-                countSpan.textContent = `(${data.count} drop${data.count !== 1 ? 's' : ''})`;
-
-                // Render history
-                let html = '';
-                data.history.forEach((record, index) => {
-                    const timestamp = new Date(record.timestamp);
-                    const timeAgo = getTimeAgo(timestamp);
-                    const dateStr = timestamp.toLocaleDateString();
-                    const timeStr = timestamp.toLocaleTimeString();
-
-                    //Format value for display
-                    let valueDisplay = '';
-                    if (record.value && record.value > 0) {
-                        if (record.value >= 1000000) {
-                            valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${(record.value / 1000000).toFixed(2)}M gp)</span>`;
-                        } else if (record.value >= 1000) {
-                            valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${(record.value / 1000).toFixed(0)}K gp)</span>`;
-                        } else {
-                            valueDisplay = `<span style="color: #4CAF50; font-weight: bold; margin-left: 10px;">(${record.value.toLocaleString()} gp)</span>`;
-                        }
-                    }
-
-                    const tileInfo = record.tileCompleted && record.tilesInfo && record.tilesInfo.length > 0
-                        ? `<div style="margin-top: 5px; padding: 5px; background: rgba(76,175,80,0.2); border-radius: 3px; font-size: 11px;">
-                             ✅ Completed Tile ${record.tilesInfo[0].tile}: ${record.tilesInfo[0].items.join(', ')} (+${record.tilesInfo[0].value} points)
-                           </div>`
-                        : '<div style="margin-top: 5px; font-size: 11px; color: #999;">No tile completed</div>';
-
-                    const deleteBtn = isAdmin
-                        ? `<button onclick="deleteHistoryEntry('${record.player}', '${record.item}', '${record.timestamp}')"
-                                   style="padding: 4px 8px; background: linear-gradient(135deg, #8b1a1a 0%, #660000 100%); color: white; border: 1px solid #4d0000; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: bold; margin-left: 10px;">
-                             🗑️ Delete
-                           </button>`
-                        : '';
-
-                    const collectionLogBadge = record.drop_type === 'collection_log'
-                        ? '<span style="background: #4CAF50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 8px; font-weight: bold;">📖 COLLECTION LOG</span>'
-                        : '';
-
-                    //Add data attributes for filtering
-                    html += `
-                        <div style="background: white; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${record.tileCompleted ? '#4CAF50' : '#8B6914'};"
-                             data-player="${record.player}"
-                             data-type="${record.drop_type || 'loot'}"
-                             data-item="${record.item}"
-                             data-dayofweek="${timestamp.getDay()}"
-                             data-hour="${timestamp.getHours()}"
-                             data-value="${record.value || 0}">
-                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
-                                <div style="flex: 1;">
-                                    <strong style="color: #ffcc33; background: #2c1810; padding: 2px 8px; border-radius: 3px; font-size: 13px;">${record.player}</strong>
-                                    <span style="color: #2c1810; margin-left: 10px; font-weight: bold;">received</span>
-                                    <strong style="color: #cd8b2d; margin-left: 5px;">${record.item}</strong>
-                                    ${collectionLogBadge}
-                                    ${valueDisplay}
-                                    ${deleteBtn}
-                                </div>
-                                <div style="text-align: right; font-size: 11px; color: #666;">
-                                    <div>${timeAgo}</div>
-                                    <div>${dateStr} ${timeStr}</div>
-                                </div>
-                            </div>
-                            ${tileInfo}
-                        </div>
-                    `;
-                });
-
-                contentDiv.innerHTML = html;
-
-                // Update player filter with actual history data
-                updateHistoryPlayerFilter(data.history);
+                contentDiv.innerHTML = data.history.map(renderHistoryRecordHtml).join('');
+                _historyOffset = data.history.length;
+                appendHistoryFooter();
+                updateHistoryCountLabel();
+                maybeAutoFillPage();
 
             } catch (error) {
                 console.error('Error loading history:', error);
                 contentDiv.innerHTML = '<div style="text-align: center; color: #8b1a1a; padding: 40px;">❌ Failed to load history. Make sure the API is running.</div>';
-                countSpan.textContent = '';
+                document.getElementById('historyCount').textContent = '';
             }
         }
 
-        function filterHistory() {
-            const playerFilter = document.getElementById('historyPlayerFilter').value;
-            const typeFilter = document.getElementById('historyTypeFilter').value;  // ← ADD THIS
-            const searchFilter = document.getElementById('historySearchFilter').value.toLowerCase();
-            const valueFilterText = document.getElementById('historyValueFilter').value;
+        // Appends the next page after whatever's currently loaded. No-ops if
+        // everything matching the current filters is already on the page.
+        async function loadMoreHistory() {
+            if (_historyLoading || _historyOffset >= _historyTotal) return;
+            _historyLoading = true;
 
-            // Parse value filter
-            const valueFilter = parseValueFilter(valueFilterText);
+            const footer = document.getElementById('historyLoadMoreFooter');
+            if (footer) footer.textContent = '⏳ Loading more…';
 
-            const allRecords = document.querySelectorAll('#historyContent > div');
-            let visibleCount = 0;
+            try {
+                const params = buildHistoryFilterParams();
+                params.append('limit', HISTORY_PAGE_SIZE);
+                params.append('skip', _historyOffset);
 
-            allRecords.forEach(record => {
-                const player = record.dataset.player || '';
-                const type = record.dataset.type || '';  // ← ADD THIS
-                const item = record.dataset.item || '';
-                const value = parseFloat(record.dataset.value) || 0;
+                const response = await fetch(`${API_URL}/history?${params}`);
+                if (!response.ok) throw new Error('Failed to fetch more history');
 
-                let show = true;
+                const data = await response.json();
+                _historyTotal = data.total ?? _historyTotal;
 
-                // Player filter
-                if (playerFilter && player !== playerFilter) {
-                    show = false;
-                }
+                const contentDiv = document.getElementById('historyContent');
+                if (footer) footer.remove();
+                contentDiv.insertAdjacentHTML('beforeend', (data.history || []).map(renderHistoryRecordHtml).join(''));
+                _historyOffset += (data.history || []).length;
 
-                // Type filter  ← ADD THIS SECTION
-                if (typeFilter && type !== typeFilter) {
-                    show = false;
-                }
+                appendHistoryFooter();
+                updateHistoryCountLabel();
+            } catch (error) {
+                console.error('Error loading more history:', error);
+                if (footer) footer.textContent = '⚠️ Failed to load more - scroll to retry';
+            } finally {
+                _historyLoading = false;
+                maybeAutoFillPage();
+            }
+        }
 
-                // Search filter
-                if (searchFilter && !item.toLowerCase().includes(searchFilter)) {
-                    show = false;
-                }
+        // If a loaded page doesn't even fill the modal's scrollable area (a tall
+        // viewport, or a near-empty final page), there's no scrollbar for the user to
+        // scroll, so the scroll-triggered loader in setupHistoryLazyLoad() would never
+        // fire even though more history exists. Keeps fetching until the page is
+        // actually scrollable or history runs out.
+        function maybeAutoFillPage() {
+            const contentDiv = document.getElementById('historyContent');
+            if (_historyOffset < _historyTotal && contentDiv.scrollHeight <= contentDiv.clientHeight + 10) {
+                loadMoreHistory();
+            }
+        }
 
-                // Value filter
-                if (!checkValueFilter(value, valueFilter)) {
-                    show = false;
-                }
+        function appendHistoryFooter() {
+            const contentDiv = document.getElementById('historyContent');
+            const old = document.getElementById('historyLoadMoreFooter');
+            if (old) old.remove();
 
-                record.style.display = show ? '' : 'none';
-                if (show) visibleCount++;
+            const footer = document.createElement('div');
+            footer.id = 'historyLoadMoreFooter';
+            footer.style.cssText = 'text-align:center; padding:12px; color:#888; font-size:12px;';
+            footer.textContent = _historyOffset < _historyTotal ? 'Scroll for more…' : '— end of history —';
+            contentDiv.appendChild(footer);
+        }
+
+        // Attached once - #historyContent is the modal's own scrollable area
+        // (max-height + overflow-y: auto), so watching its scroll position (rather
+        // than the window's) is what actually detects "user reached the bottom".
+        function setupHistoryLazyLoad() {
+            if (_historyLazyLoadAttached) return;
+            _historyLazyLoadAttached = true;
+            const contentDiv = document.getElementById('historyContent');
+            contentDiv.addEventListener('scroll', () => {
+                const nearBottom = contentDiv.scrollTop + contentDiv.clientHeight >= contentDiv.scrollHeight - 150;
+                if (nearBottom) loadMoreHistory();
             });
+        }
 
-            // Update count
-            const totalCount = allRecords.length;
-            document.getElementById('historyCount').textContent = `(${visibleCount} of ${totalCount} drop${totalCount !== 1 ? 's' : ''})`;
+        // Every filter control calls this. Text inputs (Search/Value) fire on every
+        // keystroke, so this debounces to one request ~350ms after typing stops
+        // rather than one per character; dropdown/date changes just pay that same
+        // short, imperceptible delay.
+        function filterHistory() {
+            clearTimeout(_historyDebounceTimer);
+            _historyDebounceTimer = setTimeout(loadHistory, 350);
         }
 
         function clearAllFilters() {
             document.getElementById('historyPlayerFilter').value = '';
             document.getElementById('historyValueFilter').value = '';
             document.getElementById('historySearchFilter').value = '';
-            filterHistory();
+            loadHistory();
         }
 
         function getTimeAgo(date) {
@@ -6515,7 +6553,7 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
-                version: "v2.13.18",
+                version: "v2.13.19",
                 date: "2026-09-29",
                 title: "Rank widget links to Rank History",
                 changes: [
@@ -6523,11 +6561,20 @@ async function loadAnalyticsWithFilters() {
                 ]
             },
             {
-                version: "v2.13.17",
+                version: "v2.13.18",
                 date: "2026-09-29",
                 title: "Total Value Looted links to the Loot Table",
                 changes: [
                     { type: "improvement", text: "Clicking the 💰 Total Value Looted widget at the top of the page now jumps straight to the Loot Table (By Value) in Analytics instead of doing nothing." },
+                ]
+            },
+            {
+                version: "v2.13.17",
+                date: "2026-09-30",
+                title: "Drop History no longer caps out at 1000",
+                changes: [
+                    { type: "fix", text: "Drop History was silently capped at the 1000 most recent drops, so older ones simply didn't appear no matter how far you scrolled. It now keeps loading more as you scroll down, all the way back through your full history." },
+                    { type: "improvement", text: "Type/Search/Value filters in Drop History now search your entire history instead of only whatever was already on screen." },
                 ]
             },
             {
