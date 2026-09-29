@@ -2415,6 +2415,15 @@
             loadAnalyticsEventConfig().then(() => loadAnalytics());
         }
 
+        // Total Value Looted widget -> jump straight to the Loot Table (By Value)
+        function openLootValueTable() {
+            openAnalyticsModal();
+            showAnalyticsTab('items');
+            requestAnimationFrame(() => {
+                document.getElementById('lootValueTableSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
+
         // Fetch the active event's config so analytics can be scoped to "current bingo"
         async function loadAnalyticsEventConfig() {
             try {
@@ -6543,6 +6552,22 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.19",
+                date: "2026-09-29",
+                title: "Rank widget links to Rank History",
+                changes: [
+                    { type: "improvement", text: "The Group rank/prestige/XP widget at the top of the page now opens Group Rank History when clicked, on top of the existing menu link - so there are two quick ways to get there." },
+                ]
+            },
+            {
+                version: "v2.13.18",
+                date: "2026-09-29",
+                title: "Total Value Looted links to the Loot Table",
+                changes: [
+                    { type: "improvement", text: "Clicking the 💰 Total Value Looted widget at the top of the page now jumps straight to the Loot Table (By Value) in Analytics instead of doing nothing." },
+                ]
+            },
             {
                 version: "v2.13.17",
                 date: "2026-09-30",
