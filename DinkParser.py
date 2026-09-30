@@ -719,6 +719,19 @@ def parse_drop_embed(embed, message):
         if 'item rarity' in field_name_lower or 'drop rate' in field_name_lower:
             drop_info['rarity'] = field_value
 
+    # Loot Drop embeds put "From: [Boss](url)" in the description rather than
+    # a dedicated field (Collection Log embeds use a real field, which the
+    # loop above already handles) - the field-only check left every Loot Drop
+    # entry's source blank, which silently broke anything keyed off source
+    # (e.g. the recap's per-boss luck badges, which just skip an unattributed
+    # drop rather than guess, so it undercounted every boss's actual drops).
+    if not drop_info['source'] and embed.description:
+        from_match = re.search(r'From:\s*\[([^\]]+)\]', embed.description)
+        if not from_match:
+            from_match = re.search(r'From:\s*([^\n(]+)', embed.description)
+        if from_match:
+            drop_info['source'] = from_match.group(1).strip()
+
     # Always check description for items (especially loot drops with values)
     if embed.description:
         # Collection Log format
@@ -1083,7 +1096,7 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
             item = drop_data['items'][0]
             needs_value_fix = not item.get('value_numeric', 0) and drop_data.get('total_value_numeric')
             item_quantity = item.get('quantity', 1)
-            if not drop_data.get('rarity') and not needs_value_fix and item_quantity <= 1:
+            if not drop_data.get('rarity') and not needs_value_fix and item_quantity <= 1 and not drop_data.get('source'):
                 continue  # nothing this drop could improve
 
             candidates.append({
@@ -1092,6 +1105,7 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
                 'timestamp': message.created_at.isoformat(),
                 'quantity': item_quantity,
                 'rarity': drop_data.get('rarity'),
+                'source': drop_data.get('source'),
                 'total_value_numeric': drop_data.get('total_value_numeric'),
                 'total_value': drop_data.get('total_value')
             })

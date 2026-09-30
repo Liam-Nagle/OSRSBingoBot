@@ -52,6 +52,7 @@
 
   "serpentine visage": { "source": "Zulrah", "category": "armour", "_note": "The actual drop - becomes Serpentine helm with a chisel. Zulrah never drops the finished helm." },
   "tanzanite fang": { "source": "Zulrah", "category": "weapon", "_note": "The actual drop - becomes Toxic blowpipe with a chisel. Zulrah never drops the finished blowpipe." },
+  "uncut onyx": { "source": "Zulrah", "category": "material" },
   "magic fang": { "source": "Zulrah", "category": "weapon", "_note": "Combines with a Staff of the Dead or uncharged Trident of the seas to make the Toxic staff of the dead / Trident of the swamp. Not a trophy - corrected after being wrongly excluded earlier." },
   "tanzanite mutagen": { "source": "Zulrah", "category": "material" },
   "magma mutagen": { "source": "Zulrah", "category": "material" },
@@ -59,6 +60,9 @@
   "primordial crystal": { "source": "Cerberus", "category": "armour", "_note": "The actual drop - becomes Primordial boots when combined with Dragon boots. Cerberus never drops the finished boots." },
   "pegasian crystal": { "source": "Cerberus", "category": "armour", "_note": "Becomes Pegasian boots when combined with Ranger boots." },
   "eternal crystal": { "source": "Cerberus", "category": "armour", "_note": "Becomes Eternal boots when combined with Infinity boots." },
+
+  "ancient icon": { "source": "Phantom Muspah", "category": "jewelry" },
+  "venator shard": { "source": "Phantom Muspah", "category": "jewelry" },
 
   "occult necklace": { "source": "Thermonuclear Smoke Devil", "category": "jewelry" },
   "imbued heart": { "source": "Superior slayer monsters", "category": "utility", "_note": "Not equipable (it's activated, not worn) and not tied to one specific boss - drops from any 'superior' Slayer monster spawn. Still a genuinely rare (500k+) shared item, so it counts." },
@@ -149,7 +153,7 @@
   "bludgeon claw": { "source": "Abyssal Sire", "category": "weapon" },
   "bludgeon spine": { "source": "Abyssal Sire", "category": "weapon" },
   "abyssal dagger": { "source": "Abyssal Sire", "category": "weapon" },
-  "unsired": { "source": "Abyssal Sire", "category": "material", "_note": "Guaranteed common byproduct, not a rare unique on its own" },
+  "unsired": { "source": "Abyssal Sire", "category": "material", "_notable": false, "_note": "A flat 1/100 per kill, but it's a stepping stone into a second random roll (which real item you get from the pool) that Dink never records as a boss drop - we have no visibility into that roll, so counting Unsired itself tells us nothing about luck at this boss." },
 
   "giantsoul amulet": { "source": "Branda the Fire Queen/Eldric the Ice King", "category": "jewelry" },
   "trident of the seas": { "source": "Kraken", "category": "weapon" },

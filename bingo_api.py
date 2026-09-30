@@ -1335,12 +1335,13 @@ def record_history_only():
 @limiter.limit("60 per minute")
 def backfill_rarity():
     """
-    Enrich already-saved history documents with rarity/value/quantity data
-    re-scraped from old Discord messages (see DinkParser.py's !backfill_rarity
-    command). This never inserts new history entries and never overwrites a
-    document that already has a field set - it only fills gaps left by drops
-    logged before that field existed (rarity/value predate quantity tracking
-    entirely, so every pre-existing doc is missing it).
+    Enrich already-saved history documents with rarity/value/quantity/source
+    data re-scraped from old Discord messages (see DinkParser.py's
+    !backfill_rarity command). This never inserts new history entries and
+    never overwrites a document that already has a field set - it only
+    fills gaps left by drops logged before that field existed, or (for
+    source) logged before Loot Drop embeds' "From:" line - which lives in
+    the description, not a dedicated field - was parsed at all.
 
     Each candidate is matched to an existing history doc by player + item +
     closest timestamp within a short window (drops predating rarity tracking
@@ -1404,6 +1405,7 @@ def backfill_rarity():
             total_value_numeric = candidate.get('total_value_numeric')
             total_value = candidate.get('total_value')
             quantity = candidate.get('quantity')
+            source = candidate.get('source')
 
             query = {
                 'player': player,
@@ -1415,7 +1417,8 @@ def backfill_rarity():
                 '$or': [
                     {'rarity': {'$in': [None, '']}},
                     {'value': {'$in': [0, None]}},
-                    {'quantity': {'$exists': False}}
+                    {'quantity': {'$exists': False}},
+                    {'source': {'$in': [None, '']}}
                 ]
             }
 
@@ -1440,6 +1443,8 @@ def backfill_rarity():
                     update_fields['value_string'] = total_value
             if quantity and 'quantity' not in target_doc:
                 update_fields['quantity'] = quantity
+            if source and not target_doc.get('source'):
+                update_fields['source'] = source
 
             if update_fields:
                 collections['history'].update_one({'_id': target_doc['_id']}, {'$set': update_fields})
@@ -2119,6 +2124,28 @@ BOSS_NAME_ALIASES = {
 }
 
 
+def _load_notable_item_names():
+    """
+    Item names (lowercase) from gear-data/boss-unique-items.json - the
+    curated "is this actually the chase drop" list also used by gear
+    tracking. A drop having a droprate Dink will show (e.g. Muspah's Frozen
+    cache, Duke's Frozen tablet) doesn't mean it's the item people grind the
+    boss for, so the luck badges only count items on this list rather than
+    anything with a rarity_1_in.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-unique-items.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            items = json.load(f)
+        return {name for name, info in items.items() if info.get('_notable', True)}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-unique-items.json for luck badges: {e}")
+        return set()
+
+
+NOTABLE_ITEM_NAMES = _load_notable_item_names()
+
+
 def normalize_boss_name(name):
     """
     Best-effort reduction of a free-text NPC/source name (as Dink sends it,
@@ -2135,6 +2162,46 @@ def normalize_boss_name(name):
     slug = re.sub(r'^the\s+', '', slug)
     slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_')
     return BOSS_NAME_ALIASES.get(slug, slug)
+
+
+def _dedupe_drops_for_recap(docs, window_seconds=60):
+    """
+    Loot Drop and Collection Log are two separate Discord messages - and two
+    separate history documents - for the same real pickup, arriving up to
+    ~60s apart. Ports js/app.js's dedupeDropsForAnalytics so the recap's own
+    server-side stats (drop counts, GP totals, rarest drop, luck badges)
+    don't double-count a drop just because it exists in both forms, merging
+    together whichever fields each twin happens to carry.
+    """
+    by_player = {}
+    for d in docs:
+        by_player.setdefault(d.get('player'), []).append(d)
+
+    result = []
+    for player_docs in by_player.values():
+        player_docs.sort(key=lambda d: d.get('timestamp') or datetime.min)
+        kept = []
+        for d in player_docs:
+            match = next((
+                k for k in kept
+                if k.get('item') == d.get('item') and k.get('timestamp') and d.get('timestamp')
+                and abs((k['timestamp'] - d['timestamp']).total_seconds()) <= window_seconds
+            ), None)
+            if match:
+                if not match.get('value') and d.get('value'):
+                    match['value'] = d['value']
+                    match['value_string'] = d.get('value_string')
+                if not match.get('quantity') and d.get('quantity'):
+                    match['quantity'] = d['quantity']
+                if not match.get('source') and d.get('source'):
+                    match['source'] = d['source']
+                if not match.get('rarity_1_in') and d.get('rarity_1_in'):
+                    match['rarity_1_in'] = d['rarity_1_in']
+                    match['rarity'] = d.get('rarity')
+            else:
+                kept.append(dict(d))
+        result.extend(kept)
+    return result
 
 
 def compute_event_recap(collections, start_date, end_date, board_doc=None):
@@ -2221,7 +2288,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
     # need to compare actual drops against an expected count from KC gained.
     boss_item_rarity = {}  # boss_key -> {item: rarity_1_in}
     player_boss_notable = {}  # player -> {boss_key: count}
-    for d in collections['history'].find(match_query):
+    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
         player = d.get('player')
         if not player:
             continue
@@ -2239,11 +2306,17 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         if value > 0 and (biggest_drop is None or value > biggest_drop[0]):
             biggest_drop = (value, player, d.get('item'))
 
+        # A drop can carry a rarity_1_in Dink happens to show without being the
+        # actual chase item for that boss (e.g. Muspah's Frozen cache, Duke's
+        # Frozen tablet) - only count it as "notable" if it's on the curated
+        # boss-unique-items list, so neither the Rarest Drop badge nor the luck
+        # badges below can be swayed by a common item that happens to have odds.
         r1 = d.get('rarity_1_in')
-        if r1 and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
+        is_notable = bool(r1) and (d.get('item') or '').strip().lower() in NOTABLE_ITEM_NAMES
+        if is_notable and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
             stats['rarest_drop'] = (r1, d.get('item'), d.get('rarity'))
 
-        if r1:
+        if is_notable:
             boss_key = normalize_boss_name(d.get('source'))
             if boss_key:
                 boss_item_rarity.setdefault(boss_key, {})[d.get('item')] = r1
