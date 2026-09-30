@@ -305,7 +305,9 @@
             most_consistent: { emoji: '📅', label: 'Most Consistent', desc: 'Logged drops on the most different days' },
             top_grinder: { emoji: '⚔️', label: 'Top Grinder', desc: 'Most KC gained this event' },
             first_blood: { emoji: '🥇', label: 'First Blood', desc: "Completed the event's very first tile" },
-            closer: { emoji: '🌒', label: 'Closer', desc: "Completed the event's last tile" }
+            closer: { emoji: '🌒', label: 'Closer', desc: "Completed the event's last tile" },
+            tiny_violin: { emoji: '🎻', label: 'Tiny Violin', desc: 'Furthest below expected drops for their kill count — the driest streak on the team' },
+            silver_spoon: { emoji: '🥄', label: 'Silver Spoon', desc: 'Furthest above expected drops for their kill count — the luckiest streak on the team' }
         };
 
         function formatRecapGp(value) {
@@ -357,6 +359,13 @@
             }
             if (data.rarest_drop) {
                 highlightsHtml += `<div class="recap-highlight">💎 Rarest drop: <strong>${data.rarest_drop.item}</strong> (${formatRarityText(data.rarest_drop.rarity)})</div>`;
+            }
+            if (typeof data.luck_score === 'number' && (data.badges || []).some(b => b === 'tiny_violin' || b === 'silver_spoon')) {
+                const magnitude = Math.abs(data.luck_score).toFixed(2);
+                const verdict = data.luck_score < 0
+                    ? `${magnitude} drops below what their kills should've produced`
+                    : `${magnitude} drops above what their kills should've produced`;
+                highlightsHtml += `<div class="recap-highlight">${data.luck_score < 0 ? '🎻' : '🥄'} Luck score: <strong>${verdict}</strong></div>`;
             }
             const firstDate = formatRecapDate(data.first_tile_at);
             const lastDate = formatRecapDate(data.last_tile_at);
@@ -6552,6 +6561,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.20",
+                date: "2026-09-30",
+                title: "Event Recap gets two new luck badges",
+                changes: [
+                    { type: "feature", text: "Added '🎻 Tiny Violin' and '🥄 Silver Spoon' to the Event Recap card — awarded to the driest and luckiest players on the team, based on how their actual notable drops compared to what their kill count should've produced" },
+                ]
+            },
             {
                 version: "v2.13.19",
                 date: "2026-09-29",

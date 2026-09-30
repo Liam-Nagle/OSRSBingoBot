@@ -2107,6 +2107,36 @@ def is_within_event_window(timestamp=None, tenant_id=None):
 # EVENT RECAP + ARCHIVE
 # ============================================
 
+# A handful of Dink's NPC source names don't reduce to their WiseOldMan boss
+# key under the generic normalization below (WOM drops a leading "Barrows
+# Chest(s)" down to "barrows_chests" but Dink's source text varies) — mapped
+# by hand rather than guessed, since a wrong guess would attribute KC to the
+# wrong boss instead of just skipping it.
+BOSS_NAME_ALIASES = {
+    'barrows': 'barrows_chests',
+    'barrows_chest': 'barrows_chests',
+    'hydra': 'alchemical_hydra',
+}
+
+
+def normalize_boss_name(name):
+    """
+    Best-effort reduction of a free-text NPC/source name (as Dink sends it,
+    e.g. "K'ril Tsutsaroth", "The Nightmare") to the snake_case boss key
+    WiseOldMan uses (e.g. "kril_tsutsaroth", "nightmare"). Used only to join
+    drop history to KC-gained-per-boss for the recap's luck badges — a name
+    that doesn't resolve to a known boss key just fails the lookup later and
+    is excluded from that calculation, rather than being misattributed.
+    """
+    if not name:
+        return None
+    slug = name.strip().lower()
+    slug = slug.replace("'", '')
+    slug = re.sub(r'^the\s+', '', slug)
+    slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_')
+    return BOSS_NAME_ALIASES.get(slug, slug)
+
+
 def compute_event_recap(collections, start_date, end_date, board_doc=None):
     """
     Compute per-player recap stats + team-wide superlative badges for the given
@@ -2185,6 +2215,12 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 
     drop_stats = {}
     biggest_drop = None  # (value, player, item)
+    # Per-boss droprates for whatever notable (known-rarity) items the team
+    # actually pulled this event, and each player's notable-drop count per
+    # boss — the two ingredients the luck badges (tiny_violin/silver_spoon)
+    # need to compare actual drops against an expected count from KC gained.
+    boss_item_rarity = {}  # boss_key -> {item: rarity_1_in}
+    player_boss_notable = {}  # player -> {boss_key: count}
     for d in collections['history'].find(match_query):
         player = d.get('player')
         if not player:
@@ -2207,6 +2243,13 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         if r1 and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
             stats['rarest_drop'] = (r1, d.get('item'), d.get('rarity'))
 
+        if r1:
+            boss_key = normalize_boss_name(d.get('source'))
+            if boss_key:
+                boss_item_rarity.setdefault(boss_key, {})[d.get('item')] = r1
+                player_boss_notable.setdefault(player, {})
+                player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1
+
     rarest_drop_overall = None  # (rarity_1_in, player)
     for player, stats in drop_stats.items():
         if stats['rarest_drop'] and (rarest_drop_overall is None or stats['rarest_drop'][0] > rarest_drop_overall[0]):
@@ -2214,17 +2257,55 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 
     # --- KC gained per player, reusing the same start-vs-latest snapshot diff as /kc/player/<name> ---
     kc_gained = {}
+    kc_gained_by_boss = {}  # player -> {boss_key: gained}, feeds the luck badges below
     for snap_player in collections['kc'].distinct('player'):
         start_snap = collections['kc'].find_one({'player': snap_player, 'snapshot_type': 'start'}, sort=[('timestamp', 1)])
         current_snap = collections['kc'].find_one({'player': snap_player}, sort=[('timestamp', -1)])
         if start_snap and current_snap:
             total_gained = 0
+            player_bosses = {}
             for boss, current_kc in current_snap.get('bosses', {}).items():
                 gained = current_kc - start_snap.get('bosses', {}).get(boss, 0)
                 if gained > 0:
                     total_gained += gained
+                    # Stored under the display name (e.g. "Abyssal Sire") — normalize it
+                    # to the same key space as boss_item_rarity below (keyed from Dink's
+                    # drop-history source text) so the two can actually be joined.
+                    boss_key = normalize_boss_name(boss)
+                    if boss_key:
+                        player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
             if total_gained > 0:
                 kc_gained[snap_player] = total_gained
+                kc_gained_by_boss[snap_player] = player_bosses
+
+    # --- luck score (tiny_violin/silver_spoon): expected-vs-actual notable drops ---
+    # For every boss a player gained KC in that the team also pulled at least one
+    # known-rarity ("notable") item from this event, expected notable drops =
+    # KC gained * sum(1/rarity) over each distinct notable item type seen at that
+    # boss. Summing (actual - expected) across a player's bosses gives a single
+    # "drops above/below what their kills should have produced" score — bosses
+    # with no team-observed notable drop this event have no droprate to compare
+    # against, so they're simply skipped rather than guessed at.
+    luck_score = {}
+    for player, boss_kc in kc_gained_by_boss.items():
+        total = 0.0
+        eligible = False
+        for boss_key, gained in boss_kc.items():
+            rates = boss_item_rarity.get(boss_key)
+            if not rates:
+                continue
+            expected = gained * sum(1.0 / r for r in rates.values())
+            actual = player_boss_notable.get(player, {}).get(boss_key, 0)
+            total += actual - expected
+            eligible = True
+        if eligible:
+            luck_score[player] = total
+
+    tiny_violin_player = None
+    silver_spoon_player = None
+    if len(luck_score) >= 2:
+        tiny_violin_player = min(luck_score, key=luck_score.get)
+        silver_spoon_player = max(luck_score, key=luck_score.get)
 
     roster = set(player_scores) | set(drop_stats) | set(kc_gained)
 
@@ -2255,6 +2336,10 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
             badges.append('first_blood')
         if event_latest and event_latest[1] == player:
             badges.append('closer')
+        if tiny_violin_player == player:
+            badges.append('tiny_violin')
+        if silver_spoon_player == player:
+            badges.append('silver_spoon')
 
         stats = drop_stats.get(player, {})
         most_valuable = stats.get('most_valuable')
@@ -2270,6 +2355,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
             'most_valuable_drop': {'item': most_valuable[1], 'value': most_valuable[0]} if most_valuable else None,
             'rarest_drop': {'item': rarest[1], 'rarity': rarest[2]} if rarest else None,
             'kc_gained': kc_gained.get(player, 0),
+            'luck_score': round(luck_score[player], 2) if player in luck_score else None,
             'first_tile': tile_dates.get('first_tile'),
             'first_tile_at': tile_dates.get('first'),
             'last_tile': tile_dates.get('last_tile'),
