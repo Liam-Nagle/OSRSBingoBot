@@ -511,6 +511,17 @@ def _dump_raw_embed_lines(message, embed):
     return lines
 
 
+def _looks_like_dink_rarity(raw):
+    """
+    Dink's real Item Rarity/Drop Rate field value is always wrapped in a
+    Discord code block, e.g. '```\\n1 in 512.5 (0.195%)\\n```' - confirmed
+    against every raw embed checked via !debug_embed. A bare "1 in X" with
+    no code block doesn't match anything Dink actually sends, so it's a
+    reliable signal that a captured rarity isn't trustworthy.
+    """
+    return bool(raw) and raw.strip().startswith('```')
+
+
 @bot.event
 async def on_message(message):
     # Always process commands first (for !import_history, !stats, etc.)
@@ -540,16 +551,31 @@ async def on_message(message):
             drop_type = 'collection_log'
 
     if drop_type:
-        # TEMPORARY: log exactly what this handler sees at the instant the message
-        # first arrives, to compare against a !debug_embed dump of the same message
-        # done later - chasing a bug where the live-captured rarity sometimes doesn't
-        # match what the (never-edited) message shows on a later fetch. Remove once resolved.
-        print("=== RAW EMBED (live on_message) ===")
-        for line in _dump_raw_embed_lines(message, embed):
-            print(line)
-        print("=== END RAW EMBED ===")
-
         drop_data = parse_drop_embed(embed, message)
+
+        if drop_data and drop_data.get('rarity') and not _looks_like_dink_rarity(drop_data['rarity']):
+            # Dink's real Item Rarity/Drop Rate field is always wrapped in a Discord
+            # code block - this doesn't match that, so it isn't a faithful capture of
+            # what Dink actually sent (root cause still unconfirmed; happens on an
+            # unpredictable subset of live messages). Re-fetch this exact message via
+            # the REST API, which has consistently returned the correct, settled data
+            # in every case checked so far, and use that instead of trusting the value
+            # the live gateway payload handed us.
+            print(f"[!] Suspicious live rarity on message {message.id} ({drop_data['rarity']!r}) - re-verifying via fetch")
+            try:
+                await asyncio.sleep(1)
+                fresh_message = await message.channel.fetch_message(message.id)
+                fresh_embed = fresh_message.embeds[0] if fresh_message.embeds else None
+                fresh_data = parse_drop_embed(fresh_embed, fresh_message) if fresh_embed else None
+                if fresh_data and _looks_like_dink_rarity(fresh_data.get('rarity')):
+                    print(f"[OK] Corrected rarity on message {message.id}: {fresh_data['rarity']!r}")
+                    drop_data['rarity'] = fresh_data['rarity']
+                else:
+                    print(f"[!] Re-fetch still didn't return a well-formed rarity on message {message.id} - leaving it unset rather than storing a value we don't trust")
+                    drop_data['rarity'] = None
+            except Exception as e:
+                print(f"[!] Could not re-verify rarity on message {message.id}: {e} - leaving it unset")
+                drop_data['rarity'] = None
 
         if drop_data:
             drop_data['drop_type'] = drop_type  # Add drop type to data
