@@ -493,6 +493,24 @@ async def on_ready():
     print('  !stats [player] - Show drop statistics')
 
 
+def _dump_raw_embed_lines(message, embed):
+    """
+    Raw, verbatim embed field names/values (repr'd, so hidden whitespace or
+    a duplicate field name would be visible) - shared by the live on_message
+    logging below and the !debug_embed command, so their output is directly
+    comparable when chasing the intermittent bad-rarity bug.
+    """
+    lines = [
+        f"Message {message.id} | created={message.created_at.isoformat()} | "
+        f"edited={message.edited_at.isoformat() if message.edited_at else 'never'} | title={embed.title!r}"
+    ]
+    if embed.description:
+        lines.append(f"  description: {embed.description!r}")
+    for f in embed.fields:
+        lines.append(f"  field name={f.name!r}  value={f.value!r}")
+    return lines
+
+
 @bot.event
 async def on_message(message):
     # Always process commands first (for !import_history, !stats, etc.)
@@ -522,6 +540,15 @@ async def on_message(message):
             drop_type = 'collection_log'
 
     if drop_type:
+        # TEMPORARY: log exactly what this handler sees at the instant the message
+        # first arrives, to compare against a !debug_embed dump of the same message
+        # done later - chasing a bug where the live-captured rarity sometimes doesn't
+        # match what the (never-edited) message shows on a later fetch. Remove once resolved.
+        print("=== RAW EMBED (live on_message) ===")
+        for line in _dump_raw_embed_lines(message, embed):
+            print(line)
+        print("=== END RAW EMBED ===")
+
         drop_data = parse_drop_embed(embed, message)
 
         if drop_data:
@@ -1112,15 +1139,7 @@ async def debug_embed(ctx, item_name: str, channel_id: str = None, start_date: s
             continue
 
         found += 1
-        lines = [
-            f"**Message {message.id}** | created={message.created_at.isoformat()} | "
-            f"edited={message.edited_at.isoformat() if message.edited_at else 'never'} | title={embed.title!r}"
-        ]
-        if embed.description:
-            lines.append(f"  description: {embed.description!r}")
-        for f in embed.fields:
-            lines.append(f"  field name={f.name!r}  value={f.value!r}")
-        block = "\n".join(lines)
+        block = "\n".join(_dump_raw_embed_lines(message, embed))
         print(block)  # full fidelity goes to the console/log file
         # Discord field/message limits mean we only echo a trimmed version in-channel
         await ctx.send(f"```\n{block[:1900]}\n```")
