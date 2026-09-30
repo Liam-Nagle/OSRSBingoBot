@@ -493,6 +493,35 @@ async def on_ready():
     print('  !stats [player] - Show drop statistics')
 
 
+def _dump_raw_embed_lines(message, embed):
+    """
+    Raw, verbatim embed field names/values (repr'd, so hidden whitespace or
+    a duplicate field name would be visible) - shared by the live on_message
+    logging below and the !debug_embed command, so their output is directly
+    comparable when chasing the intermittent bad-rarity bug.
+    """
+    lines = [
+        f"Message {message.id} | created={message.created_at.isoformat()} | "
+        f"edited={message.edited_at.isoformat() if message.edited_at else 'never'} | title={embed.title!r}"
+    ]
+    if embed.description:
+        lines.append(f"  description: {embed.description!r}")
+    for f in embed.fields:
+        lines.append(f"  field name={f.name!r}  value={f.value!r}")
+    return lines
+
+
+def _looks_like_dink_rarity(raw):
+    """
+    Dink's real Item Rarity/Drop Rate field value is always wrapped in a
+    Discord code block, e.g. '```\\n1 in 512.5 (0.195%)\\n```' - confirmed
+    against every raw embed checked via !debug_embed. A bare "1 in X" with
+    no code block doesn't match anything Dink actually sends, so it's a
+    reliable signal that a captured rarity isn't trustworthy.
+    """
+    return bool(raw) and raw.strip().startswith('```')
+
+
 @bot.event
 async def on_message(message):
     # Always process commands first (for !import_history, !stats, etc.)
@@ -523,6 +552,30 @@ async def on_message(message):
 
     if drop_type:
         drop_data = parse_drop_embed(embed, message)
+
+        if drop_data and drop_data.get('rarity') and not _looks_like_dink_rarity(drop_data['rarity']):
+            # Dink's real Item Rarity/Drop Rate field is always wrapped in a Discord
+            # code block - this doesn't match that, so it isn't a faithful capture of
+            # what Dink actually sent (root cause still unconfirmed; happens on an
+            # unpredictable subset of live messages). Re-fetch this exact message via
+            # the REST API, which has consistently returned the correct, settled data
+            # in every case checked so far, and use that instead of trusting the value
+            # the live gateway payload handed us.
+            print(f"[!] Suspicious live rarity on message {message.id} ({drop_data['rarity']!r}) - re-verifying via fetch")
+            try:
+                await asyncio.sleep(1)
+                fresh_message = await message.channel.fetch_message(message.id)
+                fresh_embed = fresh_message.embeds[0] if fresh_message.embeds else None
+                fresh_data = parse_drop_embed(fresh_embed, fresh_message) if fresh_embed else None
+                if fresh_data and _looks_like_dink_rarity(fresh_data.get('rarity')):
+                    print(f"[OK] Corrected rarity on message {message.id}: {fresh_data['rarity']!r}")
+                    drop_data['rarity'] = fresh_data['rarity']
+                else:
+                    print(f"[!] Re-fetch still didn't return a well-formed rarity on message {message.id} - leaving it unset rather than storing a value we don't trust")
+                    drop_data['rarity'] = None
+            except Exception as e:
+                print(f"[!] Could not re-verify rarity on message {message.id}: {e} - leaving it unset")
+                drop_data['rarity'] = None
 
         if drop_data:
             drop_data['drop_type'] = drop_type  # Add drop type to data
@@ -1064,6 +1117,64 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
     except Exception as e:
         await ctx.send(f"❌ Error during backfill: {str(e)}")
         print(f"Backfill error: {e}")
+
+
+@bot.command()
+async def debug_embed(ctx, item_name: str, channel_id: str = None, start_date: str = "2026-01-01"):
+    """
+    TEMPORARY debug tool: dumps the raw, verbatim embed field names/values
+    (via repr(), so hidden whitespace/unicode is visible) for every Loot
+    Drop / Collection Log message mentioning the given item. Used to find
+    the root cause of some items' rarity being intermittently wrong despite
+    the live Discord card always showing the correct value - remove this
+    command once that's resolved.
+
+    Usage:
+      !debug_embed "Serpentine visage"
+      !debug_embed "Serpentine visage" 123456789 2026-01-01
+    """
+    if channel_id:
+        try:
+            target_channel = await bot.fetch_channel(int(channel_id))
+        except (ValueError, discord.NotFound, discord.Forbidden):
+            await ctx.send(f"❌ Couldn't access channel: {channel_id}")
+            return
+    else:
+        target_channel = ctx.channel
+
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    except ValueError:
+        await ctx.send(f"❌ Invalid date format: {start_date}. Use YYYY-MM-DD.")
+        return
+
+    await ctx.send(f"🔍 Scanning {target_channel.mention} for raw embeds mentioning '{item_name}' since {start_date}...")
+
+    found = 0
+    scanned = 0
+    async for message in target_channel.history(after=start_dt, limit=None, oldest_first=True):
+        scanned += 1
+        if not (message.webhook_id and message.embeds):
+            continue
+        embed = message.embeds[0]
+        if not embed.title or not ("Loot Drop" in embed.title or "Collection Log" in embed.title):
+            continue
+
+        haystack = (embed.description or "") + " " + " ".join(f.value or "" for f in embed.fields)
+        if item_name.lower() not in haystack.lower():
+            continue
+
+        found += 1
+        block = "\n".join(_dump_raw_embed_lines(message, embed))
+        print(block)  # full fidelity goes to the console/log file
+        # Discord field/message limits mean we only echo a trimmed version in-channel
+        await ctx.send(f"```\n{block[:1900]}\n```")
+
+        if found >= 15:
+            await ctx.send("⏹️ Stopping at 15 matches - check the console log (dinkparser.log) for the rest if needed.")
+            break
+
+    await ctx.send(f"✅ Done. Scanned {scanned:,} messages, found {found} raw embeds mentioning '{item_name}'.")
 
 
 @bot.command()
