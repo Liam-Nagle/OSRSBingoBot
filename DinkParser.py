@@ -1112,7 +1112,10 @@ async def debug_embed(ctx, item_name: str, channel_id: str = None, start_date: s
             continue
 
         found += 1
-        lines = [f"**Message {message.id}** | {message.created_at.isoformat()} | title={embed.title!r}"]
+        lines = [
+            f"**Message {message.id}** | created={message.created_at.isoformat()} | "
+            f"edited={message.edited_at.isoformat() if message.edited_at else 'never'} | title={embed.title!r}"
+        ]
         if embed.description:
             lines.append(f"  description: {embed.description!r}")
         for f in embed.fields:
