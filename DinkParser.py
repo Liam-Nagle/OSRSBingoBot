@@ -1067,6 +1067,69 @@ async def backfill_rarity(ctx, channel_id: str = None, start_date: str = "2026-0
 
 
 @bot.command()
+async def debug_embed(ctx, item_name: str, channel_id: str = None, start_date: str = "2026-01-01"):
+    """
+    TEMPORARY debug tool: dumps the raw, verbatim embed field names/values
+    (via repr(), so hidden whitespace/unicode is visible) for every Loot
+    Drop / Collection Log message mentioning the given item. Used to find
+    the root cause of some items' rarity being intermittently wrong despite
+    the live Discord card always showing the correct value - remove this
+    command once that's resolved.
+
+    Usage:
+      !debug_embed "Serpentine visage"
+      !debug_embed "Serpentine visage" 123456789 2026-01-01
+    """
+    if channel_id:
+        try:
+            target_channel = await bot.fetch_channel(int(channel_id))
+        except (ValueError, discord.NotFound, discord.Forbidden):
+            await ctx.send(f"❌ Couldn't access channel: {channel_id}")
+            return
+    else:
+        target_channel = ctx.channel
+
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    except ValueError:
+        await ctx.send(f"❌ Invalid date format: {start_date}. Use YYYY-MM-DD.")
+        return
+
+    await ctx.send(f"🔍 Scanning {target_channel.mention} for raw embeds mentioning '{item_name}' since {start_date}...")
+
+    found = 0
+    scanned = 0
+    async for message in target_channel.history(after=start_dt, limit=None, oldest_first=True):
+        scanned += 1
+        if not (message.webhook_id and message.embeds):
+            continue
+        embed = message.embeds[0]
+        if not embed.title or not ("Loot Drop" in embed.title or "Collection Log" in embed.title):
+            continue
+
+        haystack = (embed.description or "") + " " + " ".join(f.value or "" for f in embed.fields)
+        if item_name.lower() not in haystack.lower():
+            continue
+
+        found += 1
+        lines = [f"**Message {message.id}** | {message.created_at.isoformat()} | title={embed.title!r}"]
+        if embed.description:
+            lines.append(f"  description: {embed.description!r}")
+        for f in embed.fields:
+            lines.append(f"  field name={f.name!r}  value={f.value!r}")
+        block = "\n".join(lines)
+        print(block)  # full fidelity goes to the console/log file
+        # Discord field/message limits mean we only echo a trimmed version in-channel
+        await ctx.send(f"```\n{block[:1900]}\n```")
+
+        if found >= 15:
+            await ctx.send("⏹️ Stopping at 15 matches - check the console log (dinkparser.log) for the rest if needed.")
+            break
+
+    await ctx.send(f"✅ Done. Scanned {scanned:,} messages, found {found} raw embeds mentioning '{item_name}'.")
+
+
+@bot.command()
 async def import_deaths(ctx, channel_id: str = None, limit: int = 5000):
     """
     Import historical player deaths
