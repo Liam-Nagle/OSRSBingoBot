@@ -658,7 +658,12 @@ def parse_drop_embed(embed, message):
                 drop_info['total_value'] = field_value
                 drop_info['total_value_numeric'] = parse_value(field_value)
 
-        if 'Item Rarity' in field_name or 'Rank' in field_name:
+        # Dink labels this field "Item Rarity" on Loot Drop embeds but "Drop Rate"
+        # on Collection Log embeds - matching only "Item Rarity" (or the unrelated
+        # "Rank" field, which isn't a droprate at all) silently grabbed the wrong
+        # field's value for every collection log entry.
+        field_name_lower = field_name.lower()
+        if 'item rarity' in field_name_lower or 'drop rate' in field_name_lower:
             drop_info['rarity'] = field_value
 
     # Always check description for items (especially loot drops with values)
