@@ -103,6 +103,22 @@ ANTI_DUP_COMBINED_RATES = {
     'araxxor': ('any araxxor unique', 150.0),
 }
 
+# Bosses whose wiki-published unique rates are per-kill AT 100% CONTRIBUTION
+# (i.e. solo) - confirmed on Hueycoatl's own page: "This chance is
+# individual per player and is scaled by contribution." In a mass world,
+# an individual's real per-kill odds are that base rate times their share
+# of the kill, which we have no way to know (Dink/WOM only report total KC,
+# never group size or contribution per kill) - so there's no way to
+# compute this exactly. This applies a rough, openly-approximate discount
+# instead of leaving the boss unusable: dividing by 20, the player cap of
+# World 420 (the standard designated Hueycoatl mass world) - an
+# approximation of "typical" mass play, not a verified per-player figure,
+# and it will be wrong in either direction for anyone who solos/duos it or
+# plays in a smaller team. {canonical_boss_key(title): divisor}
+MASS_WORLD_DISCOUNT = {
+    'hueycoatl': 20,
+}
+
 
 def canonical_boss_key(title):
     """
@@ -297,6 +313,13 @@ def main():
         if boss_key in ANTI_DUP_COMBINED_RATES and matched:
             combined_name, combined_rate = ANTI_DUP_COMBINED_RATES[boss_key]
             matched = {combined_name: combined_rate}
+
+        # Keyed by canonical_boss_key (not boss_key, which is BOSS_WIKI_TITLES'
+        # own WOM-mirroring key, e.g. 'the_hueycoatl') to avoid the exact
+        # key-mismatch class of bug that silently orphaned Gauntlet's rates.
+        discount = MASS_WORLD_DISCOUNT.get(canonical_boss_key(title))
+        if discount and matched:
+            matched = {name: rate * discount for name, rate in matched.items()}
 
         if matched:
             boss_drop_rates[canonical_boss_key(title)] = matched

@@ -6718,6 +6718,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.29",
+                date: "2026-10-02",
+                title: "Adjusted The Hueycoatl's droprates for mass worlds",
+                changes: [
+                    { type: "fix", text: "The Hueycoatl's wiki droprates are per-kill at 100% contribution (i.e. solo) - the wiki's own page notes the real chance is \"individual per player and scaled by contribution\", which massively inflated \"expected\" drops for anyone farming it the normal way, in a mass. There's no way to know each kill's actual contribution share, so this is a rough approximation rather than an exact fix: rates are now divided by 20, the player cap of World 420 (the standard Hueycoatl mass world). Still an estimate, and it'll run the other way for anyone who solos/duos it, but it's much closer than treating every kill as solo." },
+                ]
+            },
+            {
                 version: "v2.13.28",
                 date: "2026-10-02",
                 title: "Fixed The Gauntlet using Corrupted Gauntlet's droprates",
