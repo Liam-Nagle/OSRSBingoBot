@@ -2266,6 +2266,64 @@ def _load_notable_item_names():
 NOTABLE_ITEM_NAMES = _load_notable_item_names()
 
 
+def _load_notable_item_sources():
+    """
+    item_name (lowercase) -> curated boss/source string from
+    boss-unique-items.json. Collection Log embeds don't always carry a
+    Source field (Dink omits it when it can't resolve the kill itself, e.g.
+    BigNumLock's Araxyte fang/venom sack), leaving that history doc's
+    source blank even though the item is only ever droppable by one boss.
+    Used as a fallback boss lookup so a genuinely notable drop isn't
+    silently excluded from the luck badges just because Dink's message
+    happened to omit the field.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-unique-items.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            items = json.load(f)
+        return {name: info['source'] for name, info in items.items() if info.get('source')}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-unique-items.json for source fallback: {e}")
+        return {}
+
+
+NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
+
+
+def _boss_key_for_drop(d, item_name):
+    """
+    Resolve a history doc to a boss key, falling back to the curated
+    item's own known source when Dink's own source field is blank (see
+    NOTABLE_ITEM_SOURCES above). A group source like "Dagannoth Kings"
+    still won't resolve to a single WOM boss key, same as today.
+    """
+    boss_key = normalize_boss_name(d.get('source'))
+    if boss_key:
+        return boss_key
+    return normalize_boss_name(NOTABLE_ITEM_SOURCES.get(item_name.lower()))
+
+
+def _load_boss_drop_rates():
+    """
+    Per-boss real droprates scraped from the OSRS Wiki (see
+    scrape_boss_drop_rates.py) - {boss_key: {item_lower: rarity_1_in}}.
+    Used as the preferred source for the luck badges' "expected" baseline,
+    since it covers a boss even when nobody on the team has pulled its
+    notable item live through Dink yet. Not auto-refreshed; re-run the
+    scraper by hand when boss-unique-items.json changes.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-drop-rates.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-drop-rates.json for luck badges: {e}")
+        return {}
+
+
+BOSS_DROP_RATES = _load_boss_drop_rates()
+
+
 def normalize_boss_name(name):
     """
     Best-effort reduction of a free-text NPC/source name (as Dink sends it,
@@ -2400,13 +2458,31 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
     if end_date:
         match_query.setdefault('timestamp', {})['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
 
+    # Per-boss droprates for the luck badges, built from ALL-TIME history (not
+    # just this event's window) - a droprate is a fixed game mechanic, not
+    # something that resets per event, so a boss someone got lucky at last
+    # year still has a usable baseline even if nobody's hit it yet this event.
+    # Without this, a boss with heavy KC but zero drops THIS event would be
+    # invisible to the calc instead of counting as a dry streak.
+    # Wiki-scraped rates (scrape_boss_drop_rates.py) are the preferred source -
+    # they cover a boss even with zero team drops ever, and already fold in
+    # mechanics like Zulrah's 2-rolls or Duke's pity counter. Dink-observed,
+    # all-time rates only fill in bosses/items the scrape hasn't covered.
+    boss_item_rarity = {boss_key: dict(items) for boss_key, items in BOSS_DROP_RATES.items()}
+    for d in _dedupe_drops_for_recap(list(collections['history'].find({}))):
+        r1 = d.get('rarity_1_in')
+        item_name = (d.get('item') or '').strip()
+        if not r1 or item_name.lower() not in NOTABLE_ITEM_NAMES:
+            continue
+        boss_key = _boss_key_for_drop(d, item_name)
+        if not boss_key:
+            continue
+        rates = boss_item_rarity.setdefault(boss_key, {})
+        if item_name.lower() not in {k.lower() for k in rates}:
+            rates[item_name] = r1
+
     drop_stats = {}
     biggest_drop = None  # (value, player, item)
-    # Per-boss droprates for whatever notable (known-rarity) items the team
-    # actually pulled this event, and each player's notable-drop count per
-    # boss — the two ingredients the luck badges (tiny_violin/silver_spoon)
-    # need to compare actual drops against an expected count from KC gained.
-    boss_item_rarity = {}  # boss_key -> {item: rarity_1_in}
     player_boss_notable = {}  # player -> {boss_key: count}
     for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
         player = d.get('player')
@@ -2432,14 +2508,21 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         # boss-unique-items list, so neither the Rarest Drop badge nor the luck
         # badges below can be swayed by a common item that happens to have odds.
         r1 = d.get('rarity_1_in')
-        is_notable = bool(r1) and (d.get('item') or '').strip().lower() in NOTABLE_ITEM_NAMES
-        if is_notable and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
-            stats['rarest_drop'] = (r1, d.get('item'), d.get('rarity'))
+        item_name = (d.get('item') or '').strip()
+        is_curated_item = item_name.lower() in NOTABLE_ITEM_NAMES
+        if is_curated_item and r1 and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
+            stats['rarest_drop'] = (r1, item_name, d.get('rarity'))
 
-        if is_notable:
-            boss_key = normalize_boss_name(d.get('source'))
+        # The actual-drops-this-event count below only needs the drop to BE a
+        # curated chase item - it doesn't need this specific record to also
+        # carry its own live rarity_1_in, since the "expected" side of the
+        # luck calc now comes from BOSS_DROP_RATES/all-time data independent
+        # of any single drop. Requiring r1 here was undercounting real drops
+        # whose own Dink capture never got a rarity (e.g. a blank-rarity
+        # Collection Log entry for an item that's still genuinely notable).
+        if is_curated_item:
+            boss_key = _boss_key_for_drop(d, item_name)
             if boss_key:
-                boss_item_rarity.setdefault(boss_key, {})[d.get('item')] = r1
                 player_boss_notable.setdefault(player, {})
                 player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1
 

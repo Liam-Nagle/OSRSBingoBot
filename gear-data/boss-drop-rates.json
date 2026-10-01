@@ -1,0 +1,219 @@
+{
+  "alchemical_hydra": {
+    "hydra leather": 514.0294,
+    "hydra's claw": 1001.0008,
+    "hydra's eye": 181.0671,
+    "hydra's fang": 181.0671,
+    "hydra's heart": 181.0671
+  },
+  "araxxor": {
+    "any araxxor unique": 150.0
+  },
+  "artio": {
+    "claws of callisto": 618.0,
+    "dragon 2h sword": 358.0,
+    "dragon pickaxe": 358.0,
+    "tyrannical ring": 716.0,
+    "voidwaker hilt": 912.0
+  },
+  "callisto": {
+    "claws of callisto": 196.0,
+    "dragon 2h sword": 256.0,
+    "dragon pickaxe": 256.0,
+    "tyrannical ring": 512.0,
+    "voidwaker hilt": 360.0
+  },
+  "cerberus": {
+    "eternal crystal": 520.0,
+    "pegasian crystal": 520.0,
+    "primordial crystal": 520.0,
+    "smouldering stone": 520.0
+  },
+  "chaos_elemental": {
+    "dragon 2h sword": 64.0,
+    "dragon pickaxe": 256.0
+  },
+  "commander_zilyana": {
+    "armadyl crossbow": 508.0,
+    "godsword shard 1": 762.0,
+    "godsword shard 2": 762.0,
+    "godsword shard 3": 762.0,
+    "saradomin hilt": 508.0,
+    "saradomin sword": 127.0,
+    "saradomin's light": 254.0
+  },
+  "dagannoth_prime": {
+    "seers ring": 128.0
+  },
+  "dagannoth_rex": {
+    "berserker ring": 128.0,
+    "warrior ring": 128.0
+  },
+  "dagannoth_supreme": {
+    "archers ring": 128.0
+  },
+  "doom_of_mokhaiotl": {
+    "avernic treads": 1350.0,
+    "eye of ayak": 2000.0,
+    "mokhaiotl cloth": 2500.0
+  },
+  "duke_sucellus": {
+    "chromium ingot": 240.0,
+    "eye of the duke": 720.0,
+    "magus vestige": 720.0,
+    "virtus mask": 2160.0,
+    "virtus robe bottom": 2160.0,
+    "virtus robe top": 2160.0
+  },
+  "general_graardor": {
+    "bandos boots": 381.0,
+    "bandos chestplate": 381.0,
+    "bandos hilt": 508.0,
+    "bandos tassets": 381.0,
+    "godsword shard 1": 762.0,
+    "godsword shard 2": 762.0,
+    "godsword shard 3": 762.0
+  },
+  "grotesque_guardians": {
+    "black tourmaline core": 500.0,
+    "granite gloves": 250.0,
+    "granite hammer": 375.0,
+    "granite maul": 125.0,
+    "granite ring": 250.0
+  },
+  "kalphite_queen": {
+    "dragon 2h sword": 256.0,
+    "dragon pickaxe": 400.0
+  },
+  "king_black_dragon": {
+    "dragon pickaxe": 1000.0
+  },
+  "kraken": {
+    "trident of the seas": 512.0
+  },
+  "kreearra": {
+    "armadyl chainskirt": 381.0,
+    "armadyl chestplate": 381.0,
+    "armadyl helmet": 381.0,
+    "armadyl hilt": 508.0,
+    "godsword shard 1": 762.0,
+    "godsword shard 2": 762.0,
+    "godsword shard 3": 762.0
+  },
+  "kril_tsutsaroth": {
+    "godsword shard 1": 762.0,
+    "godsword shard 2": 762.0,
+    "godsword shard 3": 762.0,
+    "staff of the dead": 508.0,
+    "steam battlestaff": 127.0,
+    "zamorak hilt": 508.0,
+    "zamorakian spear": 127.0
+  },
+  "nex": {
+    "ancient hilt": 516.0,
+    "nihil horn": 258.0,
+    "torva full helm": 258.0,
+    "torva platebody": 258.0,
+    "torva platelegs": 258.0,
+    "zaryte vambraces": 172.0
+  },
+  "nightmare": {
+    "inquisitor's great helm": 420.0,
+    "inquisitor's hauberk": 420.0,
+    "inquisitor's mace": 750.0,
+    "inquisitor's plateskirt": 420.0
+  },
+  "phantom_muspah": {
+    "ancient icon": 50.0,
+    "venator shard": 100.0
+  },
+  "phosanis_nightmare": {
+    "inquisitor's great helm": 700.0,
+    "inquisitor's hauberk": 700.0,
+    "inquisitor's mace": 1129.0323,
+    "inquisitor's plateskirt": 700.0
+  },
+  "sarachnis": {
+    "sarachnis cudgel": 384.0
+  },
+  "scorpia": {
+    "dragon 2h sword": 128.0
+  },
+  "skotizo": {
+    "uncut onyx": 1000.0
+  },
+  "spindel": {
+    "dragon 2h sword": 358.0,
+    "dragon pickaxe": 358.0,
+    "fangs of venenatis": 618.0,
+    "treasonous ring": 716.0,
+    "voidwaker gem": 912.0
+  },
+  "tempoross": {
+    "dragon harpoon": 8000.0
+  },
+  "the_gauntlet": {
+    "crystal armour seed": 50.0,
+    "enhanced crystal weapon seed": 400.0
+  },
+  "the_hueycoatl": {
+    "dragon hunter wand": 105.0,
+    "hueycoatl hide": 28.6364,
+    "tome of earth (empty)": 90.0
+  },
+  "the_leviathan": {
+    "chromium ingot": 256.0,
+    "leviathan's lure": 768.0,
+    "venator vestige": 768.0,
+    "virtus mask": 2304.0,
+    "virtus robe bottom": 2304.0,
+    "virtus robe top": 2304.0
+  },
+  "the_whisperer": {
+    "bellator vestige": 512.0,
+    "chromium ingot": 170.6667,
+    "siren's staff": 512.0,
+    "virtus mask": 1536.0,
+    "virtus robe bottom": 1536.0,
+    "virtus robe top": 1536.0
+  },
+  "vardorvis": {
+    "chromium ingot": 362.6667,
+    "executioner's axe head": 1088.0,
+    "ultor vestige": 1088.0,
+    "virtus mask": 3264.0,
+    "virtus robe bottom": 3264.0,
+    "virtus robe top": 3264.0
+  },
+  "venenatis": {
+    "dragon 2h sword": 256.0,
+    "dragon pickaxe": 256.0,
+    "fangs of venenatis": 196.0,
+    "treasonous ring": 512.0,
+    "voidwaker gem": 360.0
+  },
+  "vetion": {
+    "dragon 2h sword": 256.0,
+    "dragon pickaxe": 256.0,
+    "ring of the gods": 512.0,
+    "skull of vet'ion": 196.0,
+    "voidwaker blade": 360.0
+  },
+  "yama": {
+    "oathplate chest": 600.0,
+    "oathplate helm": 600.0,
+    "oathplate legs": 600.0,
+    "soulflame horn": 300.0
+  },
+  "zalcano": {
+    "uncut onyx": 8000.0
+  },
+  "zulrah": {
+    "magic fang": 512.0,
+    "magma mutagen": 6553.5,
+    "serpentine visage": 512.0,
+    "tanzanite fang": 512.0,
+    "tanzanite mutagen": 6553.5,
+    "uncut onyx": 512.0
+  }
+}
