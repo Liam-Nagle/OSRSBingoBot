@@ -6718,6 +6718,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.28",
+                date: "2026-10-02",
+                title: "Fixed The Gauntlet using Corrupted Gauntlet's droprates",
+                changes: [
+                    { type: "fix", text: "The Gauntlet's \"expected\" drops in Luck were calculated using Corrupted Gauntlet's rates (1/50) instead of its own - the wiki page lists both modes' full reward tables separately, and the scraper was only keeping whichever one it read last. The Gauntlet now correctly uses its own real rates (1/120 for the seeds, 1/2000 for Enhanced crystal weapon seed, which turns out to not be Corrupted-exclusive after all) - Corrupted Gauntlet's own numbers were already right and are unaffected." },
+                ]
+            },
+            {
                 version: "v2.13.27",
                 date: "2026-10-02",
                 title: "Fixed two All Time Luck accuracy bugs",

@@ -121,6 +121,22 @@ def canonical_boss_key(title):
     return slug
 
 
+def extract_section(wikitext, heading_pattern):
+    """
+    Slice out the content under a heading matching heading_pattern (e.g.
+    r'Unique Rewards \(Normal Mode\)'), up to the next heading of any
+    level. Mirrors audit_boss_drop_rates.py's extract_uniques_section.
+    Returns None if no matching heading is found.
+    """
+    match = re.search(r'={2,}\s*' + heading_pattern + r'\s*={2,}', wikitext, re.IGNORECASE)
+    if not match:
+        return None
+    start = match.end()
+    next_heading = re.search(r'\n={2,}[^=\n]', wikitext[start:])
+    end = start + next_heading.start() if next_heading else len(wikitext)
+    return wikitext[start:end]
+
+
 def fetch_wikitext(title):
     resp = requests.get(WIKI_API, headers=HEADERS, params={
         'action': 'query',
@@ -218,7 +234,28 @@ def main():
     missing_pages = []
     no_notable_match = []
 
+    def match_notable(lines):
+        matched = {}
+        for r in lines:
+            name = r['name']
+            if name in notable_names:
+                matched[name] = r['rarity_1_in']
+                continue
+            # Some drops come in a qualified form (e.g. "Torva full helm
+            # (damaged)" at Nex) that doesn't match our curated key for the
+            # finished item - fall back to the name with any trailing
+            # "(word[s])" qualifier stripped.
+            stripped = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
+            if stripped != name and stripped in notable_names:
+                matched[stripped] = r['rarity_1_in']
+        return matched
+
     for boss_key, title in BOSS_WIKI_TITLES.items():
+        # "The Corrupted Gauntlet" has no drop table of its own - both modes
+        # are documented on "The Gauntlet"'s page, handled together below.
+        if boss_key == 'the_corrupted_gauntlet':
+            continue
+
         print(f"Fetching {title}...")
         try:
             wikitext = fetch_wikitext(title)
@@ -234,20 +271,28 @@ def main():
             time.sleep(REQUEST_DELAY_SECONDS)
             continue
 
-        lines = parse_droplines(wikitext)
-        matched = {}
-        for r in lines:
-            name = r['name']
-            if name in notable_names:
-                matched[name] = r['rarity_1_in']
-                continue
-            # Some drops come in a qualified form (e.g. "Torva full helm
-            # (damaged)" at Nex) that doesn't match our curated key for the
-            # finished item - fall back to the name with any trailing
-            # "(word[s])" qualifier stripped.
-            stripped = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
-            if stripped != name and stripped in notable_names:
-                matched[stripped] = r['rarity_1_in']
+        if boss_key == 'the_gauntlet':
+            # The page has two FULL, separately-rated unique-reward tables
+            # for the same items (e.g. Crystal weapon seed is 1/120 Normal
+            # vs 1/50 Corrupted) - parsing the page as one flat pass let the
+            # second table silently overwrite the first, understating every
+            # Normal Mode rate and crediting Corrupted's rates to both.
+            for section_boss_key, heading in (
+                ('gauntlet', r'Unique Rewards \(Normal Mode\)'),
+                ('corrupted_gauntlet', r'Unique Rewards \(Corrupted Mode\)'),
+            ):
+                section = extract_section(wikitext, heading)
+                matched = match_notable(parse_droplines(section)) if section else {}
+                if matched:
+                    boss_drop_rates[section_boss_key] = matched
+                    print(f"  OK ({heading}): {matched}")
+                else:
+                    no_notable_match.append(f"{title} ({heading})")
+                    print(f"  (no curated notable items found under {heading})")
+            time.sleep(REQUEST_DELAY_SECONDS)
+            continue
+
+        matched = match_notable(parse_droplines(wikitext))
 
         if boss_key in ANTI_DUP_COMBINED_RATES and matched:
             combined_name, combined_rate = ANTI_DUP_COMBINED_RATES[boss_key]
@@ -261,35 +306,6 @@ def main():
             print(f"  (no curated notable items found on this page)")
 
         time.sleep(REQUEST_DELAY_SECONDS)
-
-    # "The Corrupted Gauntlet" wiki page has no drop table of its own -
-    # Corrupted-exclusive uniques (and the armour seed shared with regular
-    # mode) are documented on "The Gauntlet" page instead, so the scrape
-    # above already caught them, just filed under 'gauntlet'. Split out
-    # whichever of those apply to Corrupted Gauntlet by their own curated
-    # source, rather than leaving it with zero droprates.
-    gauntlet_matches = boss_drop_rates.get('gauntlet', {})
-    corrupted_matches = {
-        name: rate for name, rate in gauntlet_matches.items()
-        if 'corrupted gauntlet' in notable_items.get(name, {}).get('source', '').lower()
-    }
-    if corrupted_matches:
-        boss_drop_rates.setdefault('corrupted_gauntlet', {}).update(corrupted_matches)
-        print(f"Corrupted Gauntlet: {corrupted_matches} (split from The Gauntlet's shared page)")
-
-    # The reverse of the above: that same shared page also means 'gauntlet'
-    # picked up Corrupted-exclusive items (e.g. Enhanced crystal weapon
-    # seed) it can never actually drop in regular mode - drop anything
-    # whose curated source doesn't actually include "The Gauntlet" itself.
-    if 'gauntlet' in boss_drop_rates:
-        filtered = {
-            name: rate for name, rate in boss_drop_rates['gauntlet'].items()
-            if 'the gauntlet' in notable_items.get(name, {}).get('source', '').lower()
-        }
-        if filtered != boss_drop_rates['gauntlet']:
-            dropped = set(boss_drop_rates['gauntlet']) - set(filtered)
-            print(f"The Gauntlet: dropping Corrupted-only items {dropped}")
-        boss_drop_rates['gauntlet'] = filtered
 
     out_path = os.path.join(base_dir, 'gear-data', 'boss-drop-rates.json')
     with open(out_path, 'w', encoding='utf-8') as f:

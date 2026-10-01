@@ -71,8 +71,9 @@
     "virtus robe top": 2160.0
   },
   "gauntlet": {
-    "crystal armour seed": 50.0,
-    "crystal weapon seed": 50.0
+    "crystal armour seed": 120.0,
+    "crystal weapon seed": 120.0,
+    "enhanced crystal weapon seed": 2000.0
   },
   "general_graardor": {
     "bandos boots": 381.0,

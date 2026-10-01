@@ -159,7 +159,7 @@
   "mokhaiotl cloth": { "source": "Doom of Mokhaiotl", "category": "armour", "_note": "Used with demon tears to upgrade Oathplate armour - counted since it's a genuine Doom-specific rare drop, not a common byproduct." },
 
   "crystal weapon seed": { "source": "The Gauntlet / Corrupted Gauntlet", "category": "weapon", "_note": "Drops from either mode, confirmed against real drop history (nearly all captured as 'Corrupted Gauntlet')." },
-  "enhanced crystal weapon seed": { "source": "Corrupted Gauntlet", "category": "weapon", "_note": "Corrupted-exclusive bonus roll, separate from the regular Crystal weapon seed drop." },
+  "enhanced crystal weapon seed": { "source": "The Gauntlet / Corrupted Gauntlet", "category": "weapon", "_note": "Can drop from either mode per the wiki's own Normal/Corrupted reward tables (1/2000 vs 1/400) - far rarer in Normal mode, but not exclusive to Corrupted." },
   "crystal armour seed": { "source": "The Gauntlet / Corrupted Gauntlet", "category": "armour", "_note": "Can't be scoped to Corrupted Gauntlet only - same item name from either mode." },
 
   "bludgeon axon": { "source": "Abyssal Sire", "category": "weapon", "_note": "1 of 3 Abyssal bludgeon components combined by The Overseer. Abyssal Sire never drops the finished bludgeon." },
