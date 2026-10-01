@@ -104,6 +104,23 @@ ANTI_DUP_COMBINED_RATES = {
 }
 
 
+def canonical_boss_key(title):
+    """
+    Same slugification as bingo_api.py's normalize_boss_name() - the output
+    file's keys MUST match that function's output exactly, since that's how
+    compute_luck_breakdown() looks a boss up. Derived from the wiki title,
+    not from BOSS_WIKI_TITLES's own dict key (which mirrors WOM's boss-key
+    convention and can disagree - e.g. 'the_gauntlet' vs normalize_boss_name's
+    'gauntlet' - which silently orphaned Gauntlet/Corrupted Gauntlet/
+    Hueycoatl/Leviathan/Whisperer's scraped rates until this was caught).
+    """
+    slug = title.strip().lower()
+    slug = slug.replace("'", '')
+    slug = re.sub(r'^the\s+', '', slug)
+    slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_')
+    return slug
+
+
 def fetch_wikitext(title):
     resp = requests.get(WIKI_API, headers=HEADERS, params={
         'action': 'query',
@@ -237,13 +254,42 @@ def main():
             matched = {combined_name: combined_rate}
 
         if matched:
-            boss_drop_rates[boss_key] = matched
+            boss_drop_rates[canonical_boss_key(title)] = matched
             print(f"  OK: {matched}")
         else:
             no_notable_match.append(title)
             print(f"  (no curated notable items found on this page)")
 
         time.sleep(REQUEST_DELAY_SECONDS)
+
+    # "The Corrupted Gauntlet" wiki page has no drop table of its own -
+    # Corrupted-exclusive uniques (and the armour seed shared with regular
+    # mode) are documented on "The Gauntlet" page instead, so the scrape
+    # above already caught them, just filed under 'gauntlet'. Split out
+    # whichever of those apply to Corrupted Gauntlet by their own curated
+    # source, rather than leaving it with zero droprates.
+    gauntlet_matches = boss_drop_rates.get('gauntlet', {})
+    corrupted_matches = {
+        name: rate for name, rate in gauntlet_matches.items()
+        if 'corrupted gauntlet' in notable_items.get(name, {}).get('source', '').lower()
+    }
+    if corrupted_matches:
+        boss_drop_rates.setdefault('corrupted_gauntlet', {}).update(corrupted_matches)
+        print(f"Corrupted Gauntlet: {corrupted_matches} (split from The Gauntlet's shared page)")
+
+    # The reverse of the above: that same shared page also means 'gauntlet'
+    # picked up Corrupted-exclusive items (e.g. Enhanced crystal weapon
+    # seed) it can never actually drop in regular mode - drop anything
+    # whose curated source doesn't actually include "The Gauntlet" itself.
+    if 'gauntlet' in boss_drop_rates:
+        filtered = {
+            name: rate for name, rate in boss_drop_rates['gauntlet'].items()
+            if 'the gauntlet' in notable_items.get(name, {}).get('source', '').lower()
+        }
+        if filtered != boss_drop_rates['gauntlet']:
+            dropped = set(boss_drop_rates['gauntlet']) - set(filtered)
+            print(f"The Gauntlet: dropping Corrupted-only items {dropped}")
+        boss_drop_rates['gauntlet'] = filtered
 
     out_path = os.path.join(base_dir, 'gear-data', 'boss-drop-rates.json')
     with open(out_path, 'w', encoding='utf-8') as f:
