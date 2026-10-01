@@ -6718,6 +6718,15 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.27",
+                date: "2026-10-02",
+                title: "Fixed two All Time Luck accuracy bugs",
+                changes: [
+                    { type: "fix", text: "Grotesque Guardians was showing drops that never happened - Granite maul is also dropped by ordinary Gargoyles (unrelated, far more common), and the collection log boost couldn't tell those apart, so it was crediting Grotesque Guardians for every Granite maul ever obtained from either source. It's now excluded from the collection-log boost specifically (a real Dink-tracked Grotesque Guardians drop still counts fine)." },
+                    { type: "fix", text: "Crystal weapon seed / Crystal armour seed (dropped by both The Gauntlet and Corrupted Gauntlet) were being skipped by the collection-log boost entirely, since it had no way to tell which mode they came from - undercounting Corrupted Gauntlet specifically, since that's almost always the one people actually grind. It now attributes them to whichever of the two a player has more kill count in." },
+                ]
+            },
+            {
                 version: "v2.13.26",
                 date: "2026-10-01",
                 title: "All Time Luck now uses full collection log history",

@@ -2394,7 +2394,29 @@ def _load_notable_item_sources():
         return {}
 
 
+def _load_ambiguous_source_items():
+    """
+    Item names (lowercase) flagged _ambiguous_source: true - a curated
+    "source" boss that's real for live Dink drops (which carry their own
+    verified per-drop source) but not safe to trust blind for the All Time
+    collection-log boost, which has no per-drop source at all. e.g. Granite
+    maul's curated source is Grotesque Guardians, but it's also dropped by
+    ordinary Gargoyles - a collection log total can't tell which one a copy
+    came from, so compute_luck_breakdown excludes these from that boost
+    specifically rather than silently crediting the wrong boss.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-unique-items.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            items = json.load(f)
+        return {name for name, info in items.items() if info.get('_ambiguous_source')}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-unique-items.json for ambiguous-source list: {e}")
+        return set()
+
+
 NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
+AMBIGUOUS_SOURCE_ITEMS = _load_ambiguous_source_items()
 
 
 def _boss_key_for_drop(d, item_name):
@@ -2535,61 +2557,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         if item_name.lower() not in {k.lower() for k in rates}:
             rates[item_name] = r1
 
-    # Actual notable drops, per player per boss per item - event-windowed,
-    # or every drop on record when all_time (match_query is {} in that
-    # case). Tracked per item rather than summed straight to a boss total
-    # so the All Time collection-log supplement below can raise one item's
-    # count without clobbering a different notable item at the same boss.
-    player_boss_item_notable = {}  # player -> {boss_key: {item_name_lower: count}}
-    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
-        player = d.get('player')
-        if not player:
-            continue
-        item_name = (d.get('item') or '').strip()
-        item_key = item_name.lower()
-        if item_key not in NOTABLE_ITEM_NAMES:
-            continue
-        boss_key = _boss_key_for_drop(d, item_name)
-        if not boss_key:
-            continue
-        per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
-        per_boss[item_key] = per_boss.get(item_key, 0) + 1
-
-    # All Time only: groupiron.men's collection log (see
-    # fetch_groupironmen_collection_log) covers real drops from before Dink
-    # was installed, which Dink's own history can never have. It carries no
-    # timestamp or per-drop source though, so an item is only attributed
-    # here when its curated source names one specific boss - a shared
-    # source (e.g. "God Wars Dungeon bosses") is skipped rather than
-    # guessed at, same as the live-drop source fallback above. This only
-    # ever RAISES an item's count to what's actually logged - it can't
-    # lower a count Dink already captured, and never double-counts since
-    # it's a max() against the same per-item slot.
-    if all_time:
-        for cl_doc in collections['collection_log_cache'].find({}):
-            player = cl_doc.get('player')
-            owned = cl_doc.get('items', {})
-            if not player or not owned:
-                continue
-            for item_name, qty in owned.items():
-                item_key = item_name.lower()
-                if item_key not in NOTABLE_ITEM_NAMES or not qty:
-                    continue
-                boss_key = normalize_boss_name(NOTABLE_ITEM_SOURCES.get(item_key))
-                if not boss_key:
-                    continue
-                per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
-                if qty > per_boss.get(item_key, 0):
-                    per_boss[item_key] = qty
-
-    player_boss_notable = {}
-    for player, bosses in player_boss_item_notable.items():
-        for boss_key, items in bosses.items():
-            player_boss_notable.setdefault(player, {})[boss_key] = sum(items.values())
-
     # KC per player per boss - WOM-authoritative "gained since event start"
     # from gained_cache, or each player's latest total-KC snapshot (same
-    # aggregation /kc/all uses) when all_time.
+    # aggregation /kc/all uses) when all_time. Computed before the actual-
+    # drops section below because the All Time collection-log supplement
+    # needs it to disambiguate an item shared between two specific bosses.
     kc_by_boss = {}
     boss_display_names = {}  # boss_key -> the display name WOM/the snapshot uses
     if all_time:
@@ -2626,6 +2598,70 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                         boss_display_names.setdefault(boss_key, boss)
             if player_bosses:
                 kc_by_boss[snap_player] = player_bosses
+
+    # Actual notable drops, per player per boss per item - event-windowed,
+    # or every drop on record when all_time (match_query is {} in that
+    # case). Tracked per item rather than summed straight to a boss total
+    # so the All Time collection-log supplement below can raise one item's
+    # count without clobbering a different notable item at the same boss.
+    player_boss_item_notable = {}  # player -> {boss_key: {item_name_lower: count}}
+    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
+        player = d.get('player')
+        if not player:
+            continue
+        item_name = (d.get('item') or '').strip()
+        item_key = item_name.lower()
+        if item_key not in NOTABLE_ITEM_NAMES:
+            continue
+        boss_key = _boss_key_for_drop(d, item_name)
+        if not boss_key:
+            continue
+        per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
+        per_boss[item_key] = per_boss.get(item_key, 0) + 1
+
+    # All Time only: groupiron.men's collection log (see
+    # fetch_groupironmen_collection_log) covers real drops from before Dink
+    # was installed, which Dink's own history can never have. It carries no
+    # timestamp or per-drop source though, so attribution falls back to the
+    # curated source: a single-boss source resolves directly; a source
+    # naming several bosses (e.g. "The Gauntlet / Corrupted Gauntlet") goes
+    # to whichever of those specific bosses this player has more KC at -
+    # people who split time close to evenly between two such modes are
+    # rare, so this is a reasonable signal, not a guess from nothing. An
+    # item flagged _ambiguous_source (shared with a monster outside this
+    # set entirely, e.g. Granite maul/Gargoyles) is skipped rather than
+    # guessed at either way. This only ever RAISES an item's count to what's
+    # actually logged - it can't lower a count Dink already captured, and
+    # never double-counts since it's a max() against the same per-item slot.
+    if all_time:
+        for cl_doc in collections['collection_log_cache'].find({}):
+            player = cl_doc.get('player')
+            owned = cl_doc.get('items', {})
+            if not player or not owned:
+                continue
+            player_kc = kc_by_boss.get(player, {})
+            for item_name, qty in owned.items():
+                item_key = item_name.lower()
+                if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
+                    continue
+                source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
+                if ' / ' in source:
+                    candidates = [c for c in (normalize_boss_name(p) for p in source.split(' / ')) if c]
+                    boss_key = max(candidates, key=lambda c: player_kc.get(c, 0)) if candidates else None
+                    if boss_key and player_kc.get(boss_key, 0) <= 0:
+                        boss_key = None  # no KC at any candidate - nothing to disambiguate with
+                else:
+                    boss_key = normalize_boss_name(source)
+                if not boss_key:
+                    continue
+                per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
+                if qty > per_boss.get(item_key, 0):
+                    per_boss[item_key] = qty
+
+    player_boss_notable = {}
+    for player, bosses in player_boss_item_notable.items():
+        for boss_key, items in bosses.items():
+            player_boss_notable.setdefault(player, {})[boss_key] = sum(items.values())
 
     breakdown = {}
     for player, boss_kc in kc_by_boss.items():

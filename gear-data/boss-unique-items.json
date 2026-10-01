@@ -74,7 +74,7 @@
   "burning claw": { "source": "Tormented Demon", "category": "weapon", "_note": "Two combine into the finished Burning claws weapon." },
   "zenyte shard": { "source": "Tortured gorilla/Demonic gorilla", "category": "jewelry", "_note": "Crafted into Cut zenyte, then Zenyte jewelry (blood fury, anguish, torture, suffering)." },
   "sarachnis cudgel": { "source": "Sarachnis", "category": "weapon" },
-  "granite maul": { "source": "Grotesque Guardians", "category": "weapon" },
+  "granite maul": { "source": "Grotesque Guardians", "category": "weapon", "_ambiguous_source": true, "_note": "Also dropped by ordinary Gargoyles (a common Slayer task, not a KC-tracked boss) - a live Dink drop still correctly says which one, but a collection log total can't tell them apart, so it's excluded from the All Time collection-log boost specifically." },
   "granite ring": { "source": "Grotesque Guardians", "category": "jewelry" },
   "granite gloves": { "source": "Grotesque Guardians", "category": "armour" },
   "granite hammer": { "source": "Grotesque Guardians", "category": "tool", "_note": "Doubles as a rock hammer and a weapon - PvM tool, shared/borrowed within a group." },
