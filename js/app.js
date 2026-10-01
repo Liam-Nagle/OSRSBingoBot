@@ -6562,6 +6562,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.21",
+                date: "2026-10-01",
+                title: "Fixed incorrect KC Gained numbers",
+                changes: [
+                    { type: "fix", text: "Boss KC Effort and each player's KC Gained were pulling wrong numbers for some bosses, because our very first 'starting KC' snapshot was missing data for them — a boss missing from that snapshot showed a player's entire lifetime kill count as 'gained' instead of just what they'd done since the event started. KC Gained is now calculated directly from WiseOldMan's own 'gained' endpoint using the event's actual start date, refreshed automatically every few hours." },
+                ]
+            },
+            {
                 version: "v2.13.20",
                 date: "2026-09-30",
                 title: "Event Recap gets two new luck badges",
