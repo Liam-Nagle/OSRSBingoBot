@@ -5452,6 +5452,7 @@ async function loadAnalyticsWithFilters() {
 
         // Luck global state
         let _luckData = null;
+        let _luckDataAllTime = null;
 
         async function openKCModal() {
             document.getElementById('kcModal').classList.add('active');
@@ -5504,16 +5505,19 @@ async function loadAnalyticsWithFilters() {
 
         async function loadKCData() {
             try {
-                const [allResp, effortResp, luckResp] = await Promise.all([
+                const [allResp, effortResp, luckResp, luckAllTimeResp] = await Promise.all([
                     fetch(`${API_URL}/kc/all`),
                     fetch(`${API_URL}/kc/effort`),
-                    fetch(`${API_URL}/event/luck`)
+                    fetch(`${API_URL}/event/luck`),
+                    fetch(`${API_URL}/event/luck?all_time=true`)
                 ]);
                 _kcAllData = await allResp.json();
                 _kcEffortData = await effortResp.json();
                 // Not every tenant has an active event configured - that's a normal
-                // empty state for the Luck tab, not a failure of the rest of the modal.
+                // empty state for the Luck tab's Current Bingo mode, not a failure of
+                // the rest of the modal. All Time mode doesn't need an event at all.
                 _luckData = luckResp.ok ? await luckResp.json() : null;
+                _luckDataAllTime = luckAllTimeResp.ok ? await luckAllTimeResp.json() : null;
                 _renderAllKCTabs();
             } catch (error) {
                 console.error('Failed to load KC data:', error);
@@ -5535,10 +5539,11 @@ async function loadAnalyticsWithFilters() {
             renderKCLeaderboards(_kcCurrentData);
             renderKCDetails(_kcMode);
             renderKCBossContribution(_kcCurrentData);
-            // Luck is always scoped to the current event window, independent of the
-            // Current Bingo/All Time toggle above, so it doesn't depend on _kcMode.
-            renderLuckPlayerView(_luckData || {}, document.getElementById('luckPlayerView'));
-            renderLuckBossView(_luckData || {}, document.getElementById('luckBossView'));
+            // Luck follows the same Current Bingo/All Time toggle as the rest of
+            // this modal - event-scoped drops+KC, or lifetime drops+KC.
+            const luckData = _kcMode === 'bingo' ? _luckData : _luckDataAllTime;
+            renderLuckPlayerView(luckData || {}, document.getElementById('luckPlayerView'));
+            renderLuckBossView(luckData || {}, document.getElementById('luckBossView'));
         }
 
         function switchKCMode(mode) {
@@ -6158,7 +6163,7 @@ async function loadAnalyticsWithFilters() {
                 container.innerHTML = `
                     <div class="loading-message" style="padding: 40px;">
                         <p>No luck data available yet!</p>
-                        <p style="margin-top: 20px;">Needs KC gained plus a known droprate for at least one boss someone's killed this event.</p>
+                        <p style="margin-top: 20px;">Needs KC plus a known droprate for at least one boss someone's killed.</p>
                     </div>
                 `;
                 return;
@@ -6706,6 +6711,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.24",
+                date: "2026-10-01",
+                title: "Luck Tracker now supports All Time",
+                changes: [
+                    { type: "feature", text: "The '🍀 Luck' tab now follows the Current Bingo/All Time toggle like the rest of Boss Kill Counts - All Time compares each player's total account KC per boss against every notable drop they've ever gotten, not just this event." },
+                ]
+            },
             {
                 version: "v2.13.23",
                 date: "2026-10-01",
