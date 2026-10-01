@@ -71,8 +71,9 @@
     "virtus robe top": 2160.0
   },
   "gauntlet": {
-    "crystal armour seed": 50.0,
-    "crystal weapon seed": 50.0
+    "crystal armour seed": 120.0,
+    "crystal weapon seed": 120.0,
+    "enhanced crystal weapon seed": 2000.0
   },
   "general_graardor": {
     "bandos boots": 381.0,
@@ -91,9 +92,9 @@
     "granite ring": 250.0
   },
   "hueycoatl": {
-    "dragon hunter wand": 105.0,
-    "hueycoatl hide": 28.6364,
-    "tome of earth (empty)": 90.0
+    "dragon hunter wand": 2100.0,
+    "hueycoatl hide": 572.728,
+    "tome of earth (empty)": 1800.0
   },
   "kalphite_queen": {
     "dragon 2h sword": 256.0,

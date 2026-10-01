@@ -216,7 +216,8 @@ def get_tenant_collections(tenant_id=None):
         'kc': db[f'tenant_{subdomain}_kc'],
         'personal_bests': db[f'tenant_{subdomain}_personal_bests'],
         'archive': db[f'tenant_{subdomain}_archive'],
-        'gained_cache': db[f'tenant_{subdomain}_gained_cache']
+        'gained_cache': db[f'tenant_{subdomain}_gained_cache'],
+        'collection_log_cache': db[f'tenant_{subdomain}_collection_log_cache']
     }
     _ensure_tenant_indexes(collections, subdomain)
     return collections
@@ -288,6 +289,13 @@ except Exception as e:
 # DinkParser.py/fetch_gim_data.py send as X-API-Key.
 ADMIN_PASSWORD = os.environ.get('BINGO_ADMIN_PASSWORD', 'bingo2025')
 DROP_API_KEY = os.environ.get('DROP_API_KEY', 'your_secret_drop_key_here')
+
+# groupiron.men (the group's own GIM tracker, fed by the Collection Log
+# RuneLite plugin) - see fetch_groupironmen_collection_log. Not tenant-aware
+# like the rest of this file; only used to supplement the All Time luck calc
+# for this one deployment's group, so a single global credential is enough.
+GROUPIRONMEN_TOKEN = os.environ.get('GROUPIRONMEN_TOKEN', '')
+GROUPIRONMEN_GROUP_NAME = os.environ.get('GROUPIRONMEN_GROUP_NAME', 'Unsociables')
 
 print(
     f"🔐 Fallback admin password is set {'from environment variable' if os.environ.get('BINGO_ADMIN_PASSWORD') else 'to default (change this!)'} (only used by tenants without their own admin_password_hash)")
@@ -738,6 +746,105 @@ def refresh_kc_gained():
         'results': results,
         'debug': debug_log
     })
+
+
+def fetch_groupironmen_collection_log():
+    """
+    Pulls each player's real collection log - item name -> quantity ever
+    obtained - from groupiron.men, the group's own GIM tracker site, fed by
+    the Collection Log RuneLite plugin.
+
+    Why this exists: Dink's own drop history only goes back to whenever
+    Dink was actually installed, so a player's All Time luck score was
+    being computed against a badly incomplete "actual" count - missing
+    every real drop from before then. The in-game Collection Log has no
+    such gap; groupiron.men already has it synced for this group.
+
+    This is ONLY ever used as a supplemental source for the All Time luck
+    calc (see compute_luck_breakdown) - never stored into or merged with
+    drop history, and never used for anything date-based (Drop History,
+    Analytics, Recap, Current Bingo luck), because collection log entries
+    carry no timestamp and no per-drop source at all, just a running total.
+
+    Returns {player: {item_name_lower: quantity}}, or None if not
+    configured (no GROUPIRONMEN_TOKEN) or the request failed.
+    """
+    if not GROUPIRONMEN_TOKEN:
+        return None
+    try:
+        group_resp = requests.get(
+            f'https://groupiron.men/api/group/{GROUPIRONMEN_GROUP_NAME}/get-group-data',
+            params={'from_time': '1970-01-01T00:00:00.000Z'},
+            headers={'Authorization': GROUPIRONMEN_TOKEN},
+            timeout=20
+        )
+        if group_resp.status_code != 200:
+            print(f"[!] groupiron.men group-data request failed: HTTP {group_resp.status_code}")
+            return None
+
+        items_resp = requests.get('https://groupiron.men/data/item_data.json', timeout=20)
+        if items_resp.status_code != 200:
+            print(f"[!] groupiron.men item_data.json request failed: HTTP {items_resp.status_code}")
+            return None
+        item_names = {k: v.get('name', '') for k, v in items_resp.json().items()}
+
+        result = {}
+        for player_doc in group_resp.json():
+            player = player_doc.get('name')
+            cl = player_doc.get('collection_log_v2') or []
+            if not player or not cl:
+                continue
+            # Flat [itemId, qty, itemId, qty, ...] list (see
+            # CollectionLogV2Manager.java's List<Integer> - it's a JSON
+            # array, not an object, even though it happens to also respond
+            # to string-indexed/Object.keys() access in JS).
+            owned = {}
+            for i in range(0, len(cl) - 1, 2):
+                item_id = str(cl[i])
+                qty = cl[i + 1]
+                name = item_names.get(item_id)
+                if name and qty:
+                    name = name.lower()
+                    owned[name] = owned.get(name, 0) + qty
+            if owned:
+                result[player] = owned
+        return result
+    except Exception as e:
+        print(f"[!] groupiron.men fetch failed: {e}")
+        return None
+
+
+@app.route('/kc/refresh-collection-log', methods=['POST'])
+@limiter.limit("10 per minute")
+def refresh_collection_log():
+    """
+    Refreshes the collection_log_cache from groupiron.men (see
+    fetch_groupironmen_collection_log). Triggered periodically by a GitHub
+    Action, not fetched live per request - groupiron.men is an external
+    service we don't control the availability/rate limits of, and this
+    data (a lifetime total) doesn't need to be fresher than a few hours.
+    """
+    if not USE_MONGODB:
+        return jsonify({'success': False, 'error': 'MongoDB not available'}), 503
+
+    tenant = get_authenticated_tenant()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+    tenant_id = tenant['tenant_id']
+    collections = get_tenant_collections(tenant_id)
+
+    data = fetch_groupironmen_collection_log()
+    if data is None:
+        return jsonify({'success': False, 'error': 'Fetch from groupiron.men failed (not configured, or request failed) - see server logs'}), 502
+
+    for player, items in data.items():
+        collections['collection_log_cache'].update_one(
+            {'player': player},
+            {'$set': {'player': player, 'items': items, 'fetched_at': datetime.utcnow()}},
+            upsert=True
+        )
+
+    return jsonify({'success': True, 'players_updated': len(data)})
 
 
 @app.route('/kc/player/<player_name>', methods=['GET'])
@@ -2287,7 +2394,29 @@ def _load_notable_item_sources():
         return {}
 
 
+def _load_ambiguous_source_items():
+    """
+    Item names (lowercase) flagged _ambiguous_source: true - a curated
+    "source" boss that's real for live Dink drops (which carry their own
+    verified per-drop source) but not safe to trust blind for the All Time
+    collection-log boost, which has no per-drop source at all. e.g. Granite
+    maul's curated source is Grotesque Guardians, but it's also dropped by
+    ordinary Gargoyles - a collection log total can't tell which one a copy
+    came from, so compute_luck_breakdown excludes these from that boost
+    specifically rather than silently crediting the wrong boss.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-unique-items.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            items = json.load(f)
+        return {name for name, info in items.items() if info.get('_ambiguous_source')}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-unique-items.json for ambiguous-source list: {e}")
+        return set()
+
+
 NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
+AMBIGUOUS_SOURCE_ITEMS = _load_ambiguous_source_items()
 
 
 def _boss_key_for_drop(d, item_name):
@@ -2396,6 +2525,9 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     ALL-TIME notable drops, ignoring start_date/end_date entirely - this
     backs the Luck tab's "All Time" toggle, mirroring how Effort/Boss
     Contribution already have their own Current Bingo vs. All Time modes.
+    All Time's "actual" side also pulls from collection_log_cache (see
+    fetch_groupironmen_collection_log) to cover real drops from before
+    Dink was installed, which drop history alone can't have.
 
     Returns {player: {'luck_score': float, 'bosses': [
         {'boss': display name, 'kc_gained': int, 'expected': float, 'actual': int, 'diff': float}
@@ -2425,25 +2557,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         if item_name.lower() not in {k.lower() for k in rates}:
             rates[item_name] = r1
 
-    # Actual notable drops, per player per boss - event-windowed, or every
-    # drop on record when all_time (match_query is {} in that case).
-    player_boss_notable = {}
-    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
-        player = d.get('player')
-        if not player:
-            continue
-        item_name = (d.get('item') or '').strip()
-        if item_name.lower() not in NOTABLE_ITEM_NAMES:
-            continue
-        boss_key = _boss_key_for_drop(d, item_name)
-        if not boss_key:
-            continue
-        player_boss_notable.setdefault(player, {})
-        player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1
-
     # KC per player per boss - WOM-authoritative "gained since event start"
     # from gained_cache, or each player's latest total-KC snapshot (same
-    # aggregation /kc/all uses) when all_time.
+    # aggregation /kc/all uses) when all_time. Computed before the actual-
+    # drops section below because the All Time collection-log supplement
+    # needs it to disambiguate an item shared between two specific bosses.
     kc_by_boss = {}
     boss_display_names = {}  # boss_key -> the display name WOM/the snapshot uses
     if all_time:
@@ -2480,6 +2598,70 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                         boss_display_names.setdefault(boss_key, boss)
             if player_bosses:
                 kc_by_boss[snap_player] = player_bosses
+
+    # Actual notable drops, per player per boss per item - event-windowed,
+    # or every drop on record when all_time (match_query is {} in that
+    # case). Tracked per item rather than summed straight to a boss total
+    # so the All Time collection-log supplement below can raise one item's
+    # count without clobbering a different notable item at the same boss.
+    player_boss_item_notable = {}  # player -> {boss_key: {item_name_lower: count}}
+    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
+        player = d.get('player')
+        if not player:
+            continue
+        item_name = (d.get('item') or '').strip()
+        item_key = item_name.lower()
+        if item_key not in NOTABLE_ITEM_NAMES:
+            continue
+        boss_key = _boss_key_for_drop(d, item_name)
+        if not boss_key:
+            continue
+        per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
+        per_boss[item_key] = per_boss.get(item_key, 0) + 1
+
+    # All Time only: groupiron.men's collection log (see
+    # fetch_groupironmen_collection_log) covers real drops from before Dink
+    # was installed, which Dink's own history can never have. It carries no
+    # timestamp or per-drop source though, so attribution falls back to the
+    # curated source: a single-boss source resolves directly; a source
+    # naming several bosses (e.g. "The Gauntlet / Corrupted Gauntlet") goes
+    # to whichever of those specific bosses this player has more KC at -
+    # people who split time close to evenly between two such modes are
+    # rare, so this is a reasonable signal, not a guess from nothing. An
+    # item flagged _ambiguous_source (shared with a monster outside this
+    # set entirely, e.g. Granite maul/Gargoyles) is skipped rather than
+    # guessed at either way. This only ever RAISES an item's count to what's
+    # actually logged - it can't lower a count Dink already captured, and
+    # never double-counts since it's a max() against the same per-item slot.
+    if all_time:
+        for cl_doc in collections['collection_log_cache'].find({}):
+            player = cl_doc.get('player')
+            owned = cl_doc.get('items', {})
+            if not player or not owned:
+                continue
+            player_kc = kc_by_boss.get(player, {})
+            for item_name, qty in owned.items():
+                item_key = item_name.lower()
+                if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
+                    continue
+                source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
+                if ' / ' in source:
+                    candidates = [c for c in (normalize_boss_name(p) for p in source.split(' / ')) if c]
+                    boss_key = max(candidates, key=lambda c: player_kc.get(c, 0)) if candidates else None
+                    if boss_key and player_kc.get(boss_key, 0) <= 0:
+                        boss_key = None  # no KC at any candidate - nothing to disambiguate with
+                else:
+                    boss_key = normalize_boss_name(source)
+                if not boss_key:
+                    continue
+                per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
+                if qty > per_boss.get(item_key, 0):
+                    per_boss[item_key] = qty
+
+    player_boss_notable = {}
+    for player, bosses in player_boss_item_notable.items():
+        for boss_key, items in bosses.items():
+            player_boss_notable.setdefault(player, {})[boss_key] = sum(items.values())
 
     breakdown = {}
     for player, boss_kc in kc_by_boss.items():

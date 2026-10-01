@@ -5544,6 +5544,12 @@ async function loadAnalyticsWithFilters() {
             const luckData = _kcMode === 'bingo' ? _luckData : _luckDataAllTime;
             renderLuckPlayerView(luckData || {}, document.getElementById('luckPlayerView'));
             renderLuckBossView(luckData || {}, document.getElementById('luckBossView'));
+            const luckDesc = document.getElementById('luckDescription');
+            if (luckDesc) {
+                luckDesc.textContent = _kcMode === 'bingo'
+                    ? "Compares actual notable drops against what each player's kill count should've produced, based on real droprates."
+                    : "Compares actual notable drops against what each player's kill count should've produced, based on real droprates. Also includes each player's full collection log, since Dink drop tracking doesn't go back as far as some accounts do.";
+            }
         }
 
         function switchKCMode(mode) {
@@ -6711,6 +6717,39 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.29",
+                date: "2026-10-02",
+                title: "Adjusted The Hueycoatl's droprates for mass worlds",
+                changes: [
+                    { type: "fix", text: "The Hueycoatl's wiki droprates are per-kill at 100% contribution (i.e. solo) - the wiki's own page notes the real chance is \"individual per player and scaled by contribution\", which massively inflated \"expected\" drops for anyone farming it the normal way, in a mass. There's no way to know each kill's actual contribution share, so this is a rough approximation rather than an exact fix: rates are now divided by 20, the player cap of World 420 (the standard Hueycoatl mass world). Still an estimate, and it'll run the other way for anyone who solos/duos it, but it's much closer than treating every kill as solo." },
+                ]
+            },
+            {
+                version: "v2.13.28",
+                date: "2026-10-02",
+                title: "Fixed The Gauntlet using Corrupted Gauntlet's droprates",
+                changes: [
+                    { type: "fix", text: "The Gauntlet's \"expected\" drops in Luck were calculated using Corrupted Gauntlet's rates (1/50) instead of its own - the wiki page lists both modes' full reward tables separately, and the scraper was only keeping whichever one it read last. The Gauntlet now correctly uses its own real rates (1/120 for the seeds, 1/2000 for Enhanced crystal weapon seed, which turns out to not be Corrupted-exclusive after all) - Corrupted Gauntlet's own numbers were already right and are unaffected." },
+                ]
+            },
+            {
+                version: "v2.13.27",
+                date: "2026-10-02",
+                title: "Fixed two All Time Luck accuracy bugs",
+                changes: [
+                    { type: "fix", text: "Grotesque Guardians was showing drops that never happened - Granite maul is also dropped by ordinary Gargoyles (unrelated, far more common), and the collection log boost couldn't tell those apart, so it was crediting Grotesque Guardians for every Granite maul ever obtained from either source. It's now excluded from the collection-log boost specifically (a real Dink-tracked Grotesque Guardians drop still counts fine)." },
+                    { type: "fix", text: "Crystal weapon seed / Crystal armour seed (dropped by both The Gauntlet and Corrupted Gauntlet) were being skipped by the collection-log boost entirely, since it had no way to tell which mode they came from - undercounting Corrupted Gauntlet specifically, since that's almost always the one people actually grind. It now attributes them to whichever of the two a player has more kill count in." },
+                ]
+            },
+            {
+                version: "v2.13.26",
+                date: "2026-10-01",
+                title: "All Time Luck now uses full collection log history",
+                changes: [
+                    { type: "feature", text: "All Time Luck was undercounting everyone's real drops, since Dink drop tracking only goes back to whenever it was first installed on each account - any notable item obtained before that was invisible to it. All Time now also checks each player's full collection log (synced via groupiron.men) for a much more complete picture of what's actually been obtained over the account's whole history. Current Bingo luck is unaffected - it's still based purely on this event's own tracked drops." },
+                ]
+            },
             {
                 version: "v2.13.25",
                 date: "2026-10-01",
