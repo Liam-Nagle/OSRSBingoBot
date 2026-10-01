@@ -215,7 +215,8 @@ def get_tenant_collections(tenant_id=None):
         'rank_history': db[f'tenant_{subdomain}_rank_history'],
         'kc': db[f'tenant_{subdomain}_kc'],
         'personal_bests': db[f'tenant_{subdomain}_personal_bests'],
-        'archive': db[f'tenant_{subdomain}_archive']
+        'archive': db[f'tenant_{subdomain}_archive'],
+        'gained_cache': db[f'tenant_{subdomain}_gained_cache']
     }
     _ensure_tenant_indexes(collections, subdomain)
     return collections
@@ -295,6 +296,85 @@ print(
 print()
 
 
+# Bosses excluded from all tracking and display
+WOM_EXCLUDED_BOSSES = {'Brutus'}
+
+# WiseOldMan uses different keys for bosses - map them to our display format.
+# Shared between fetch_osrs_highscores (current KC) and fetch_wom_gained
+# (KC gained over a date range) so both resolve the same metric to the same
+# display name.
+WOM_BOSS_MAPPING = {
+    'abyssal_sire': 'Abyssal Sire',
+    'alchemical_hydra': 'Alchemical Hydra',
+    'amoxliatl': 'Amoxliatl',
+    'araxxor': 'Araxxor',
+    'artio': 'Artio',
+    'barrows_chests': 'Barrows Chests',
+    'bryophyta': 'Bryophyta',
+    'callisto': 'Callisto',
+    'calvarion': "Cal'varion",
+    'cerberus': 'Cerberus',
+    'chambers_of_xeric': 'Chambers of Xeric',
+    'chambers_of_xeric_challenge_mode': 'Chambers of Xeric: Challenge Mode',
+    'chaos_elemental': 'Chaos Elemental',
+    'chaos_fanatic': 'Chaos Fanatic',
+    'commander_zilyana': 'Commander Zilyana',
+    'corporeal_beast': 'Corporeal Beast',
+    'crazy_archaeologist': 'Crazy Archaeologist',
+    'dagannoth_prime': 'Dagannoth Prime',
+    'dagannoth_rex': 'Dagannoth Rex',
+    'dagannoth_supreme': 'Dagannoth Supreme',
+    'deranged_archaeologist': 'Deranged Archaeologist',
+    'doom_of_mokhaiotl': 'Doom of Mokhaiotl',
+    'duke_sucellus': 'Duke Sucellus',
+    'general_graardor': 'General Graardor',
+    'giant_mole': 'Giant Mole',
+    'grotesque_guardians': 'Grotesque Guardians',
+    'hespori': 'Hespori',
+    'kalphite_queen': 'Kalphite Queen',
+    'king_black_dragon': 'King Black Dragon',
+    'kraken': 'Kraken',
+    'kreearra': "Kree'Arra",
+    'kril_tsutsaroth': "K'ril Tsutsaroth",
+    'lunar_chests': "Moons",
+    'mimic': 'Mimic',
+    'nex': 'Nex',
+    'nightmare': 'Nightmare',
+    'phosanis_nightmare': "Phosani's Nightmare",
+    'obor': 'Obor',
+    'phantom_muspah': 'Phantom Muspah',
+    'sarachnis': 'Sarachnis',
+    'scorpia': 'Scorpia',
+    'scurrius': 'Scurrius',
+    'skotizo': 'Skotizo',
+    'shellbane_gryphon': 'Shellbane Gryphon',
+    'sol_heredit': 'Sol Heredit',
+    'spindel': 'Spindel',
+    'tempoross': 'Tempoross',
+    'the_gauntlet': 'The Gauntlet',
+    'the_corrupted_gauntlet': 'The Corrupted Gauntlet',
+    'the_hueycoatl': 'The Hueycoatl',
+    'the_leviathan': 'The Leviathan',
+    'the_whisperer': 'The Whisperer',
+    'the_royal_titans': 'Royal Titans',
+    'theatre_of_blood': 'Theatre of Blood',
+    'theatre_of_blood_hard_mode': 'Theatre of Blood: Hard Mode',
+    'thermonuclear_smoke_devil': 'Thermonuclear Smoke Devil',
+    'tombs_of_amascut': 'Tombs of Amascut',
+    'tombs_of_amascut_expert': 'Tombs of Amascut: Expert Mode',
+    'tzkal_zuk': 'TzKal-Zuk',
+    'tztok_jad': 'TzTok-Jad',
+    'vardorvis': 'Vardorvis',
+    'venenatis': 'Venenatis',
+    'vetion': "Vet'ion",
+    'vorkath': 'Vorkath',
+    'wintertodt': 'Wintertodt',
+    'yama': 'Yama',
+    'zalcano': 'Zalcano',
+    'zulrah': 'Zulrah'
+}
+
+
 def fetch_osrs_highscores(player_name):
     """Fetch player's KC from WiseOldMan API - returns (kc_data, debug_log)"""
     debug = []
@@ -357,81 +437,6 @@ def fetch_osrs_highscores(player_name):
 
         boss_data = {}
 
-        # Bosses excluded from all tracking and display
-        EXCLUDED_BOSSES = {'Brutus'}
-
-        # WiseOldMan uses different keys for bosses - map them to our format
-        boss_mapping = {
-            'abyssal_sire': 'Abyssal Sire',
-            'alchemical_hydra': 'Alchemical Hydra',
-            'amoxliatl': 'Amoxliatl',
-            'araxxor': 'Araxxor',
-            'artio': 'Artio',
-            'barrows_chests': 'Barrows Chests',
-            'bryophyta': 'Bryophyta',
-            'callisto': 'Callisto',
-            'calvarion': "Cal'varion",
-            'cerberus': 'Cerberus',
-            'chambers_of_xeric': 'Chambers of Xeric',
-            'chambers_of_xeric_challenge_mode': 'Chambers of Xeric: Challenge Mode',
-            'chaos_elemental': 'Chaos Elemental',
-            'chaos_fanatic': 'Chaos Fanatic',
-            'commander_zilyana': 'Commander Zilyana',
-            'corporeal_beast': 'Corporeal Beast',
-            'crazy_archaeologist': 'Crazy Archaeologist',
-            'dagannoth_prime': 'Dagannoth Prime',
-            'dagannoth_rex': 'Dagannoth Rex',
-            'dagannoth_supreme': 'Dagannoth Supreme',
-            'deranged_archaeologist': 'Deranged Archaeologist',
-            'doom_of_mokhaiotl': 'Doom of Mokhaiotl',
-            'duke_sucellus': 'Duke Sucellus',
-            'general_graardor': 'General Graardor',
-            'giant_mole': 'Giant Mole',
-            'grotesque_guardians': 'Grotesque Guardians',
-            'hespori': 'Hespori',
-            'kalphite_queen': 'Kalphite Queen',
-            'king_black_dragon': 'King Black Dragon',
-            'kraken': 'Kraken',
-            'kreearra': "Kree'Arra",
-            'kril_tsutsaroth': "K'ril Tsutsaroth",
-            'lunar_chests': "Moons",
-            'mimic': 'Mimic',
-            'nex': 'Nex',
-            'nightmare': 'Nightmare',
-            'phosanis_nightmare': "Phosani's Nightmare",
-            'obor': 'Obor',
-            'phantom_muspah': 'Phantom Muspah',
-            'sarachnis': 'Sarachnis',
-            'scorpia': 'Scorpia',
-            'scurrius': 'Scurrius',
-            'skotizo': 'Skotizo',
-            'shellbane_gryphon': 'Shellbane Gryphon',
-            'sol_heredit': 'Sol Heredit',
-            'spindel': 'Spindel',
-            'tempoross': 'Tempoross',
-            'the_gauntlet': 'The Gauntlet',
-            'the_corrupted_gauntlet': 'The Corrupted Gauntlet',
-            'the_hueycoatl': 'The Hueycoatl',
-            'the_leviathan': 'The Leviathan',
-            'the_whisperer': 'The Whisperer',
-            'the_royal_titans': 'Royal Titans',
-            'theatre_of_blood': 'Theatre of Blood',
-            'theatre_of_blood_hard_mode': 'Theatre of Blood: Hard Mode',
-            'thermonuclear_smoke_devil': 'Thermonuclear Smoke Devil',
-            'tombs_of_amascut': 'Tombs of Amascut',
-            'tombs_of_amascut_expert': 'Tombs of Amascut: Expert Mode',
-            'tzkal_zuk': 'TzKal-Zuk',
-            'tztok_jad': 'TzTok-Jad',
-            'vardorvis': 'Vardorvis',
-            'venenatis': 'Venenatis',
-            'vetion': "Vet'ion",
-            'vorkath': 'Vorkath',
-            'wintertodt': 'Wintertodt',
-            'yama': 'Yama',
-            'zalcano': 'Zalcano',
-            'zulrah': 'Zulrah'
-        }
-
         # Extract KC from snapshot - iterate WiseOldMan's full response so new bosses
         # are picked up automatically without needing a code change.
         # The mapping overrides display names for special cases (apostrophes, abbreviations);
@@ -440,8 +445,8 @@ def fetch_osrs_highscores(player_name):
             kc = boss_value.get('kills', 0)
             if not kc or kc <= 0:
                 continue
-            display_name = boss_mapping.get(wom_key) or wom_key.replace('_', ' ').title()
-            if display_name in EXCLUDED_BOSSES:
+            display_name = WOM_BOSS_MAPPING.get(wom_key) or wom_key.replace('_', ' ').title()
+            if display_name in WOM_EXCLUDED_BOSSES:
                 continue
             boss_data[display_name] = kc
 
@@ -451,6 +456,66 @@ def fetch_osrs_highscores(player_name):
             debug.append(f"Sample: {sample}")
 
         return (boss_data if boss_data else None), debug
+
+    except Exception as e:
+        debug.append(f"💥 Exception: {type(e).__name__}: {str(e)}")
+        return None, debug
+
+
+def fetch_wom_gained(player_name, start_date, end_date):
+    """
+    Fetch a player's KC gained per boss over an exact date range, straight
+    from WiseOldMan's own /gained endpoint - which computes the delta from
+    WOM's own historical snapshot data, not from two single snapshots we
+    captured ourselves.
+
+    This replaces diffing our own 'start' vs 'current' KC snapshots, which
+    turned out to be unreliable in multiple ways: a boss can be missing
+    from our 'start' snapshot entirely (defaulting the gain to the
+    player's whole lifetime KC instead of 0), or our 'start' snapshot can
+    simply have been captured later than intended (showing 0 gained when
+    real gains happened before it was taken). WOM's own numbers aren't
+    subject to either failure mode.
+
+    Returns {display_name: {'start': int, 'end': int, 'gained': int}, ...},
+    or (None, debug_log) on failure. A boss WOM reports as unranked (its
+    "-1" sentinel for kills it doesn't track a leaderboard rank for) is
+    skipped rather than guessed at.
+    """
+    debug = []
+    try:
+        url = f"https://api.wiseoldman.net/v2/players/{player_name.replace(' ', '_')}/gained"
+        debug.append(f"🌐 Fetching gained KC from WiseOldMan: {url}")
+
+        response = requests.get(url, headers={'User-Agent': 'OSRS-Bingo-Tracker/1.0'},
+                                 params={'startDate': start_date, 'endDate': end_date}, timeout=15)
+        debug.append(f"📡 HTTP Status: {response.status_code}")
+
+        if response.status_code != 200:
+            debug.append(f"❌ Error: {response.text[:200]}")
+            return None, debug
+
+        boss_data = response.json().get('data', {}).get('bosses', {})
+        gained_by_boss = {}
+        for wom_key, entry in boss_data.items():
+            kills = entry.get('kills', {})
+            # Trust WOM's own precomputed "gained" directly rather than
+            # recomputing end-start ourselves - it stays correct even when
+            # start or end individually show WOM's -1 "unranked" sentinel
+            # (e.g. a player who wasn't on that boss's leaderboard yet at
+            # the start date still has a perfectly valid gained count).
+            gained = kills.get('gained', 0)
+            if gained <= 0:
+                continue
+            start_kc = kills.get('start', -1)
+            end_kc = kills.get('end', -1)
+            display_name = WOM_BOSS_MAPPING.get(wom_key) or wom_key.replace('_', ' ').title()
+            if display_name in WOM_EXCLUDED_BOSSES:
+                continue
+            gained_by_boss[display_name] = {'start': start_kc, 'end': end_kc, 'gained': gained}
+
+        debug.append(f"✅ Found {len(gained_by_boss)} bosses with KC gained > 0")
+        return gained_by_boss, debug
 
     except Exception as e:
         debug.append(f"💥 Exception: {type(e).__name__}: {str(e)}")
@@ -598,6 +663,83 @@ def create_kc_snapshot():
     })
 
 
+@app.route('/kc/refresh-gained', methods=['POST'])
+@limiter.limit("10 per minute")
+def refresh_kc_gained():
+    """
+    Refreshes the WOM-authoritative "KC gained per boss" cache for every
+    tracked player, for the current event's date window. Replaces diffing
+    our own 'start'/'current' KC snapshots (see fetch_wom_gained for why
+    that was unreliable) as the source for KC-gained everywhere it's used
+    (recap/luck badges, /kc/player, /kc/effort). Triggered periodically by
+    a GitHub Action (same pattern as /kc/snapshot), not on every page
+    view - WOM's API has rate limits, and this data only needs to be as
+    fresh as the last few hours.
+    """
+    debug_log = []
+    if not USE_MONGODB:
+        return jsonify({'success': False, 'error': 'MongoDB not available', 'debug': debug_log}), 503
+
+    tenant = get_authenticated_tenant()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized', 'debug': debug_log}), 401
+    tenant_id = tenant['tenant_id']
+    collections = get_tenant_collections(tenant_id)
+
+    event_config = collections['bingo'].find_one({'_id': 'event_config'})
+    if not event_config or not event_config.get('enabled'):
+        return jsonify({'success': False, 'error': 'No event is currently configured', 'debug': debug_log}), 404
+
+    start_date = event_config.get('startDate')
+    configured_end = event_config.get('endDate')
+    now_iso = datetime.utcnow().isoformat() + 'Z'
+    # Don't ask WOM to compute "gained" up to a date in the future - cap the
+    # window at now for an event that's still ongoing.
+    end_date = min(configured_end, now_iso) if configured_end else now_iso
+    if not start_date:
+        return jsonify({'success': False, 'error': 'Event has no startDate configured', 'debug': debug_log}), 400
+    debug_log.append(f"[*] Refreshing KC gained from {start_date} to {end_date}")
+
+    try:
+        players = collections['history'].distinct('player')
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e), 'debug': debug_log}), 500
+    debug_log.append(f"[*] Found {len(players)} players: {players}")
+
+    results = []
+    for player in players:
+        gained_by_boss, fetch_debug = fetch_wom_gained(player, start_date, end_date)
+        if gained_by_boss is not None:
+            try:
+                collections['gained_cache'].update_one(
+                    {'player': player},
+                    {'$set': {
+                        'player': player,
+                        'event_start': start_date,
+                        'event_end': end_date,
+                        'bosses': gained_by_boss,
+                        'fetched_at': datetime.utcnow()
+                    }},
+                    upsert=True
+                )
+                results.append({'player': player, 'success': True, 'boss_count': len(gained_by_boss)})
+            except Exception as e:
+                results.append({'player': player, 'success': False, 'error': str(e)})
+        else:
+            results.append({'player': player, 'success': False, 'error': 'fetch failed', 'debug': fetch_debug})
+
+    successful = sum(1 for r in results if r.get('success'))
+    debug_log.append(f"[*] FINAL: {successful}/{len(results)} succeeded")
+
+    return jsonify({
+        'success': True,
+        'players_processed': len(results),
+        'successful': successful,
+        'results': results,
+        'debug': debug_log
+    })
+
+
 @app.route('/kc/player/<player_name>', methods=['GET'])
 def get_player_kc(player_name):
     """Get a player's KC history"""
@@ -621,30 +763,28 @@ def get_player_kc(player_name):
             snapshot['_id'] = str(snapshot['_id'])
             snapshot['timestamp'] = snapshot['timestamp'].isoformat()
 
-        # Get starting snapshot
+        # Get starting snapshot (still used for has_start/UI purposes, but no
+        # longer for the effort calculation below)
         start_snapshot = collections['kc'].find_one(
             {'player': player_name, 'snapshot_type': 'start'},
             sort=[('timestamp', 1)]
         )
 
-        # Get current snapshot
-        current_snapshot = collections['kc'].find_one(
-            {'player': player_name},
-            sort=[('timestamp', -1)]
-        )
-
-        # Calculate effort (KC gained)
+        # KC gained per boss comes from the WOM-authoritative gained_cache
+        # (refreshed periodically by /kc/refresh-gained), not from diffing
+        # our own 'start' vs 'current' snapshots - that diff was unreliable
+        # (a boss missing from 'start' entirely credited a player's whole
+        # lifetime KC as "gained", and a late-captured 'start' snapshot
+        # could show 0 gained when real gains happened first).
+        cached = collections['gained_cache'].find_one({'player': player_name})
         effort = {}
-        if start_snapshot and current_snapshot:
-            for boss, current_kc in current_snapshot['bosses'].items():
-                start_kc = start_snapshot['bosses'].get(boss, 0)
-                gained = current_kc - start_kc
-                if gained > 0:
-                    effort[boss] = {
-                        'start': start_kc,
-                        'current': current_kc,
-                        'gained': gained
-                    }
+        if cached:
+            for boss, boss_gained in cached.get('bosses', {}).items():
+                effort[boss] = {
+                    'start': boss_gained['start'],
+                    'current': boss_gained['end'],
+                    'gained': boss_gained['gained']
+                }
 
         return jsonify({
             'player': player_name,
@@ -811,48 +951,28 @@ def get_kc_effort():
 
         effort_results = []
 
+        # KC gained per boss comes from the WOM-authoritative gained_cache
+        # (refreshed periodically by /kc/refresh-gained) rather than diffing
+        # our own 'start'/'current' KC snapshots - see fetch_wom_gained for
+        # why that diff was unreliable (missing bosses, late-captured starts).
         for player in players:
-            # Get bingo start snapshot
-            start_snapshot = collections['kc'].find_one({
+            cached = collections['gained_cache'].find_one({'player': player})
+            if not cached or not cached.get('bosses'):
+                continue  # Skip if no gained data cached yet for this player
+
+            effort = {boss: data['gained'] for boss, data in cached['bosses'].items()}
+
+            effort_results.append({
                 'player': player,
-                'snapshot_type': 'start'
-            }, sort=[('timestamp', -1)])
-
-            # Get latest current snapshot
-            current_snapshot = collections['kc'].find_one({
-                'player': player,
-                'snapshot_type': 'current'
-            }, sort=[('timestamp', -1)])
-
-            if not start_snapshot or not current_snapshot:
-                continue  # Skip if missing either snapshot
-
-            # Calculate effort (current - start)
-            start_bosses = start_snapshot.get('bosses', {})
-            current_bosses = current_snapshot.get('bosses', {})
-
-            _excluded = {'Brutus'}
-            effort = {}
-            for boss, current_kc in current_bosses.items():
-                if boss in _excluded:
-                    continue
-                start_kc = start_bosses.get(boss, 0)
-                gain = current_kc - start_kc
-                if gain > 0:
-                    effort[boss] = gain
-
-            if effort:  # Only include if there are gains
-                effort_results.append({
-                    'player': player,
-                    'effort': effort,
-                    'start_timestamp': start_snapshot['timestamp'].isoformat(),
-                    'current_timestamp': current_snapshot['timestamp'].isoformat()
-                })
+                'effort': effort,
+                'start_timestamp': cached.get('event_start'),
+                'current_timestamp': cached.get('fetched_at').isoformat() if cached.get('fetched_at') else None
+            })
 
         if not effort_results:
             return jsonify({
                 'success': False,
-                'message': 'No bingo start snapshot found. Click "Mark as Bingo Start" to set baseline.',
+                'message': 'No KC gained data cached yet. Trigger /kc/refresh-gained to populate it.',
                 'players': []
             })
 
@@ -2374,28 +2494,34 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         if stats['rarest_drop'] and (rarest_drop_overall is None or stats['rarest_drop'][0] > rarest_drop_overall[0]):
             rarest_drop_overall = (stats['rarest_drop'][0], player)
 
-    # --- KC gained per player, reusing the same start-vs-latest snapshot diff as /kc/player/<name> ---
+    # --- KC gained per player, from the WOM-authoritative gained_cache (see
+    # fetch_wom_gained) rather than diffing our own 'start'/'current' KC
+    # snapshots - that diff was unreliable (a boss missing from 'start'
+    # entirely credited a player's whole lifetime KC as "gained", and a
+    # late-captured 'start' snapshot could show 0 gained when real gains
+    # happened before it was taken). ---
     kc_gained = {}
     kc_gained_by_boss = {}  # player -> {boss_key: gained}, feeds the luck badges below
-    for snap_player in collections['kc'].distinct('player'):
-        start_snap = collections['kc'].find_one({'player': snap_player, 'snapshot_type': 'start'}, sort=[('timestamp', 1)])
-        current_snap = collections['kc'].find_one({'player': snap_player}, sort=[('timestamp', -1)])
-        if start_snap and current_snap:
-            total_gained = 0
-            player_bosses = {}
-            for boss, current_kc in current_snap.get('bosses', {}).items():
-                gained = current_kc - start_snap.get('bosses', {}).get(boss, 0)
-                if gained > 0:
-                    total_gained += gained
-                    # Stored under the display name (e.g. "Abyssal Sire") — normalize it
-                    # to the same key space as boss_item_rarity below (keyed from Dink's
-                    # drop-history source text) so the two can actually be joined.
-                    boss_key = normalize_boss_name(boss)
-                    if boss_key:
-                        player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
-            if total_gained > 0:
-                kc_gained[snap_player] = total_gained
-                kc_gained_by_boss[snap_player] = player_bosses
+    for cached in collections['gained_cache'].find({}):
+        snap_player = cached.get('player')
+        boss_gains = cached.get('bosses', {})
+        if not snap_player or not boss_gains:
+            continue
+        total_gained = 0
+        player_bosses = {}
+        for boss, boss_gained in boss_gains.items():
+            gained = boss_gained.get('gained', 0)
+            if gained > 0:
+                total_gained += gained
+                # Stored under the display name (e.g. "Abyssal Sire") — normalize it
+                # to the same key space as boss_item_rarity below (keyed from Dink's
+                # drop-history source text) so the two can actually be joined.
+                boss_key = normalize_boss_name(boss)
+                if boss_key:
+                    player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
+        if total_gained > 0:
+            kc_gained[snap_player] = total_gained
+            kc_gained_by_boss[snap_player] = player_bosses
 
     # --- luck score (tiny_violin/silver_spoon): expected-vs-actual notable drops ---
     # For every boss a player gained KC in that the team also pulled at least one

@@ -1,0 +1,36 @@
+name: Refresh KC Gained Cache
+
+on:
+  schedule:
+    # Run every 3 hours - same cadence as fetch-kc.yml, just after it so the
+    # 'current' KC snapshot (used elsewhere) and the WOM-authoritative
+    # gained numbers (used for KC-gained everywhere) stay roughly in step.
+    - cron: '15 */3 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  refresh-kc-gained:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger KC gained refresh on the API
+        env:
+          API_URL: https://osrsbingobot.onrender.com
+          DROP_API_KEY: ${{ secrets.DROP_API_KEY }}
+        run: |
+          # --max-time is generous because Render's free tier spins the API down
+          # when idle, so the first request of the day may have to cold-start it.
+          response=$(curl -s -w "\n%{http_code}" --max-time 90 -X POST "$API_URL/kc/refresh-gained" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $DROP_API_KEY")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "$body"
+
+          if [ "$http_code" -ge 400 ]; then
+            echo "❌ KC gained refresh failed with HTTP $http_code"
+            exit 1
+          fi
+
+          echo "✅ KC gained refresh triggered successfully"
