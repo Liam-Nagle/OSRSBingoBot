@@ -5544,6 +5544,12 @@ async function loadAnalyticsWithFilters() {
             const luckData = _kcMode === 'bingo' ? _luckData : _luckDataAllTime;
             renderLuckPlayerView(luckData || {}, document.getElementById('luckPlayerView'));
             renderLuckBossView(luckData || {}, document.getElementById('luckBossView'));
+            const luckDesc = document.getElementById('luckDescription');
+            if (luckDesc) {
+                luckDesc.textContent = _kcMode === 'bingo'
+                    ? "Compares actual notable drops against what each player's kill count should've produced, based on real droprates."
+                    : "Compares actual notable drops against what each player's kill count should've produced, based on real droprates. Also includes each player's full collection log, since Dink drop tracking doesn't go back as far as some accounts do.";
+            }
         }
 
         function switchKCMode(mode) {
@@ -6711,6 +6717,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.26",
+                date: "2026-10-01",
+                title: "All Time Luck now uses full collection log history",
+                changes: [
+                    { type: "feature", text: "All Time Luck was undercounting everyone's real drops, since Dink drop tracking only goes back to whenever it was first installed on each account - any notable item obtained before that was invisible to it. All Time now also checks each player's full collection log (synced via groupiron.men) for a much more complete picture of what's actually been obtained over the account's whole history. Current Bingo luck is unaffected - it's still based purely on this event's own tracked drops." },
+                ]
+            },
             {
                 version: "v2.13.25",
                 date: "2026-10-01",
