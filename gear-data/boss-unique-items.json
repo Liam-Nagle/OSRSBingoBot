@@ -40,6 +40,8 @@
   "armadyl hilt": { "source": "Kree'arra", "category": "weapon" },
   "saradomin sword": { "source": "Commander Zilyana", "category": "weapon" },
   "saradomin hilt": { "source": "Commander Zilyana", "category": "weapon" },
+  "armadyl crossbow": { "source": "Commander Zilyana", "category": "weapon" },
+  "saradomin's light": { "source": "Commander Zilyana", "category": "material" },
   "zamorakian spear": { "source": "K'ril Tsutsaroth", "category": "weapon" },
   "staff of the dead": { "source": "K'ril Tsutsaroth", "category": "weapon" },
   "steam battlestaff": { "source": "K'ril Tsutsaroth", "category": "weapon" },
@@ -76,6 +78,7 @@
   "granite ring": { "source": "Grotesque Guardians", "category": "jewelry" },
   "granite gloves": { "source": "Grotesque Guardians", "category": "armour" },
   "granite hammer": { "source": "Grotesque Guardians", "category": "tool", "_note": "Doubles as a rock hammer and a weapon - PvM tool, shared/borrowed within a group." },
+  "black tourmaline core": { "source": "Grotesque Guardians", "category": "material" },
 
   "hydra's claw": { "source": "Alchemical Hydra", "category": "weapon", "_note": "The actual drop - becomes Dragon hunter lance when combined with a Zamorakian hasta. Hydra never drops the finished lance." },
   "hydra's eye": { "source": "Alchemical Hydra", "category": "jewelry", "_note": "One of 3 pieces (with fang and heart) that combine into Brimstone ring - Hydra never drops the ring itself." },
@@ -89,6 +92,9 @@
   "voidwaker blade": { "source": "Vet'ion/Calvar'ion", "category": "weapon" },
   "voidwaker gem": { "source": "Venenatis/Spindel", "category": "weapon" },
   "tyrannical ring": { "source": "Callisto/Artio", "category": "jewelry" },
+  "skull of vet'ion": { "source": "Vet'ion", "category": "material" },
+  "claws of callisto": { "source": "Callisto/Artio", "category": "material" },
+  "dragon 2h sword": { "source": "Callisto/Artio/Venenatis/Spindel/Vet'ion/Calvar'ion", "category": "weapon" },
   "dragon pickaxe": { "source": "Callisto/Artio/Venenatis/Spindel/Vet'ion/Calvar'ion", "category": "tool", "_note": "PvM tool, not just combat gear - genuinely shared/borrowed within a group for mining, unlike a spare weapon or armour piece." },
   "dragon harpoon": { "source": "Wyrm", "category": "tool", "_note": "Not tied to one specific named boss the way the other entries are (its real source is Wyrms, a mid-tier slayer monster) - included anyway since it's still a rare, shareable PvM tool." },
   "warped sceptre": { "source": "Warped terrorbird/Warped tortoise", "category": "weapon" },
@@ -119,6 +125,7 @@
   "zaryte crossbow": { "source": "Nex", "category": "weapon" },
   "zaryte vambraces": { "source": "Nex", "category": "armour" },
   "nihil horn": { "source": "Nex", "category": "weapon", "_note": "Upgrades an Armadyl crossbow into a Zaryte crossbow (with 250 nihil shards). Not a dead-end material - corrected after being wrongly excluded earlier." },
+  "ancient hilt": { "source": "Nex", "category": "weapon", "_note": "Combines with an Ancient ceremonial sword (bought) to make the Ancient Godsword. Nex never drops the finished sword." },
 
   "executioner's axe head": { "source": "Vardorvis", "category": "weapon", "_note": "1 of 4 Soulreaper axe components (one per DT2 boss) combined at The Overseer. No DT2 boss drops the finished axe." },
   "siren's staff": { "source": "The Whisperer", "category": "weapon" },
@@ -131,6 +138,11 @@
   "ultor vestige": { "source": "Vardorvis", "category": "jewelry" },
   "bellator vestige": { "source": "The Whisperer", "category": "jewelry" },
   "venator vestige": { "source": "The Leviathan", "category": "jewelry" },
+  "chromium ingot": { "source": "Desert Treasure II bosses", "category": "material", "_note": "Shared material needed (with a vestige + seers icon + ring mould) to craft any of the 4 DT2 rings - drops from all 4 bosses." },
+
+  "dragon hunter wand": { "source": "The Hueycoatl", "category": "weapon" },
+  "hueycoatl hide": { "source": "The Hueycoatl", "category": "armour" },
+  "tome of earth (empty)": { "source": "The Hueycoatl", "category": "weapon" },
 
   "araxyte fang": { "source": "Araxxor", "category": "jewelry", "_note": "Combines with an Amulet of torture to make Amulet of rancour - Araxxor never drops the finished amulet." },
   "noxious pommel": { "source": "Araxxor", "category": "weapon", "_note": "1 of 3 Noxious halberd components. Araxxor never drops the finished halberd." },
