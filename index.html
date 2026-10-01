@@ -670,6 +670,7 @@ Dragon warhammer"></textarea>
                 <button onclick="showKCTab('leaderboards')" id="kcTabLeaderboards" class="kc-tab">Leaderboards</button>
                 <button onclick="showKCTab('details')" id="kcTabDetails" class="kc-tab">Effort</button>
                 <button onclick="showKCTab('contribution')" id="kcTabContribution" class="kc-tab">📊 Boss Contribution</button>
+                <button onclick="showKCTab('luck')" id="kcTabLuck" class="kc-tab">🍀 Luck</button>
             </div>
 
             <!-- Tab Contents -->
@@ -693,6 +694,18 @@ Dragon warhammer"></textarea>
 
             <!-- Admin-only Boss Contribution tab content -->
             <div id="kcTabContentContribution" class="kc-tab-content" style="display: none;"></div>
+
+            <div id="kcTabContentLuck" class="kc-tab-content" style="display: none;">
+                <p style="color: #8b7355; font-size: 13px; margin-top: 0; margin-bottom: 20px;">
+                    Compares actual notable drops against what each player's kill count should've produced, based on real droprates.
+                </p>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+                    <button onclick="showLuckView('player')" id="luckViewPlayer" class="kc-tab active">👤 Player View</button>
+                    <button onclick="showLuckView('boss')" id="luckViewBoss" class="kc-tab">🎯 Boss View</button>
+                </div>
+                <div id="luckPlayerView"></div>
+                <div id="luckBossView" style="display: none;"></div>
+            </div>
         </div>
     </div>
 

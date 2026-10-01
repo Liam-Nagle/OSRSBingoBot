@@ -38,6 +38,7 @@ const NAV_SECTIONS = [
             { icon: '🥇', label: 'Leaderboards', desc: "Pick a boss and see who's on top", go: 'kc:leaderboards' },
             { icon: '💪', label: 'Effort', desc: 'KC by player or by boss', go: 'kc:details' },
             { icon: '🧩', label: 'Boss Contribution', desc: "Who's pulling their weight on each boss", go: 'kc:contribution' },
+            { icon: '🍀', label: 'Luck Tracker', desc: "Actual drops vs. expected, overall and by boss", go: 'kc:luck' },
         ] },
         { title: 'Records', items: [
             { icon: '🏆', label: 'Personal Bests', desc: 'Fastest recorded times per boss', go: 'pbs' },
