@@ -6712,6 +6712,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.25",
+                date: "2026-10-01",
+                title: "Fixed Gauntlet/Hueycoatl/Leviathan/Whisperer missing from Luck",
+                changes: [
+                    { type: "fix", text: "The Gauntlet, Corrupted Gauntlet, The Hueycoatl, The Leviathan and The Whisperer weren't showing up in the Luck tab at all, for anyone - a key-naming mismatch meant their wiki-sourced droprates were silently unused. Also fixed Corrupted Gauntlet's droprates being missing entirely (its wiki page shares The Gauntlet's drop table) and corrected which crystal seed items actually drop from which mode." },
+                ]
+            },
+            {
                 version: "v2.13.24",
                 date: "2026-10-01",
                 title: "Luck Tracker now supports All Time",
