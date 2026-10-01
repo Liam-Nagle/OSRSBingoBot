@@ -2382,6 +2382,99 @@ def _dedupe_drops_for_recap(docs, window_seconds=60):
     return result
 
 
+def compute_luck_breakdown(collections, start_date, end_date):
+    """
+    Expected-vs-actual notable drops per player per boss, for the given event
+    window. Backs both the Event Recap's tiny_violin/silver_spoon badges
+    (compute_event_recap below just needs the final luck_score) and the live
+    Luck page (which also needs the full per-boss expected/actual/diff rows).
+    Returns {player: {'luck_score': float, 'bosses': [
+        {'boss': display name, 'kc_gained': int, 'expected': float, 'actual': int, 'diff': float}
+    ]}} - a player only appears if they gained KC at a boss the team also has
+    a known droprate for; bosses with no usable droprate are simply omitted
+    rather than guessed at.
+    """
+    match_query = {}
+    if start_date:
+        match_query.setdefault('timestamp', {})['$gte'] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+    if end_date:
+        match_query.setdefault('timestamp', {})['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+
+    # Per-boss droprates, built from ALL-TIME history (see compute_event_recap
+    # for why) - wiki-scraped rates first, Dink-observed all-time rates fill gaps.
+    boss_item_rarity = {boss_key: dict(items) for boss_key, items in BOSS_DROP_RATES.items()}
+    for d in _dedupe_drops_for_recap(list(collections['history'].find({}))):
+        r1 = d.get('rarity_1_in')
+        item_name = (d.get('item') or '').strip()
+        if not r1 or item_name.lower() not in NOTABLE_ITEM_NAMES:
+            continue
+        boss_key = _boss_key_for_drop(d, item_name)
+        if not boss_key:
+            continue
+        rates = boss_item_rarity.setdefault(boss_key, {})
+        if item_name.lower() not in {k.lower() for k in rates}:
+            rates[item_name] = r1
+
+    # Actual notable drops THIS event, per player per boss.
+    player_boss_notable = {}
+    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
+        player = d.get('player')
+        if not player:
+            continue
+        item_name = (d.get('item') or '').strip()
+        if item_name.lower() not in NOTABLE_ITEM_NAMES:
+            continue
+        boss_key = _boss_key_for_drop(d, item_name)
+        if not boss_key:
+            continue
+        player_boss_notable.setdefault(player, {})
+        player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1
+
+    # KC gained per player per boss, from the WOM-authoritative gained_cache.
+    kc_gained_by_boss = {}
+    boss_display_names = {}  # boss_key -> the display name WOM/gained_cache uses
+    for cached in collections['gained_cache'].find({}):
+        snap_player = cached.get('player')
+        boss_gains = cached.get('bosses', {})
+        if not snap_player or not boss_gains:
+            continue
+        player_bosses = {}
+        for boss, boss_gained in boss_gains.items():
+            gained = boss_gained.get('gained', 0)
+            if gained > 0:
+                boss_key = normalize_boss_name(boss)
+                if boss_key:
+                    player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
+                    boss_display_names.setdefault(boss_key, boss)
+        if player_bosses:
+            kc_gained_by_boss[snap_player] = player_bosses
+
+    breakdown = {}
+    for player, boss_kc in kc_gained_by_boss.items():
+        total = 0.0
+        bosses_out = []
+        for boss_key, gained in boss_kc.items():
+            rates = boss_item_rarity.get(boss_key)
+            if not rates:
+                continue
+            expected = gained * sum(1.0 / r for r in rates.values())
+            actual = player_boss_notable.get(player, {}).get(boss_key, 0)
+            diff = actual - expected
+            total += diff
+            bosses_out.append({
+                'boss': boss_display_names.get(boss_key, boss_key.replace('_', ' ').title()),
+                'kc_gained': gained,
+                'expected': round(expected, 3),
+                'actual': actual,
+                'diff': round(diff, 3),
+            })
+        if bosses_out:
+            bosses_out.sort(key=lambda b: b['diff'])
+            breakdown[player] = {'luck_score': round(total, 2), 'bosses': bosses_out}
+
+    return breakdown
+
+
 def compute_event_recap(collections, start_date, end_date, board_doc=None):
     """
     Compute per-player recap stats + team-wide superlative badges for the given
@@ -2458,32 +2551,8 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
     if end_date:
         match_query.setdefault('timestamp', {})['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
 
-    # Per-boss droprates for the luck badges, built from ALL-TIME history (not
-    # just this event's window) - a droprate is a fixed game mechanic, not
-    # something that resets per event, so a boss someone got lucky at last
-    # year still has a usable baseline even if nobody's hit it yet this event.
-    # Without this, a boss with heavy KC but zero drops THIS event would be
-    # invisible to the calc instead of counting as a dry streak.
-    # Wiki-scraped rates (scrape_boss_drop_rates.py) are the preferred source -
-    # they cover a boss even with zero team drops ever, and already fold in
-    # mechanics like Zulrah's 2-rolls or Duke's pity counter. Dink-observed,
-    # all-time rates only fill in bosses/items the scrape hasn't covered.
-    boss_item_rarity = {boss_key: dict(items) for boss_key, items in BOSS_DROP_RATES.items()}
-    for d in _dedupe_drops_for_recap(list(collections['history'].find({}))):
-        r1 = d.get('rarity_1_in')
-        item_name = (d.get('item') or '').strip()
-        if not r1 or item_name.lower() not in NOTABLE_ITEM_NAMES:
-            continue
-        boss_key = _boss_key_for_drop(d, item_name)
-        if not boss_key:
-            continue
-        rates = boss_item_rarity.setdefault(boss_key, {})
-        if item_name.lower() not in {k.lower() for k in rates}:
-            rates[item_name] = r1
-
     drop_stats = {}
     biggest_drop = None  # (value, player, item)
-    player_boss_notable = {}  # player -> {boss_key: count}
     for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
         player = d.get('player')
         if not player:
@@ -2513,19 +2582,6 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         if is_curated_item and r1 and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
             stats['rarest_drop'] = (r1, item_name, d.get('rarity'))
 
-        # The actual-drops-this-event count below only needs the drop to BE a
-        # curated chase item - it doesn't need this specific record to also
-        # carry its own live rarity_1_in, since the "expected" side of the
-        # luck calc now comes from BOSS_DROP_RATES/all-time data independent
-        # of any single drop. Requiring r1 here was undercounting real drops
-        # whose own Dink capture never got a rarity (e.g. a blank-rarity
-        # Collection Log entry for an item that's still genuinely notable).
-        if is_curated_item:
-            boss_key = _boss_key_for_drop(d, item_name)
-            if boss_key:
-                player_boss_notable.setdefault(player, {})
-                player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1
-
     rarest_drop_overall = None  # (rarity_1_in, player)
     for player, stats in drop_stats.items():
         if stats['rarest_drop'] and (rarest_drop_overall is None or stats['rarest_drop'][0] > rarest_drop_overall[0]):
@@ -2538,50 +2594,20 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
     # late-captured 'start' snapshot could show 0 gained when real gains
     # happened before it was taken). ---
     kc_gained = {}
-    kc_gained_by_boss = {}  # player -> {boss_key: gained}, feeds the luck badges below
     for cached in collections['gained_cache'].find({}):
         snap_player = cached.get('player')
         boss_gains = cached.get('bosses', {})
         if not snap_player or not boss_gains:
             continue
-        total_gained = 0
-        player_bosses = {}
-        for boss, boss_gained in boss_gains.items():
-            gained = boss_gained.get('gained', 0)
-            if gained > 0:
-                total_gained += gained
-                # Stored under the display name (e.g. "Abyssal Sire") — normalize it
-                # to the same key space as boss_item_rarity below (keyed from Dink's
-                # drop-history source text) so the two can actually be joined.
-                boss_key = normalize_boss_name(boss)
-                if boss_key:
-                    player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
+        total_gained = sum(bg.get('gained', 0) for bg in boss_gains.values() if bg.get('gained', 0) > 0)
         if total_gained > 0:
             kc_gained[snap_player] = total_gained
-            kc_gained_by_boss[snap_player] = player_bosses
 
-    # --- luck score (tiny_violin/silver_spoon): expected-vs-actual notable drops ---
-    # For every boss a player gained KC in that the team also pulled at least one
-    # known-rarity ("notable") item from this event, expected notable drops =
-    # KC gained * sum(1/rarity) over each distinct notable item type seen at that
-    # boss. Summing (actual - expected) across a player's bosses gives a single
-    # "drops above/below what their kills should have produced" score — bosses
-    # with no team-observed notable drop this event have no droprate to compare
-    # against, so they're simply skipped rather than guessed at.
-    luck_score = {}
-    for player, boss_kc in kc_gained_by_boss.items():
-        total = 0.0
-        eligible = False
-        for boss_key, gained in boss_kc.items():
-            rates = boss_item_rarity.get(boss_key)
-            if not rates:
-                continue
-            expected = gained * sum(1.0 / r for r in rates.values())
-            actual = player_boss_notable.get(player, {}).get(boss_key, 0)
-            total += actual - expected
-            eligible = True
-        if eligible:
-            luck_score[player] = total
+    # --- luck score (tiny_violin/silver_spoon): expected-vs-actual notable
+    # drops, per boss, summed per player. See compute_luck_breakdown, which
+    # also backs the live Luck page's full per-boss breakdown.
+    luck_breakdown = compute_luck_breakdown(collections, start_date, end_date)
+    luck_score = {player: data['luck_score'] for player, data in luck_breakdown.items()}
 
     tiny_violin_player = None
     silver_spoon_player = None
@@ -2646,6 +2672,42 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         }
 
     return recap
+
+
+@app.route('/event/luck', methods=['GET'])
+def get_event_luck():
+    """
+    Live per-boss luck breakdown (expected vs. actual notable drops) for
+    every player in the current event, for the Luck page. Unlike
+    /event/recap this is NOT gated behind the event ending - it's meant to
+    be checked mid-event, same as the KC Effort/Boss Contribution pages.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+
+    try:
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
+        if not event_config or not event_config.get('enabled'):
+            return jsonify({'error': 'No event is currently configured'}), 404
+
+        breakdown = compute_luck_breakdown(
+            collections,
+            event_config.get('startDate'),
+            event_config.get('endDate')
+        )
+
+        return jsonify({
+            'eventName': event_config.get('eventName', 'Bingo Event'),
+            'startDate': event_config.get('startDate'),
+            'endDate': event_config.get('endDate'),
+            'players': breakdown
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/event/recap/<player_name>', methods=['GET'])

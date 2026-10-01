@@ -5450,6 +5450,9 @@ async function loadAnalyticsWithFilters() {
         let _kcMode = 'bingo';
         let _kcCurrentData = {};
 
+        // Luck global state
+        let _luckData = null;
+
         async function openKCModal() {
             document.getElementById('kcModal').classList.add('active');
 
@@ -5501,12 +5504,16 @@ async function loadAnalyticsWithFilters() {
 
         async function loadKCData() {
             try {
-                const [allResp, effortResp] = await Promise.all([
+                const [allResp, effortResp, luckResp] = await Promise.all([
                     fetch(`${API_URL}/kc/all`),
-                    fetch(`${API_URL}/kc/effort`)
+                    fetch(`${API_URL}/kc/effort`),
+                    fetch(`${API_URL}/event/luck`)
                 ]);
                 _kcAllData = await allResp.json();
                 _kcEffortData = await effortResp.json();
+                // Not every tenant has an active event configured - that's a normal
+                // empty state for the Luck tab, not a failure of the rest of the modal.
+                _luckData = luckResp.ok ? await luckResp.json() : null;
                 _renderAllKCTabs();
             } catch (error) {
                 console.error('Failed to load KC data:', error);
@@ -5528,6 +5535,10 @@ async function loadAnalyticsWithFilters() {
             renderKCLeaderboards(_kcCurrentData);
             renderKCDetails(_kcMode);
             renderKCBossContribution(_kcCurrentData);
+            // Luck is always scoped to the current event window, independent of the
+            // Current Bingo/All Time toggle above, so it doesn't depend on _kcMode.
+            renderLuckPlayerView(_luckData || {}, document.getElementById('luckPlayerView'));
+            renderLuckBossView(_luckData || {}, document.getElementById('luckBossView'));
         }
 
         function switchKCMode(mode) {
@@ -6124,6 +6135,140 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        function showLuckView(view) {
+            document.getElementById('luckViewPlayer').classList.toggle('active', view === 'player');
+            document.getElementById('luckViewBoss').classList.toggle('active', view === 'boss');
+            document.getElementById('luckPlayerView').style.display = view === 'player' ? 'block' : 'none';
+            document.getElementById('luckBossView').style.display = view === 'boss' ? 'block' : 'none';
+        }
+
+        // Lucky (green), unlucky (red), or close enough to call it on-rate (neutral) -
+        // the 0.05 band keeps a boss sitting almost exactly on expected from flipping
+        // color on a rounding sliver.
+        function _luckDiffColor(diff) {
+            if (diff > 0.05) return '#2e7d32';
+            if (diff < -0.05) return '#c62828';
+            return '#8b7355';
+        }
+
+        function renderLuckPlayerView(data, container) {
+            const players = Object.entries(data.players || {});
+
+            if (players.length === 0) {
+                container.innerHTML = `
+                    <div class="loading-message" style="padding: 40px;">
+                        <p>No luck data available yet!</p>
+                        <p style="margin-top: 20px;">Needs KC gained plus a known droprate for at least one boss someone's killed this event.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            players.sort((a, b) => b[1].luck_score - a[1].luck_score);
+
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 20px;">';
+
+            players.forEach(([player, pdata]) => {
+                const scoreColor = _luckDiffColor(pdata.luck_score);
+                const sign = pdata.luck_score > 0 ? '+' : '';
+
+                html += `
+                    <div class="player-kc-card">
+                        <div style="margin-bottom: 15px;">
+                            <h3 style="margin: 0;">${player}</h3>
+                        </div>
+                        <div style="background: rgba(205, 139, 45, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 15px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: ${scoreColor};">${sign}${pdata.luck_score.toFixed(2)}</div>
+                            <div style="font-size: 12px; color: #8b7355;">Luck Score (actual &minus; expected drops)</div>
+                        </div>
+                `;
+
+                const sortedBosses = [...pdata.bosses].sort((a, b) => a.diff - b.diff);
+                sortedBosses.forEach(boss => {
+                    const diffSign = boss.diff > 0 ? '+' : '';
+                    html += `
+                        <div class="boss-kc-item" style="flex-direction: column; align-items: stretch; gap: 2px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>${boss.boss}</span>
+                                <span class="kc-value" style="color: ${_luckDiffColor(boss.diff)};">${diffSign}${boss.diff.toFixed(2)}</span>
+                            </div>
+                            <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}</div>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderLuckBossView(data, container) {
+            const players = Object.entries(data.players || {});
+
+            const bossMap = new Map();
+            players.forEach(([player, pdata]) => {
+                (pdata.bosses || []).forEach(boss => {
+                    if (!bossMap.has(boss.boss)) bossMap.set(boss.boss, []);
+                    bossMap.get(boss.boss).push({ player, ...boss });
+                });
+            });
+
+            if (bossMap.size === 0) {
+                container.innerHTML = '<div class="loading-message" style="padding: 40px;"><p>No luck data available yet!</p></div>';
+                return;
+            }
+
+            const bossList = Array.from(bossMap.entries()).map(([boss, rows]) => {
+                const totalKc = rows.reduce((sum, r) => sum + r.kc_gained, 0);
+                rows.sort((a, b) => a.diff - b.diff);
+                return { boss, rows, totalKc };
+            }).sort((a, b) => b.totalKc - a.totalKc);
+
+            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+
+            bossList.forEach(({ boss, rows, totalKc }) => {
+                html += `
+                    <div class="player-kc-card" style="cursor: pointer;" onclick="toggleLuckBossDetail('${boss.replace(/'/g, "\\'")}')">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0;">🎯 ${boss}</h3>
+                            <div style="text-align: right;">
+                                <div class="kc-value" style="font-size: 20px;">${totalKc.toLocaleString()}</div>
+                                <div style="font-size: 11px; color: #8b7355;">Team KC Gained</div>
+                            </div>
+                        </div>
+                        <div id="luck-boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 2px solid rgba(205, 139, 45, 0.3);">
+                `;
+
+                rows.forEach(row => {
+                    const diffSign = row.diff > 0 ? '+' : '';
+                    html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255, 255, 255, 0.3); border-radius: 4px; margin-bottom: 6px;">
+                            <div>
+                                <span style="font-weight: 500;">${row.player}</span>
+                                <div style="font-size: 10px; color: #8b7355;">${row.kc_gained.toLocaleString()} KC &middot; expected ${row.expected.toFixed(2)} &middot; actual ${row.actual}</div>
+                            </div>
+                            <span class="kc-value" style="color: ${_luckDiffColor(row.diff)};">${diffSign}${row.diff.toFixed(2)}</span>
+                        </div>
+                    `;
+                });
+
+                html += `</div></div>`;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function toggleLuckBossDetail(boss) {
+            const elementId = `luck-boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.style.display = element.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
         function showPlayerKCDetail(player) {
             fetch(`${API_URL}/kc/all`)
                 .then(r => r.json())
@@ -6561,6 +6706,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.23",
+                date: "2026-10-01",
+                title: "New: Luck Tracker",
+                changes: [
+                    { type: "feature", text: "Added a '🍀 Luck' tab to Boss Kill Counts, alongside Effort and Boss Contribution, showing how everyone's actual drops compare to what their kill count should've produced - overall per player, and broken down boss by boss. Unlike the Tiny Violin/Silver Spoon badges on the end-of-event recap, this is viewable any time during the event." },
+                ]
+            },
             {
                 version: "v2.13.22",
                 date: "2026-10-01",
