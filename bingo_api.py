@@ -2382,23 +2382,33 @@ def _dedupe_drops_for_recap(docs, window_seconds=60):
     return result
 
 
-def compute_luck_breakdown(collections, start_date, end_date):
+def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     """
-    Expected-vs-actual notable drops per player per boss, for the given event
-    window. Backs both the Event Recap's tiny_violin/silver_spoon badges
-    (compute_event_recap below just needs the final luck_score) and the live
-    Luck page (which also needs the full per-boss expected/actual/diff rows).
+    Expected-vs-actual notable drops per player per boss. Backs both the
+    Event Recap's tiny_violin/silver_spoon badges (compute_event_recap below
+    just needs the final luck_score) and the live Luck tab (which also needs
+    the full per-boss expected/actual/diff rows).
+
+    By default this is scoped to the given event window: KC from the
+    WOM-authoritative gained_cache, actual drops from history between
+    start_date/end_date. With all_time=True it instead compares each
+    player's TOTAL account KC per boss (same source as /kc/all) against
+    ALL-TIME notable drops, ignoring start_date/end_date entirely - this
+    backs the Luck tab's "All Time" toggle, mirroring how Effort/Boss
+    Contribution already have their own Current Bingo vs. All Time modes.
+
     Returns {player: {'luck_score': float, 'bosses': [
         {'boss': display name, 'kc_gained': int, 'expected': float, 'actual': int, 'diff': float}
-    ]}} - a player only appears if they gained KC at a boss the team also has
+    ]}} - a player only appears if they have KC at a boss the team also has
     a known droprate for; bosses with no usable droprate are simply omitted
     rather than guessed at.
     """
     match_query = {}
-    if start_date:
-        match_query.setdefault('timestamp', {})['$gte'] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-    if end_date:
-        match_query.setdefault('timestamp', {})['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+    if not all_time:
+        if start_date:
+            match_query.setdefault('timestamp', {})['$gte'] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        if end_date:
+            match_query.setdefault('timestamp', {})['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
 
     # Per-boss droprates, built from ALL-TIME history (see compute_event_recap
     # for why) - wiki-scraped rates first, Dink-observed all-time rates fill gaps.
@@ -2415,7 +2425,8 @@ def compute_luck_breakdown(collections, start_date, end_date):
         if item_name.lower() not in {k.lower() for k in rates}:
             rates[item_name] = r1
 
-    # Actual notable drops THIS event, per player per boss.
+    # Actual notable drops, per player per boss - event-windowed, or every
+    # drop on record when all_time (match_query is {} in that case).
     player_boss_notable = {}
     for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
         player = d.get('player')
@@ -2430,40 +2441,61 @@ def compute_luck_breakdown(collections, start_date, end_date):
         player_boss_notable.setdefault(player, {})
         player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1
 
-    # KC gained per player per boss, from the WOM-authoritative gained_cache.
-    kc_gained_by_boss = {}
-    boss_display_names = {}  # boss_key -> the display name WOM/gained_cache uses
-    for cached in collections['gained_cache'].find({}):
-        snap_player = cached.get('player')
-        boss_gains = cached.get('bosses', {})
-        if not snap_player or not boss_gains:
-            continue
-        player_bosses = {}
-        for boss, boss_gained in boss_gains.items():
-            gained = boss_gained.get('gained', 0)
-            if gained > 0:
+    # KC per player per boss - WOM-authoritative "gained since event start"
+    # from gained_cache, or each player's latest total-KC snapshot (same
+    # aggregation /kc/all uses) when all_time.
+    kc_by_boss = {}
+    boss_display_names = {}  # boss_key -> the display name WOM/the snapshot uses
+    if all_time:
+        pipeline = [
+            {'$sort': {'timestamp': -1}},
+            {'$group': {'_id': '$player', 'latest_snapshot': {'$first': '$$ROOT'}}}
+        ]
+        for result in collections['kc'].aggregate(pipeline):
+            snap_player = result['_id']
+            boss_kcs = (result.get('latest_snapshot') or {}).get('bosses', {})
+            player_bosses = {}
+            for boss, kc in boss_kcs.items():
+                if boss in WOM_EXCLUDED_BOSSES or not kc:
+                    continue
                 boss_key = normalize_boss_name(boss)
                 if boss_key:
-                    player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
+                    player_bosses[boss_key] = player_bosses.get(boss_key, 0) + kc
                     boss_display_names.setdefault(boss_key, boss)
-        if player_bosses:
-            kc_gained_by_boss[snap_player] = player_bosses
+            if player_bosses:
+                kc_by_boss[snap_player] = player_bosses
+    else:
+        for cached in collections['gained_cache'].find({}):
+            snap_player = cached.get('player')
+            boss_gains = cached.get('bosses', {})
+            if not snap_player or not boss_gains:
+                continue
+            player_bosses = {}
+            for boss, boss_gained in boss_gains.items():
+                gained = boss_gained.get('gained', 0)
+                if gained > 0:
+                    boss_key = normalize_boss_name(boss)
+                    if boss_key:
+                        player_bosses[boss_key] = player_bosses.get(boss_key, 0) + gained
+                        boss_display_names.setdefault(boss_key, boss)
+            if player_bosses:
+                kc_by_boss[snap_player] = player_bosses
 
     breakdown = {}
-    for player, boss_kc in kc_gained_by_boss.items():
+    for player, boss_kc in kc_by_boss.items():
         total = 0.0
         bosses_out = []
-        for boss_key, gained in boss_kc.items():
+        for boss_key, kc in boss_kc.items():
             rates = boss_item_rarity.get(boss_key)
             if not rates:
                 continue
-            expected = gained * sum(1.0 / r for r in rates.values())
+            expected = kc * sum(1.0 / r for r in rates.values())
             actual = player_boss_notable.get(player, {}).get(boss_key, 0)
             diff = actual - expected
             total += diff
             bosses_out.append({
                 'boss': boss_display_names.get(boss_key, boss_key.replace('_', ' ').title()),
-                'kc_gained': gained,
+                'kc_gained': kc,
                 'expected': round(expected, 3),
                 'actual': actual,
                 'diff': round(diff, 3),
@@ -2678,9 +2710,14 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 def get_event_luck():
     """
     Live per-boss luck breakdown (expected vs. actual notable drops) for
-    every player in the current event, for the Luck page. Unlike
-    /event/recap this is NOT gated behind the event ending - it's meant to
-    be checked mid-event, same as the KC Effort/Boss Contribution pages.
+    every player, for the Luck tab. Unlike /event/recap this is NOT gated
+    behind the event ending - it's meant to be checked mid-event, same as
+    the KC Effort/Boss Contribution pages.
+
+    ?all_time=true switches to the same scope as /kc/all - total account KC
+    per boss vs. ALL-TIME notable drops, independent of any event window -
+    mirroring Effort/Boss Contribution's own Current Bingo vs. All Time
+    toggle. That mode doesn't need an event configured at all.
     """
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
@@ -2688,8 +2725,13 @@ def get_event_luck():
     tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
+    all_time = request.args.get('all_time', '').lower() == 'true'
 
     try:
+        if all_time:
+            breakdown = compute_luck_breakdown(collections, None, None, all_time=True)
+            return jsonify({'players': breakdown})
+
         event_config = collections['bingo'].find_one({'_id': 'event_config'})
         if not event_config or not event_config.get('enabled'):
             return jsonify({'error': 'No event is currently configured'}), 404
