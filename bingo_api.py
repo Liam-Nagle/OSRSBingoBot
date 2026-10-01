@@ -2266,6 +2266,43 @@ def _load_notable_item_names():
 NOTABLE_ITEM_NAMES = _load_notable_item_names()
 
 
+def _load_notable_item_sources():
+    """
+    item_name (lowercase) -> curated boss/source string from
+    boss-unique-items.json. Collection Log embeds don't always carry a
+    Source field (Dink omits it when it can't resolve the kill itself, e.g.
+    BigNumLock's Araxyte fang/venom sack), leaving that history doc's
+    source blank even though the item is only ever droppable by one boss.
+    Used as a fallback boss lookup so a genuinely notable drop isn't
+    silently excluded from the luck badges just because Dink's message
+    happened to omit the field.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-unique-items.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            items = json.load(f)
+        return {name: info['source'] for name, info in items.items() if info.get('source')}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-unique-items.json for source fallback: {e}")
+        return {}
+
+
+NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
+
+
+def _boss_key_for_drop(d, item_name):
+    """
+    Resolve a history doc to a boss key, falling back to the curated
+    item's own known source when Dink's own source field is blank (see
+    NOTABLE_ITEM_SOURCES above). A group source like "Dagannoth Kings"
+    still won't resolve to a single WOM boss key, same as today.
+    """
+    boss_key = normalize_boss_name(d.get('source'))
+    if boss_key:
+        return boss_key
+    return normalize_boss_name(NOTABLE_ITEM_SOURCES.get(item_name.lower()))
+
+
 def _load_boss_drop_rates():
     """
     Per-boss real droprates scraped from the OSRS Wiki (see
@@ -2437,7 +2474,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         item_name = (d.get('item') or '').strip()
         if not r1 or item_name.lower() not in NOTABLE_ITEM_NAMES:
             continue
-        boss_key = normalize_boss_name(d.get('source'))
+        boss_key = _boss_key_for_drop(d, item_name)
         if not boss_key:
             continue
         rates = boss_item_rarity.setdefault(boss_key, {})
@@ -2484,7 +2521,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         # whose own Dink capture never got a rarity (e.g. a blank-rarity
         # Collection Log entry for an item that's still genuinely notable).
         if is_curated_item:
-            boss_key = normalize_boss_name(d.get('source'))
+            boss_key = _boss_key_for_drop(d, item_name)
             if boss_key:
                 player_boss_notable.setdefault(player, {})
                 player_boss_notable[player][boss_key] = player_boss_notable[player].get(boss_key, 0) + 1

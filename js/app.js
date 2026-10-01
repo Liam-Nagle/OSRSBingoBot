@@ -6562,6 +6562,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.22",
+                date: "2026-10-01",
+                title: "Fixed drops missing from the luck badges",
+                changes: [
+                    { type: "fix", text: "Tiny Violin and Silver Spoon were undercounting a player's drops when Discord's own drop message didn't say which boss it came from (this happens occasionally and is out of our control) - those drops are now matched to the right boss using the item itself, since several drops only ever come from one specific boss anyway." },
+                ]
+            },
+            {
                 version: "v2.13.21",
                 date: "2026-10-01",
                 title: "Fixed incorrect KC Gained numbers",
