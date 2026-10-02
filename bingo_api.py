@@ -2421,10 +2421,13 @@ AMBIGUOUS_SOURCE_ITEMS = _load_ambiguous_source_items()
 
 def _boss_key_for_drop(d, item_name):
     """
-    Resolve a history doc to a boss key, falling back to the curated
-    item's own known source when Dink's own source field is blank (see
-    NOTABLE_ITEM_SOURCES above). A group source like "Dagannoth Kings"
-    still won't resolve to a single WOM boss key, same as today.
+    Resolve a history doc to a boss key. Dink's own per-drop source field
+    is always tried first and wins when present (it reports the specific
+    NPC actually killed, e.g. "Dagannoth Rex") - the curated item source
+    in NOTABLE_ITEM_SOURCES is only a fallback for when that field is
+    blank. A curated source naming a group rather than one specific boss
+    (uncommon - NOTABLE_ITEM_SOURCES is kept scoped to single bosses where
+    possible) still won't resolve to a single WOM boss key in that case.
     """
     boss_key = normalize_boss_name(d.get('source'))
     if boss_key:
@@ -2645,8 +2648,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
                     continue
                 source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
-                if ' / ' in source:
-                    candidates = [c for c in (normalize_boss_name(p) for p in source.split(' / ')) if c]
+                if '/' in source:
+                    # Covers both "A / B" (Gauntlet pair) and "A/B" (the
+                    # Wilderness boss twins, e.g. "Callisto/Artio") - the
+                    # curated file isn't consistent about the spacing.
+                    candidates = [c for c in (normalize_boss_name(p) for p in re.split(r'\s*/\s*', source)) if c]
                     boss_key = max(candidates, key=lambda c: player_kc.get(c, 0)) if candidates else None
                     if boss_key and player_kc.get(boss_key, 0) <= 0:
                         boss_key = None  # no KC at any candidate - nothing to disambiguate with
