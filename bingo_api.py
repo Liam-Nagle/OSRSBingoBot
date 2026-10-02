@@ -2415,8 +2415,27 @@ def _load_ambiguous_source_items():
         return set()
 
 
+def _load_quantity_per_drop():
+    """
+    {item_lower: n} for curated items that drop as a stack of n in a single
+    drop (_quantity_per_drop in boss-unique-items.json, e.g. Hueycoatl hide
+    x3). A live Dink record is one record per drop regardless of stack size,
+    but the collection log counts items RECEIVED - so its quantity has to be
+    divided by this to get a drop count comparable to everything else.
+    """
+    path = os.path.join(os.path.dirname(__file__), 'gear-data', 'boss-unique-items.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            items = json.load(f)
+        return {name: info['_quantity_per_drop'] for name, info in items.items() if info.get('_quantity_per_drop', 1) > 1}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[!] Could not load boss-unique-items.json for quantity-per-drop list: {e}")
+        return {}
+
+
 NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
 AMBIGUOUS_SOURCE_ITEMS = _load_ambiguous_source_items()
+QUANTITY_PER_DROP = _load_quantity_per_drop()
 
 
 def _split_multi_boss_source(source, player_kc):
@@ -2677,6 +2696,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 boss_key = _split_multi_boss_source(source, player_kc) if '/' in source else normalize_boss_name(source)
                 if not boss_key:
                     continue
+                qty = -(-qty // QUANTITY_PER_DROP.get(item_key, 1))  # ceil: items received -> drops
                 per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
                 if qty > per_boss.get(item_key, 0):
                     per_boss[item_key] = qty

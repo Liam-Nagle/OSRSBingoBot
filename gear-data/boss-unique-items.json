@@ -141,7 +141,7 @@
   "chromium ingot": { "source": "Duke Sucellus/The Leviathan/The Whisperer/Vardorvis", "category": "material", "_note": "Shared material needed (with a vestige + seers icon + ring mould) to craft any of the 4 DT2 rings - drops from all 4 bosses." },
 
   "dragon hunter wand": { "source": "The Hueycoatl", "category": "weapon" },
-  "hueycoatl hide": { "source": "The Hueycoatl", "category": "armour" },
+  "hueycoatl hide": { "source": "The Hueycoatl", "category": "armour", "_quantity_per_drop": 3, "_note": "Drops as a stack of 3 per drop. The collection log counts items received, so one drop shows as 3 there - divided back out in the All Time collection-log boost." },
   "tome of earth (empty)": { "source": "The Hueycoatl", "category": "weapon" },
 
   "araxyte fang": { "source": "Araxxor", "category": "jewelry", "_note": "Combines with an Amulet of torture to make Amulet of rancour - Araxxor never drops the finished amulet." },
