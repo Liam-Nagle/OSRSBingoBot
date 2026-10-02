@@ -6718,6 +6718,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.31",
+                date: "2026-10-02",
+                title: "Godsword shards and DT2 materials now count in All Time Luck",
+                changes: [
+                    { type: "fix", text: "Godsword shards (General Graardor/Zilyana/Kree'arra/K'ril) and the DT2 bosses' shared Virtus pieces + Chromium ingot (Duke Sucellus/Leviathan/Whisperer/Vardorvis) were being counted in \"expected\" for all the bosses they can drop from, but could never count toward \"actual\" in All Time - their source was a generic group label with no single boss to attribute a collection-log copy to, so real pre-Dink drops of them were invisible. Now attributed to whichever of the group the player has the most KC in, same as the earlier Gauntlet/Callisto fix - General Graardor's expected-vs-actual alone picked up 5 extra real shards for one player." },
+                ]
+            },
+            {
                 version: "v2.13.30",
                 date: "2026-10-02",
                 title: "Fixed several bosses' drops not counting in All Time Luck",
