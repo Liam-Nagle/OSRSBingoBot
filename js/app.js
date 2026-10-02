@@ -361,10 +361,10 @@
                 highlightsHtml += `<div class="recap-highlight">💎 Rarest drop: <strong>${data.rarest_drop.item}</strong> (${formatRarityText(data.rarest_drop.rarity)})</div>`;
             }
             if (typeof data.luck_score === 'number' && (data.badges || []).some(b => b === 'tiny_violin' || b === 'silver_spoon')) {
-                const magnitude = Math.abs(data.luck_score).toFixed(2);
+                const magnitude = Math.round(Math.abs(data.luck_score)).toLocaleString();
                 const verdict = data.luck_score < 0
-                    ? `${magnitude} drops below what their kills should've produced`
-                    : `${magnitude} drops above what their kills should've produced`;
+                    ? `${magnitude} kills behind drop rate`
+                    : `${magnitude} kills ahead of drop rate`;
                 highlightsHtml += `<div class="recap-highlight">${data.luck_score < 0 ? '🎻' : '🥄'} Luck score: <strong>${verdict}</strong></div>`;
             }
             const firstDate = formatRecapDate(data.first_tile_at);
@@ -5486,7 +5486,9 @@ async function loadAnalyticsWithFilters() {
         function showKCTab(tab) {
             // Hide all tabs
             document.querySelectorAll('.kc-tab-content').forEach(el => el.style.display = 'none');
-            document.querySelectorAll('.kc-tab').forEach(el => el.classList.remove('active'));
+            // Only the top-row tabs (kcTabOverview etc.) - sub-toggles inside a tab
+            // (Player/Boss View, Drops/Kills) share the .kc-tab style and keep their own state.
+            document.querySelectorAll('.kc-tab[id^="kcTab"]').forEach(el => el.classList.remove('active'));
 
             // Show selected tab
             document.getElementById(`kcTabContent${tab.charAt(0).toUpperCase() + tab.slice(1)}`).style.display = 'block';
@@ -5539,16 +5541,21 @@ async function loadAnalyticsWithFilters() {
             renderKCLeaderboards(_kcCurrentData);
             renderKCDetails(_kcMode);
             renderKCBossContribution(_kcCurrentData);
-            // Luck follows the same Current Bingo/All Time toggle as the rest of
-            // this modal - event-scoped drops+KC, or lifetime drops+KC.
+            renderLuck();
+        }
+
+        // Luck follows the same Current Bingo/All Time toggle as the rest of this modal.
+        function renderLuck() {
             const luckData = _kcMode === 'bingo' ? _luckData : _luckDataAllTime;
             renderLuckPlayerView(luckData || {}, document.getElementById('luckPlayerView'));
             renderLuckBossView(luckData || {}, document.getElementById('luckBossView'));
             const luckDesc = document.getElementById('luckDescription');
             if (luckDesc) {
-                luckDesc.textContent = _kcMode === 'bingo'
-                    ? "Compares actual notable drops against what each player's kill count should've produced, based on real droprates."
-                    : "Compares actual notable drops against what each player's kill count should've produced, based on real droprates. Also includes each player's full collection log, since Dink drop tracking doesn't go back as far as some accounts do.";
+                let text = "Every drop is worth its own drop rate in kills (a 1/400 counts as 400 kills, a 1/50 as 50), so rarer drops count for more. Shown as kills ahead of or behind rate - click a boss to see each item.";
+                if (_kcMode !== 'bingo') {
+                    text += " Also includes each player's full collection log, since Dink drop tracking doesn't go back as far as some accounts do.";
+                }
+                luckDesc.textContent = text;
             }
         }
 
@@ -6153,13 +6160,30 @@ async function loadAnalyticsWithFilters() {
             document.getElementById('luckBossView').style.display = view === 'boss' ? 'block' : 'none';
         }
 
-        // Lucky (green), unlucky (red), or close enough to call it on-rate (neutral) -
-        // the 0.05 band keeps a boss sitting almost exactly on expected from flipping
-        // color on a rounding sliver.
+        // Diffs are whole kills ahead (green) / behind (red) drop rate.
         function _luckDiffColor(diff) {
-            if (diff > 0.05) return '#2e7d32';
-            if (diff < -0.05) return '#c62828';
+            if (diff > 0) return '#2e7d32';
+            if (diff < 0) return '#c62828';
             return '#8b7355';
+        }
+
+        function _formatLuck(diff) {
+            return `${diff > 0 ? '+' : ''}${Math.round(diff).toLocaleString()}`;
+        }
+
+        // Expandable per-item rows under a boss - each item's own rate, expected,
+        // actual, and how many kills ahead/behind it puts the player.
+        function _luckItemsHtml(items) {
+            return (items || []).map(i => {
+                const name = i.item.charAt(0).toUpperCase() + i.item.slice(1);
+                const rate = Number(i.rarity_1_in.toFixed(1)).toLocaleString();
+                return `
+                    <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 3px 0 3px 10px; border-left: 2px solid rgba(205, 139, 45, 0.3);">
+                        <span>${name} <span style="color: #8b7355;">&middot; 1/${rate} &middot; exp ${i.expected.toFixed(2)} &middot; got ${i.actual}</span></span>
+                        <span style="color: ${_luckDiffColor(i.diff)}; white-space: nowrap;">${_formatLuck(i.diff)}</span>
+                    </div>
+                `;
+            }).join('');
         }
 
         function renderLuckPlayerView(data, container) {
@@ -6180,8 +6204,7 @@ async function loadAnalyticsWithFilters() {
             let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 20px;">';
 
             players.forEach(([player, pdata]) => {
-                const scoreColor = _luckDiffColor(pdata.luck_score);
-                const sign = pdata.luck_score > 0 ? '+' : '';
+                const score = pdata.luck_score;
 
                 html += `
                     <div class="player-kc-card">
@@ -6189,22 +6212,24 @@ async function loadAnalyticsWithFilters() {
                             <h3 style="margin: 0;">${player}</h3>
                         </div>
                         <div style="background: rgba(205, 139, 45, 0.1); padding: 10px; border-radius: 5px; margin-bottom: 15px; text-align: center;">
-                            <div style="font-size: 24px; font-weight: bold; color: ${scoreColor};">${sign}${pdata.luck_score.toFixed(2)}</div>
-                            <div style="font-size: 12px; color: #8b7355;">Luck Score (actual &minus; expected drops)</div>
+                            <div style="font-size: 24px; font-weight: bold; color: ${_luckDiffColor(score)};">${_formatLuck(score)}</div>
+                            <div style="font-size: 12px; color: #8b7355;">Luck Score (kills ahead/behind drop rate)</div>
                         </div>
                 `;
 
                 const sortedBosses = [...pdata.bosses].sort((a, b) => a.diff - b.diff);
                 sortedBosses.forEach(boss => {
-                    const diffSign = boss.diff > 0 ? '+' : '';
                     html += `
-                        <div class="boss-kc-item" style="flex-direction: column; align-items: stretch; gap: 2px;">
-                            <div style="display: flex; justify-content: space-between;">
-                                <span>${boss.boss}</span>
-                                <span class="kc-value" style="color: ${_luckDiffColor(boss.diff)};">${diffSign}${boss.diff.toFixed(2)}</span>
-                            </div>
-                            <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}</div>
-                        </div>
+                        <details class="boss-kc-item" style="display: block;">
+                            <summary style="cursor: pointer; list-style: none;">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span>${boss.boss}</span>
+                                    <span class="kc-value" style="color: ${_luckDiffColor(boss.diff)};">${_formatLuck(boss.diff)}</span>
+                                </div>
+                                <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}</div>
+                            </summary>
+                            <div style="margin-top: 6px;">${_luckItemsHtml(boss.items)}</div>
+                        </details>
                     `;
                 });
 
@@ -6253,15 +6278,19 @@ async function loadAnalyticsWithFilters() {
                 `;
 
                 rows.forEach(row => {
-                    const diffSign = row.diff > 0 ? '+' : '';
+                    // stopPropagation so expanding a player's items doesn't also
+                    // trigger the boss card's own collapse toggle.
                     html += `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255, 255, 255, 0.3); border-radius: 4px; margin-bottom: 6px;">
-                            <div>
-                                <span style="font-weight: 500;">${row.player}</span>
-                                <div style="font-size: 10px; color: #8b7355;">${row.kc_gained.toLocaleString()} KC &middot; expected ${row.expected.toFixed(2)} &middot; actual ${row.actual}</div>
-                            </div>
-                            <span class="kc-value" style="color: ${_luckDiffColor(row.diff)};">${diffSign}${row.diff.toFixed(2)}</span>
-                        </div>
+                        <details onclick="event.stopPropagation()" style="padding: 8px; background: rgba(255, 255, 255, 0.3); border-radius: 4px; margin-bottom: 6px;">
+                            <summary style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <span style="font-weight: 500;">${row.player}</span>
+                                    <div style="font-size: 10px; color: #8b7355;">${row.kc_gained.toLocaleString()} KC &middot; expected ${row.expected.toFixed(2)} &middot; actual ${row.actual}</div>
+                                </div>
+                                <span class="kc-value" style="color: ${_luckDiffColor(row.diff)};">${_formatLuck(row.diff)}</span>
+                            </summary>
+                            <div style="margin-top: 6px;">${_luckItemsHtml(row.items)}</div>
+                        </details>
                     `;
                 });
 
@@ -6717,6 +6746,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.35",
+                date: "2026-10-02",
+                title: "Luck now weighs rare drops properly",
+                changes: [
+                    { type: "improvement", text: "Luck used to count every notable drop as 1, so a 1/400 Enhanced crystal weapon seed counted the same as a 1/50 armour seed. Every drop is now worth its own drop rate in kills (a 1/400 counts as 400, a 1/50 as 50), and scores are shown as kills ahead of or behind rate - so getting a rare drop early now actually shows up as the luck it is. Click any boss to see each item's own rate, expected, and actual. This also feeds the Tiny Violin and Silver Spoon recap badges." },
+                ]
+            },
             {
                 version: "v2.13.34",
                 date: "2026-10-02",
