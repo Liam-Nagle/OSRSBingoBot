@@ -2419,20 +2419,45 @@ NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
 AMBIGUOUS_SOURCE_ITEMS = _load_ambiguous_source_items()
 
 
-def _boss_key_for_drop(d, item_name):
+def _split_multi_boss_source(source, player_kc):
+    """
+    For a curated source naming several bosses (e.g. "Callisto/Artio" or
+    "General Graardor/Commander Zilyana/Kree'arra/K'ril Tsutsaroth"), pick
+    whichever of those specific bosses this player has more KC at - a
+    reasonable signal for which one a given copy most likely came from,
+    since splitting time close to evenly between two+ such bosses is rare.
+    Returns None if source isn't multi-boss, or the player has no KC at
+    any named candidate (nothing to disambiguate with).
+    """
+    if '/' not in source:
+        return None
+    candidates = [c for c in (normalize_boss_name(p) for p in re.split(r'\s*/\s*', source)) if c]
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda c: player_kc.get(c, 0))
+    return best if player_kc.get(best, 0) > 0 else None
+
+
+def _boss_key_for_drop(d, item_name, player_kc=None):
     """
     Resolve a history doc to a boss key. Dink's own per-drop source field
     is always tried first and wins when present (it reports the specific
     NPC actually killed, e.g. "Dagannoth Rex") - the curated item source
     in NOTABLE_ITEM_SOURCES is only a fallback for when that field is
-    blank. A curated source naming a group rather than one specific boss
-    (uncommon - NOTABLE_ITEM_SOURCES is kept scoped to single bosses where
-    possible) still won't resolve to a single WOM boss key in that case.
+    blank. If that curated source names several bosses (a shared item like
+    Crystal weapon seed) and player_kc is given, it's split the same way
+    the All Time collection-log boost is (see _split_multi_boss_source).
+    Without player_kc - e.g. seeding boss_item_rarity from every player's
+    history at once, where there's no single player to disambiguate for -
+    a multi-boss source just won't resolve to one specific key.
     """
     boss_key = normalize_boss_name(d.get('source'))
     if boss_key:
         return boss_key
-    return normalize_boss_name(NOTABLE_ITEM_SOURCES.get(item_name.lower()))
+    source = NOTABLE_ITEM_SOURCES.get(item_name.lower()) or ''
+    if player_kc is not None and '/' in source:
+        return _split_multi_boss_source(source, player_kc)
+    return normalize_boss_name(source)
 
 
 def _load_boss_drop_rates():
@@ -2616,7 +2641,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         item_key = item_name.lower()
         if item_key not in NOTABLE_ITEM_NAMES:
             continue
-        boss_key = _boss_key_for_drop(d, item_name)
+        boss_key = _boss_key_for_drop(d, item_name, player_kc=kc_by_boss.get(player, {}))
         if not boss_key:
             continue
         per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
@@ -2648,16 +2673,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
                     continue
                 source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
-                if '/' in source:
-                    # Covers both "A / B" (Gauntlet pair) and "A/B" (the
-                    # Wilderness boss twins, e.g. "Callisto/Artio") - the
-                    # curated file isn't consistent about the spacing.
-                    candidates = [c for c in (normalize_boss_name(p) for p in re.split(r'\s*/\s*', source)) if c]
-                    boss_key = max(candidates, key=lambda c: player_kc.get(c, 0)) if candidates else None
-                    if boss_key and player_kc.get(boss_key, 0) <= 0:
-                        boss_key = None  # no KC at any candidate - nothing to disambiguate with
-                else:
-                    boss_key = normalize_boss_name(source)
+                boss_key = _split_multi_boss_source(source, player_kc) if '/' in source else normalize_boss_name(source)
                 if not boss_key:
                     continue
                 per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})

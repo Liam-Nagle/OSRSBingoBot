@@ -6718,6 +6718,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.32",
+                date: "2026-10-02",
+                title: "Fixed blank-source drops being lost in Current Bingo Luck too",
+                changes: [
+                    { type: "fix", text: "A drop with no source on the Discord message (Dink occasionally omits it) falls back to the item's own known boss - but for an item shared between a few bosses (Crystal weapon seed, godsword shards, etc.) that fallback couldn't actually pick one, so the drop silently didn't count anywhere. This was already fixed for the All Time collection-log boost, but the same gap was also quietly losing real drops from Current Bingo's own numbers (and All Time's non-collection-log drops) - found when a player's All Time and Current Bingo actual counts for the same boss didn't match despite having the exact same KC in both. Now resolved the same way everywhere: whichever of the named bosses the player has the most KC in." },
+                ]
+            },
+            {
                 version: "v2.13.31",
                 date: "2026-10-02",
                 title: "Godsword shards and DT2 materials now count in All Time Luck",
