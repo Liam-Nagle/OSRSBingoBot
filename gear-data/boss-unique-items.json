@@ -169,7 +169,7 @@
   "unsired": { "source": "Abyssal Sire", "category": "material", "_notable": false, "_note": "A flat 1/100 per kill, but it's a stepping stone into a second random roll (which real item you get from the pool) that Dink never records as a boss drop - we have no visibility into that roll, so counting Unsired itself tells us nothing about luck at this boss." },
 
   "giantsoul amulet": { "source": "Royal Titans", "category": "jewelry", "_note": "Branda the Fire Queen and Eldric the Ice King are fought together as one combined boss, tracked as a single 'Royal Titans' KC - not two separate bosses." },
-  "trident of the seas": { "source": "Kraken", "category": "weapon" },
+  "trident of the seas (full)": { "source": "Kraken", "category": "weapon", "_note": "Real item/Dink/wiki name is 'Trident of the seas (full)', not plain 'Trident of the seas' - the old curated name never matched any real drop record at all." },
 
   "fire cape": { "source": "TzTok-Jad", "category": "armour" },
   "infernal cape": { "source": "TzKal-Zuk", "category": "armour" },

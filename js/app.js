@@ -6718,6 +6718,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.33",
+                date: "2026-10-02",
+                title: "Fixed Trident of the seas never counting at Kraken",
+                changes: [
+                    { type: "fix", text: "Kraken's own unique was curated as \"Trident of the seas\", but the real item (in Dink, the wiki, and the collection log) is called \"Trident of the seas (full)\" - the name never matched, so not a single Trident drop has ever counted toward Kraken's luck, for anyone, in either mode. Fixed the name and refreshed Kraken's droprate file, which also removes a side-effect double-count the old stale name was quietly causing." },
+                ]
+            },
+            {
                 version: "v2.13.32",
                 date: "2026-10-02",
                 title: "Fixed blank-source drops being lost in Current Bingo Luck too",
