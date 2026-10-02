@@ -6747,6 +6747,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.36",
+                date: "2026-10-02",
+                title: "Fixed Hueycoatl hides counting 3x in All Time Luck",
+                changes: [
+                    { type: "fix", text: "The Hueycoatl drops its hide as a stack of 3, and the collection log counts items received rather than drops - so one hide drop was showing up as 3 in All Time Luck. It's now counted as one drop. Hueycoatl hide is the only tracked drop that comes in a stack, so nothing else was affected." },
+                ]
+            },
+            {
                 version: "v2.13.35",
                 date: "2026-10-02",
                 title: "Luck now weighs rare drops properly",
