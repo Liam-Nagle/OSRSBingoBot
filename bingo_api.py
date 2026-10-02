@@ -2419,20 +2419,45 @@ NOTABLE_ITEM_SOURCES = _load_notable_item_sources()
 AMBIGUOUS_SOURCE_ITEMS = _load_ambiguous_source_items()
 
 
-def _boss_key_for_drop(d, item_name):
+def _split_multi_boss_source(source, player_kc):
+    """
+    For a curated source naming several bosses (e.g. "Callisto/Artio" or
+    "General Graardor/Commander Zilyana/Kree'arra/K'ril Tsutsaroth"), pick
+    whichever of those specific bosses this player has more KC at - a
+    reasonable signal for which one a given copy most likely came from,
+    since splitting time close to evenly between two+ such bosses is rare.
+    Returns None if source isn't multi-boss, or the player has no KC at
+    any named candidate (nothing to disambiguate with).
+    """
+    if '/' not in source:
+        return None
+    candidates = [c for c in (normalize_boss_name(p) for p in re.split(r'\s*/\s*', source)) if c]
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda c: player_kc.get(c, 0))
+    return best if player_kc.get(best, 0) > 0 else None
+
+
+def _boss_key_for_drop(d, item_name, player_kc=None):
     """
     Resolve a history doc to a boss key. Dink's own per-drop source field
     is always tried first and wins when present (it reports the specific
     NPC actually killed, e.g. "Dagannoth Rex") - the curated item source
     in NOTABLE_ITEM_SOURCES is only a fallback for when that field is
-    blank. A curated source naming a group rather than one specific boss
-    (uncommon - NOTABLE_ITEM_SOURCES is kept scoped to single bosses where
-    possible) still won't resolve to a single WOM boss key in that case.
+    blank. If that curated source names several bosses (a shared item like
+    Crystal weapon seed) and player_kc is given, it's split the same way
+    the All Time collection-log boost is (see _split_multi_boss_source).
+    Without player_kc - e.g. seeding boss_item_rarity from every player's
+    history at once, where there's no single player to disambiguate for -
+    a multi-boss source just won't resolve to one specific key.
     """
     boss_key = normalize_boss_name(d.get('source'))
     if boss_key:
         return boss_key
-    return normalize_boss_name(NOTABLE_ITEM_SOURCES.get(item_name.lower()))
+    source = NOTABLE_ITEM_SOURCES.get(item_name.lower()) or ''
+    if player_kc is not None and '/' in source:
+        return _split_multi_boss_source(source, player_kc)
+    return normalize_boss_name(source)
 
 
 def _load_boss_drop_rates():
@@ -2532,9 +2557,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     fetch_groupironmen_collection_log) to cover real drops from before
     Dink was installed, which drop history alone can't have.
 
-    Returns {player: {'luck_score': float, 'bosses': [
-        {'boss': display name, 'kc_gained': int, 'expected': float, 'actual': int, 'diff': float}
-    ]}} - a player only appears if they have KC at a boss the team also has
+    Returns {player: {'luck_score': kills, 'bosses': [
+        {'boss': display name, 'kc_gained': int, 'expected': float, 'actual': int,
+         'diff': kills, 'items': [{'item', 'rarity_1_in', 'expected', 'actual', 'diff'}]}
+    ]}} - scores are in kills ahead (+) / behind (-) drop rate, see the
+    scoring loop below. A player only appears if they have KC at a boss the team also has
     a known droprate for; bosses with no usable droprate are simply omitted
     rather than guessed at.
     """
@@ -2557,8 +2584,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         if not boss_key:
             continue
         rates = boss_item_rarity.setdefault(boss_key, {})
-        if item_name.lower() not in {k.lower() for k in rates}:
-            rates[item_name] = r1
+        rates.setdefault(item_name.lower(), r1)
 
     # KC per player per boss - WOM-authoritative "gained since event start"
     # from gained_cache, or each player's latest total-KC snapshot (same
@@ -2616,7 +2642,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         item_key = item_name.lower()
         if item_key not in NOTABLE_ITEM_NAMES:
             continue
-        boss_key = _boss_key_for_drop(d, item_name)
+        boss_key = _boss_key_for_drop(d, item_name, player_kc=kc_by_boss.get(player, {}))
         if not boss_key:
             continue
         per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
@@ -2648,27 +2674,18 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
                     continue
                 source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
-                if '/' in source:
-                    # Covers both "A / B" (Gauntlet pair) and "A/B" (the
-                    # Wilderness boss twins, e.g. "Callisto/Artio") - the
-                    # curated file isn't consistent about the spacing.
-                    candidates = [c for c in (normalize_boss_name(p) for p in re.split(r'\s*/\s*', source)) if c]
-                    boss_key = max(candidates, key=lambda c: player_kc.get(c, 0)) if candidates else None
-                    if boss_key and player_kc.get(boss_key, 0) <= 0:
-                        boss_key = None  # no KC at any candidate - nothing to disambiguate with
-                else:
-                    boss_key = normalize_boss_name(source)
+                boss_key = _split_multi_boss_source(source, player_kc) if '/' in source else normalize_boss_name(source)
                 if not boss_key:
                     continue
                 per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
                 if qty > per_boss.get(item_key, 0):
                     per_boss[item_key] = qty
 
-    player_boss_notable = {}
-    for player, bosses in player_boss_item_notable.items():
-        for boss_key, items in bosses.items():
-            player_boss_notable.setdefault(player, {})[boss_key] = sum(items.values())
-
+    # Scored per item in "kills": each drop is worth its own 1-in-X, so
+    # (actual - expected) * rate = how many kills ahead of (or behind) rate
+    # that item is. A 1/400 drop therefore counts 8x a 1/50 one, rather than
+    # every notable drop counting the same 1. Still averages to zero for a
+    # player with exactly normal luck.
     breakdown = {}
     for player, boss_kc in kc_by_boss.items():
         total = 0.0
@@ -2677,20 +2694,40 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
             rates = boss_item_rarity.get(boss_key)
             if not rates:
                 continue
-            expected = kc * sum(1.0 / r for r in rates.values())
-            actual = player_boss_notable.get(player, {}).get(boss_key, 0)
-            diff = actual - expected
-            total += diff
+            got = dict(player_boss_item_notable.get(player, {}).get(boss_key, {}))
+            # Anti-duplicate bosses (scrape_boss_drop_rates.py's
+            # ANTI_DUP_COMBINED_RATES) carry one combined "any X unique" rate
+            # instead of per-piece ones - every piece counts toward that.
+            combined = next((k for k in rates if k.startswith('any ')), None)
+            if combined:
+                got = {combined: sum(got.values())}
+            items_out = []
+            boss_kills = 0.0
+            for item, rate in rates.items():
+                expected = kc / rate
+                actual = got.pop(item, 0)
+                kills = (actual - expected) * rate
+                boss_kills += kills
+                items_out.append({
+                    'item': item,
+                    'rarity_1_in': rate,
+                    'expected': round(expected, 3),
+                    'actual': actual,
+                    'diff': round(kills),
+                })
+            total += boss_kills
+            items_out.sort(key=lambda i: i['diff'])
             bosses_out.append({
                 'boss': boss_display_names.get(boss_key, boss_key.replace('_', ' ').title()),
                 'kc_gained': kc,
-                'expected': round(expected, 3),
-                'actual': actual,
-                'diff': round(diff, 3),
+                'expected': round(sum(i['expected'] for i in items_out), 3),
+                'actual': sum(i['actual'] for i in items_out),
+                'diff': round(boss_kills),
+                'items': items_out,
             })
         if bosses_out:
             bosses_out.sort(key=lambda b: b['diff'])
-            breakdown[player] = {'luck_score': round(total, 2), 'bosses': bosses_out}
+            breakdown[player] = {'luck_score': round(total), 'bosses': bosses_out}
 
     return breakdown
 
