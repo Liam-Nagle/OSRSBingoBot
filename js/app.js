@@ -6718,6 +6718,16 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.30",
+                date: "2026-10-02",
+                title: "Fixed several bosses' drops not counting in All Time Luck",
+                changes: [
+                    { type: "fix", text: "The Dagannoth Kings' rings (Berserker, Warrior, Archers, Seers) were curated under a generic \"Dagannoth Kings\" source instead of the specific one each actually drops from, so the collection-log boost couldn't match them to a real boss and silently skipped them - a player with real DK ring drops could still show 0. Corrected to the right individual boss (e.g. Berserker/Warrior ring → Dagannoth Rex) for each." },
+                    { type: "fix", text: "Fixed the same issue for the Royal Titans (was listed under the two titans' individual names instead of the single combined boss), TzKal-Zuk/TzTok-Jad's capes (had a parenthetical note attached that broke the match), and Sol Heredit's Colosseum uniques (were listed under the activity's name, Fortis Colosseum, instead of the boss itself)." },
+                    { type: "fix", text: "Items genuinely shared between two bosses (e.g. Callisto/Artio's Claws of Callisto and Tyrannical ring) weren't getting the All Time boost at all when the curated source used a plain \"/\" instead of \" / \" with spaces - both formats are now handled the same way." },
+                ]
+            },
+            {
                 version: "v2.13.29",
                 date: "2026-10-02",
                 title: "Adjusted The Hueycoatl's droprates for mass worlds",

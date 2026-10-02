@@ -2645,8 +2645,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
                     continue
                 source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
-                if ' / ' in source:
-                    candidates = [c for c in (normalize_boss_name(p) for p in source.split(' / ')) if c]
+                if '/' in source:
+                    # Covers both "A / B" (Gauntlet pair) and "A/B" (the
+                    # Wilderness boss twins, e.g. "Callisto/Artio") - the
+                    # curated file isn't consistent about the spacing.
+                    candidates = [c for c in (normalize_boss_name(p) for p in re.split(r'\s*/\s*', source)) if c]
                     boss_key = max(candidates, key=lambda c: player_kc.get(c, 0)) if candidates else None
                     if boss_key and player_kc.get(boss_key, 0) <= 0:
                         boss_key = None  # no KC at any candidate - nothing to disambiguate with

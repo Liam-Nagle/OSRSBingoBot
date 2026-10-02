@@ -47,10 +47,10 @@
   "steam battlestaff": { "source": "K'ril Tsutsaroth", "category": "weapon" },
   "zamorak hilt": { "source": "K'ril Tsutsaroth", "category": "weapon" },
 
-  "berserker ring": { "source": "Dagannoth Kings", "category": "jewelry" },
-  "warrior ring": { "source": "Dagannoth Kings", "category": "jewelry" },
-  "archers ring": { "source": "Dagannoth Kings", "category": "jewelry" },
-  "seers ring": { "source": "Dagannoth Kings", "category": "jewelry" },
+  "berserker ring": { "source": "Dagannoth Rex", "category": "jewelry" },
+  "warrior ring": { "source": "Dagannoth Rex", "category": "jewelry" },
+  "archers ring": { "source": "Dagannoth Supreme", "category": "jewelry" },
+  "seers ring": { "source": "Dagannoth Prime", "category": "jewelry" },
 
   "serpentine visage": { "source": "Zulrah", "category": "armour", "_note": "The actual drop - becomes Serpentine helm with a chisel. Zulrah never drops the finished helm." },
   "tanzanite fang": { "source": "Zulrah", "category": "weapon", "_note": "The actual drop - becomes Toxic blowpipe with a chisel. Zulrah never drops the finished blowpipe." },
@@ -168,15 +168,15 @@
   "abyssal dagger": { "source": "Abyssal Sire", "category": "weapon" },
   "unsired": { "source": "Abyssal Sire", "category": "material", "_notable": false, "_note": "A flat 1/100 per kill, but it's a stepping stone into a second random roll (which real item you get from the pool) that Dink never records as a boss drop - we have no visibility into that roll, so counting Unsired itself tells us nothing about luck at this boss." },
 
-  "giantsoul amulet": { "source": "Branda the Fire Queen/Eldric the Ice King", "category": "jewelry" },
+  "giantsoul amulet": { "source": "Royal Titans", "category": "jewelry", "_note": "Branda the Fire Queen and Eldric the Ice King are fought together as one combined boss, tracked as a single 'Royal Titans' KC - not two separate bosses." },
   "trident of the seas": { "source": "Kraken", "category": "weapon" },
 
-  "fire cape": { "source": "TzTok-Jad (Fight Caves)", "category": "armour" },
-  "infernal cape": { "source": "TzKal-Zuk (Inferno)", "category": "armour" },
+  "fire cape": { "source": "TzTok-Jad", "category": "armour" },
+  "infernal cape": { "source": "TzKal-Zuk", "category": "armour" },
 
-  "dizana's quiver": { "source": "Fortis Colosseum", "category": "armour" },
-  "sunfire fanatic cuirass": { "source": "Fortis Colosseum", "category": "armour" },
-  "sunfire fanatic chausses": { "source": "Fortis Colosseum", "category": "armour" },
-  "sunfire fanatic helm": { "source": "Fortis Colosseum", "category": "armour" },
-  "echo crystal": { "source": "Fortis Colosseum", "category": "armour", "_note": "Used on Guardian boots to make Echo boots (extra prayer bonus + recoil charges)." }
+  "dizana's quiver": { "source": "Sol Heredit", "category": "armour", "_note": "Fortis Colosseum is the activity; Sol Heredit is the actual boss fought there and the KC-tracked hiscores entry." },
+  "sunfire fanatic cuirass": { "source": "Sol Heredit", "category": "armour" },
+  "sunfire fanatic chausses": { "source": "Sol Heredit", "category": "armour" },
+  "sunfire fanatic helm": { "source": "Sol Heredit", "category": "armour" },
+  "echo crystal": { "source": "Sol Heredit", "category": "armour", "_note": "Used on Guardian boots to make Echo boots (extra prayer bonus + recoil charges)." }
 }
