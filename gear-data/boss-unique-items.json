@@ -170,6 +170,7 @@
 
   "giantsoul amulet": { "source": "Royal Titans", "category": "jewelry", "_note": "Branda the Fire Queen and Eldric the Ice King are fought together as one combined boss, tracked as a single 'Royal Titans' KC - not two separate bosses." },
   "trident of the seas (full)": { "source": "Kraken", "category": "weapon", "_note": "Real item/Dink/wiki name is 'Trident of the seas (full)', not plain 'Trident of the seas' - the old curated name never matched any real drop record at all." },
+  "kraken tentacle": { "source": "Kraken", "category": "material", "_ambiguous_source": true, "_note": "1/400 from the Kraken boss, but also drops from ordinary (non-boss, not KC-tracked) Cave krakens at 1/1200 - a live Dink drop still says which one; excluded from the All Time collection-log boost since a logged copy can't be told apart." },
 
   "fire cape": { "source": "TzTok-Jad", "category": "armour" },
   "infernal cape": { "source": "TzKal-Zuk", "category": "armour" },

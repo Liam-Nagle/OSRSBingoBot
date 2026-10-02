@@ -6718,6 +6718,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.34",
+                date: "2026-10-02",
+                title: "Added Kraken tentacle to Kraken's luck calc",
+                changes: [
+                    { type: "feature", text: "Kraken tentacle (1/400) wasn't curated at all, so it never factored into Kraken's \"expected\" drops. It's also droppable from ordinary Cave krakens (not the boss, not KC-tracked) at a much rarer 1/1200 though, so - same as Grotesque Guardians' Granite maul - it's excluded from the All Time collection-log boost specifically, since a logged copy can't be told apart from a Cave kraken one. A live Dink-captured drop with a clean Kraken source still counts normally." },
+                ]
+            },
+            {
                 version: "v2.13.33",
                 date: "2026-10-02",
                 title: "Fixed Trident of the seas never counting at Kraken",
