@@ -78,6 +78,11 @@ BOSS_WIKI_TITLES = {
     'the_royal_titans': 'Royal Titans',
     'theatre_of_blood': 'Theatre of Blood',
     'thermonuclear_smoke_devil': 'Thermonuclear Smoke Devil',
+    # Not tracked by WiseOldMan - their KC comes from the BingoLuckSync RuneLite plugin
+    # (collection log page KC kept current by NPC loot events).
+    'tormented_demon': 'Tormented Demon',
+    'demonic_gorilla': 'Demonic gorilla',
+    'tortured_gorilla': 'Tortured gorilla',
     'tombs_of_amascut': 'Tombs of Amascut',
     'tzkal_zuk': 'TzKal-Zuk',
     'tztok_jad': 'TzTok-Jad',

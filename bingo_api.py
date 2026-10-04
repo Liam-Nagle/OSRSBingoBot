@@ -7,6 +7,9 @@ import json
 import os
 import re
 import csv
+import hashlib
+import secrets
+from raid_luck import compute_raid_luck
 import io
 from datetime import datetime, timedelta
 from pymongo import MongoClient
@@ -144,6 +147,29 @@ def get_authenticated_tenant_by_api_key():
     return get_tenant_by_api_key(api_key)
 
 
+def _hash_plugin_token(token):
+    """Plugin tokens are 256-bit random values, so an unsalted SHA-256 is sufficient."""
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def get_authenticated_tenant_by_plugin_token():
+    """
+    Auth for the BingoLuckSync RuneLite plugin ONLY. The token lives in
+    X-Plugin-Token, is stored hashed on the tenant, and is deliberately not
+    accepted anywhere else, so a leaked plugin token cannot write drops,
+    deaths or admin data. Returns the tenant dict or None.
+    """
+    token = request.headers.get('X-Plugin-Token')
+    if not token or len(token) > 200:
+        return None
+    return tenants_collection.find_one({'plugin_token_hash': _hash_plugin_token(token)})
+
+
+def _plugin_rate_key():
+    """Rate-limit plugin endpoints per token (falling back to IP when absent)."""
+    return (request.headers.get('X-Plugin-Token') or '')[:200] or get_remote_address()
+
+
 def get_authenticated_tenant():
     """
     Combined auth for endpoints triggered by BOTH automation (a valid
@@ -186,6 +212,11 @@ def _ensure_tenant_indexes(collections, subdomain):
         collections['kc'].create_index([('player', 1), ('timestamp', -1)])
         collections['personal_bests'].create_index([('player', 1), ('boss', 1)])
         collections['personal_bests'].create_index([('time_seconds', 1)])
+        collections['plugin_clog'].create_index([('player', 1), ('page', 1)], unique=True)
+        collections['plugin_kc'].create_index([('player', 1)], unique=True)
+        collections['plugin_kc_history'].create_index([('player', 1), ('timestamp', -1)])
+        collections['plugin_raids'].create_index([('player', 1), ('raid', 1), ('mode', 1), ('kill_count', 1)])
+        collections['plugin_raids'].create_index([('raid', 1), ('mode', 1), ('completed_at', 1)])
         _indexed_tenant_subdomains.add(subdomain)
     except Exception as e:
         print(f"[!] Failed to create indexes for tenant '{subdomain}': {e}")
@@ -217,7 +248,11 @@ def get_tenant_collections(tenant_id=None):
         'personal_bests': db[f'tenant_{subdomain}_personal_bests'],
         'archive': db[f'tenant_{subdomain}_archive'],
         'gained_cache': db[f'tenant_{subdomain}_gained_cache'],
-        'collection_log_cache': db[f'tenant_{subdomain}_collection_log_cache']
+        'collection_log_cache': db[f'tenant_{subdomain}_collection_log_cache'],
+        'plugin_clog': db[f'tenant_{subdomain}_plugin_clog'],
+        'plugin_kc': db[f'tenant_{subdomain}_plugin_kc'],
+        'plugin_kc_history': db[f'tenant_{subdomain}_plugin_kc_history'],
+        'plugin_raids': db[f'tenant_{subdomain}_plugin_raids']
     }
     _ensure_tenant_indexes(collections, subdomain)
     return collections
@@ -669,6 +704,235 @@ def create_kc_snapshot():
         'results': results,
         'debug': debug_log
     })
+
+
+# ---------------------------------------------------------------------------
+# BingoLuckSync RuneLite plugin ingest.
+# Each player's plugin sends ONLY their own data, authenticated by the tenant's
+# plugin token (X-Plugin-Token) - a separate, rotatable credential that only
+# works on /plugin/*. Everything is validated and size-capped because the
+# token sits in every member's RuneLite settings.
+# ---------------------------------------------------------------------------
+PLUGIN_RAIDS = {'COX', 'TOB', 'TOA'}
+PLUGIN_RAID_MODES = {
+    'COX': {'NORMAL', 'CHALLENGE'},
+    'TOB': {'NORMAL', 'STORY', 'HARD'},
+    'TOA': {'NORMAL', 'ENTRY', 'EXPERT'},
+}
+
+
+def _plugin_int(value, lo=-1, hi=10_000_000):
+    """Coerce to an int within [lo, hi], or None if it isn't one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = int(value)
+    return value if lo <= value <= hi else None
+
+
+def _plugin_name(value):
+    """RSNs are 1-12 chars of letters, digits, spaces, hyphens and underscores."""
+    if not isinstance(value, str):
+        return None
+    value = value.replace(' ', ' ').strip()
+    if not re.fullmatch(r'[A-Za-z0-9 _-]{1,12}', value):
+        return None
+    return value
+
+
+@app.route('/admin/plugin-token/status', methods=['POST'])
+@limiter.limit("20 per minute")
+def plugin_token_status():
+    """Whether this group has a plugin token yet, and when it was last rotated (admin only)."""
+    data = request.get_json(silent=True) or {}
+    tenant = get_tenant_from_request()
+    if not verify_admin_password(tenant, data.get('password')):
+        return jsonify({'error': 'Unauthorized'}), 401
+    rotated_at = tenant.get('plugin_token_rotated_at')
+    return jsonify({
+        'success': True,
+        'has_token': bool(tenant.get('plugin_token_hash')),
+        'rotated_at': rotated_at.isoformat() + 'Z' if rotated_at else None,
+    })
+
+
+@app.route('/admin/plugin-token/rotate', methods=['POST'])
+@limiter.limit("5 per minute")
+def plugin_token_rotate():
+    """
+    Create or replace this group's plugin token (admin only). The new token is
+    returned ONCE and only its hash is stored; the previous token stops working
+    immediately.
+    """
+    data = request.get_json(silent=True) or {}
+    tenant = get_tenant_from_request()
+    if not verify_admin_password(tenant, data.get('password')):
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    token = 'bls_' + secrets.token_urlsafe(32)
+    tenants_collection.update_one(
+        {'tenant_id': tenant['tenant_id']},
+        {'$set': {
+            'plugin_token_hash': _hash_plugin_token(token),
+            'plugin_token_rotated_at': datetime.utcnow(),
+        }},
+    )
+    return jsonify({'success': True, 'token': token})
+
+
+@app.route('/plugin/collection-log', methods=['POST'])
+@limiter.limit("120 per minute", key_func=_plugin_rate_key)
+def plugin_collection_log():
+    """One collection log page from the RuneLite plugin (items, quantities, KC lines)."""
+    if not USE_MONGODB:
+        return jsonify({'success': False, 'error': 'MongoDB not available'}), 503
+    tenant = get_authenticated_tenant_by_plugin_token()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    player = _plugin_name(data.get('player'))
+    page = data.get('page')
+    items_in = data.get('items')
+    kcs_in = data.get('killCounts') or []
+    if (not player or not isinstance(page, str) or not (1 <= len(page) <= 80)
+            or not isinstance(items_in, list) or not (1 <= len(items_in) <= 500)
+            or not isinstance(kcs_in, list) or len(kcs_in) > 10):
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
+    items = []
+    for it in items_in:
+        if not isinstance(it, dict):
+            return jsonify({'success': False, 'error': 'Invalid item'}), 400
+        item_id = _plugin_int(it.get('id'), 1, 100_000)
+        quantity = _plugin_int(it.get('quantity'), 0, 2_147_483_647)
+        name = it.get('name')
+        if item_id is None or quantity is None or not isinstance(name, str) or len(name) > 100:
+            return jsonify({'success': False, 'error': 'Invalid item'}), 400
+        items.append({
+            'id': item_id,
+            'name': name,
+            'quantity': quantity,
+            'obtained': bool(it.get('obtained')),
+        })
+
+    kill_counts = [str(k)[:80] for k in kcs_in if isinstance(k, str)]
+
+    collections = get_tenant_collections(tenant['tenant_id'])
+    now = datetime.utcnow()
+    collections['plugin_clog'].update_one(
+        {'player': player, 'page': page},
+        {
+            '$set': {'items': items, 'kill_counts': kill_counts, 'updated_at': now},
+            # Frozen at the first sync: raid luck only counts raids after this and
+            # drops beyond these quantities (see raid_luck.compute_raid_luck).
+            '$setOnInsert': {'first_seen_at': now, 'baseline': {str(i['id']): i['quantity'] for i in items}},
+        },
+        upsert=True,
+    )
+    return jsonify({'success': True})
+
+
+@app.route('/plugin/kc', methods=['POST'])
+@limiter.limit("60 per minute", key_func=_plugin_rate_key)
+def plugin_kc():
+    """The player's own kill/completion counters from the RuneLite plugin."""
+    if not USE_MONGODB:
+        return jsonify({'success': False, 'error': 'MongoDB not available'}), 503
+    tenant = get_authenticated_tenant_by_plugin_token()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    player = _plugin_name(data.get('player'))
+    counts_in = data.get('counts')
+    if not player or not isinstance(counts_in, list) or not (1 <= len(counts_in) <= 400):
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
+    incoming = {}
+    for c in counts_in:
+        if not isinstance(c, dict):
+            return jsonify({'success': False, 'error': 'Invalid count'}), 400
+        name = c.get('name')
+        kc = _plugin_int(c.get('kc'), 0, 10_000_000)
+        if not isinstance(name, str) or not (1 <= len(name) <= 80) or kc is None:
+            return jsonify({'success': False, 'error': 'Invalid count'}), 400
+        incoming[name] = kc
+
+    collections = get_tenant_collections(tenant['tenant_id'])
+    existing = collections['plugin_kc'].find_one({'player': player}) or {}
+    # Kill counts only go up, so a stale or out-of-order upload must never lower one.
+    merged = {c['name']: c['kc'] for c in existing.get('counts', []) if isinstance(c, dict)}
+    for name, kc in incoming.items():
+        merged[name] = max(kc, merged.get(name, 0))
+    collections['plugin_kc'].update_one(
+        {'player': player},
+        {'$set': {'counts': [{'name': n, 'kc': k} for n, k in merged.items()], 'updated_at': datetime.utcnow()}},
+        upsert=True,
+    )
+    # At most one history snapshot per player per day, so event-window KC ("gained since
+    # the event started") can be worked out later by subtracting an earlier snapshot.
+    now = datetime.utcnow()
+    last = collections['plugin_kc_history'].find_one({'player': player, 'timestamp': {'$gte': now - timedelta(hours=24)}})
+    if not last:
+        collections['plugin_kc_history'].insert_one({
+            'player': player, 'timestamp': now,
+            'counts': [{'name': n, 'kc': k} for n, k in merged.items()],
+        })
+    return jsonify({'success': True})
+
+
+@app.route('/plugin/raid', methods=['POST'])
+@limiter.limit("60 per minute", key_func=_plugin_rate_key)
+def plugin_raid():
+    """One raid completion from the RuneLite plugin (the player's own result)."""
+    if not USE_MONGODB:
+        return jsonify({'success': False, 'error': 'MongoDB not available'}), 503
+    tenant = get_authenticated_tenant_by_plugin_token()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    player = _plugin_name(data.get('player'))
+    raid = data.get('raid')
+    mode = data.get('mode')
+    if not player or raid not in PLUGIN_RAIDS or mode not in PLUGIN_RAID_MODES[raid]:
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
+    kill_count = _plugin_int(data.get('killCount'), -1, 1_000_000)
+    completed_at = _plugin_int(data.get('completedAt'), 1_500_000_000, 4_000_000_000)
+    total_points = _plugin_int(data.get('totalPoints'))
+    personal_points = _plugin_int(data.get('personalPoints'))
+    raid_level = _plugin_int(data.get('raidLevel'), -1, 1000)
+    team_size = _plugin_int(data.get('teamSize'), -1, 100)
+    deaths = _plugin_int(data.get('deaths', -1), -1, 1000)
+    team_deaths = _plugin_int(data.get('teamDeaths', -1), -1, 5000)
+    mvp = _plugin_int(data.get('mvp', -1), -1, 1)
+    if None in (kill_count, completed_at, total_points, personal_points, raid_level, team_size,
+                deaths, team_deaths, mvp):
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
+    team_label = data.get('teamSizeLabel')
+    if team_label is not None and (not isinstance(team_label, str) or len(team_label) > 20):
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
+    doc = {
+        'player': player, 'raid': raid, 'mode': mode, 'kill_count': kill_count,
+        'completed_at': completed_at, 'total_points': total_points,
+        'personal_points': personal_points, 'raid_level': raid_level,
+        'team_size': team_size, 'team_size_label': team_label,
+        'deaths': deaths, 'team_deaths': team_deaths, 'mvp': mvp,
+        'received_at': datetime.utcnow(),
+    }
+
+    collections = get_tenant_collections(tenant['tenant_id'])
+    if kill_count >= 0:
+        # A player's completion count is unique per raid+mode, so a re-send just updates it.
+        collections['plugin_raids'].update_one(
+            {'player': player, 'raid': raid, 'mode': mode, 'kill_count': kill_count},
+            {'$set': doc}, upsert=True)
+    else:
+        collections['plugin_raids'].insert_one(doc)
+    return jsonify({'success': True})
 
 
 @app.route('/kc/refresh-gained', methods=['POST'])
@@ -2647,6 +2911,25 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
             if player_bosses:
                 kc_by_boss[snap_player] = player_bosses
 
+    # All Time only: bosses WiseOldMan doesn't track (Tormented Demons, the gorillas, ...)
+    # get their KC from the BingoLuckSync plugin's own counters (a collection log page
+    # opened once, then kept current by NPC loot events). Only bosses with known
+    # droprates are added, and only where WiseOldMan has no KC for that boss - the
+    # plugin's counter advances per loot event and can drift, so it never overrules WOM.
+    if all_time:
+        for kc_doc in collections['plugin_kc'].find({}):
+            player = kc_doc.get('player')
+            if not player:
+                continue
+            for entry in kc_doc.get('counts') or []:
+                boss_key = normalize_boss_name(entry.get('name'))
+                if not boss_key or boss_key not in boss_item_rarity:
+                    continue
+                player_bosses = kc_by_boss.setdefault(player, {})
+                if entry.get('kc', 0) > 0 and boss_key not in player_bosses:
+                    player_bosses[boss_key] = entry['kc']
+                    boss_display_names.setdefault(boss_key, entry['name'])
+
     # Actual notable drops, per player per boss per item - event-windowed,
     # or every drop on record when all_time (match_query is {} in that
     # case). Tracked per item rather than summed straight to a boss total
@@ -2682,9 +2965,18 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     # actually logged - it can't lower a count Dink already captured, and
     # never double-counts since it's a max() against the same per-item slot.
     if all_time:
-        for cl_doc in collections['collection_log_cache'].find({}):
-            player = cl_doc.get('player')
-            owned = cl_doc.get('items', {})
+        # Both the groupiron.men cache and the plugin's own pages (which carry exact
+        # quantities per page) raise an item's count to what's logged; the max()
+        # below means overlap between them can't double count.
+        cl_sources = [(d.get('player'), d.get('items', {})) for d in collections['collection_log_cache'].find({})]
+        plugin_owned = {}
+        for page_doc in collections['plugin_clog'].find({}):
+            for it in page_doc.get('items') or []:
+                if it.get('obtained') and it.get('quantity', 0) > 0:
+                    per_player = plugin_owned.setdefault(page_doc.get('player'), {})
+                    per_player[it['name']] = max(per_player.get(it['name'], 0), it['quantity'])
+        cl_sources.extend(plugin_owned.items())
+        for player, owned in cl_sources:
             if not player or not owned:
                 continue
             player_kc = kc_by_boss.get(player, {})
@@ -2748,6 +3040,28 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         if bosses_out:
             bosses_out.sort(key=lambda b: b['diff'])
             breakdown[player] = {'luck_score': round(total), 'bosses': bosses_out}
+
+    # All Time only: CoX / ToB / ToA from the RuneLite plugin's own raid reports (see
+    # raid_luck.py). These cover each player's raids since they first synced that raid's
+    # collection log page - there is nothing before that to measure - and have no
+    # WiseOldMan-based rows, so this can't double count.
+    if all_time:
+        raid_names = {'COX': 'Chambers of Xeric', 'TOB': 'Theatre of Blood', 'TOA': 'Tombs of Amascut'}
+        for player, raids in compute_raid_luck(collections).items():
+            entry = breakdown.setdefault(player, {'luck_score': 0, 'bosses': []})
+            for raid, info in raids.items():
+                entry['bosses'].append({
+                    'boss': raid_names[raid],
+                    'kc_gained': info['raids_scored'],
+                    'expected': info['expected_uniques'],
+                    'actual': info['actual_uniques'],
+                    'diff': info['luck_kills'],
+                    'items': info['items'],
+                    'unscored_raids': info['unscored'],
+                    'tracked_since_plugin': True,
+                })
+                entry['luck_score'] += info['luck_kills']
+            entry['bosses'].sort(key=lambda b: b['diff'])
 
     return breakdown
 
@@ -2995,6 +3309,25 @@ def get_event_luck():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/raid-luck', methods=['GET'])
+def get_raid_luck():
+    """
+    Per-player CoX/ToB/ToA unique luck from the RuneLite plugin's data (see
+    raid_luck.py). Covers each player's raids since their collection log page
+    was first synced, so it only includes players running the plugin.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    collections = get_tenant_collections(tenant_id)
+    try:
+        return jsonify({'players': compute_raid_luck(collections)})
+    except Exception as e:
+        print(f"[X] raid luck failed: {e}")
+        return jsonify({'error': 'Failed to compute raid luck'}), 500
 
 
 @app.route('/event/recap/<player_name>', methods=['GET'])
