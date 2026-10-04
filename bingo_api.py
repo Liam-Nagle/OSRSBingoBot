@@ -10,6 +10,7 @@ import csv
 import hashlib
 import secrets
 from raid_luck import compute_raid_luck, compute_raid_luck_event
+from doom_luck import compute_doom_luck
 import io
 from datetime import datetime, timedelta
 from pymongo import MongoClient
@@ -223,6 +224,8 @@ def _ensure_tenant_indexes(collections, subdomain):
         collections['plugin_clog'].create_index([('player', 1), ('page', 1)], unique=True)
         collections['plugin_kc'].create_index([('player', 1)], unique=True)
         collections['plugin_kc_history'].create_index([('player', 1), ('timestamp', -1)])
+        collections['plugin_doom'].create_index([('player', 1)], unique=True)
+        collections['plugin_doom_history'].create_index([('player', 1), ('timestamp', -1)])
         collections['plugin_raids'].create_index([('player', 1), ('raid', 1), ('mode', 1), ('kill_count', 1)])
         collections['plugin_raids'].create_index([('raid', 1), ('mode', 1), ('completed_at', 1)])
         _indexed_tenant_subdomains.add(subdomain)
@@ -260,6 +263,8 @@ def get_tenant_collections(tenant_id=None):
         'plugin_clog': db[f'tenant_{subdomain}_plugin_clog'],
         'plugin_kc': db[f'tenant_{subdomain}_plugin_kc'],
         'plugin_kc_history': db[f'tenant_{subdomain}_plugin_kc_history'],
+        'plugin_doom': db[f'tenant_{subdomain}_plugin_doom'],
+        'plugin_doom_history': db[f'tenant_{subdomain}_plugin_doom_history'],
         'plugin_raids': db[f'tenant_{subdomain}_plugin_raids']
     }
     _ensure_tenant_indexes(collections, subdomain)
@@ -888,6 +893,45 @@ def plugin_kc():
             'player': player, 'timestamp': now,
             'counts': [{'name': n, 'kc': k} for n, k in merged.items()],
         })
+    return jsonify({'success': True})
+
+
+@app.route('/plugin/doom', methods=['POST'])
+@limiter.limit("60 per minute", key_func=_plugin_rate_key)
+@limiter.limit("200 per minute")
+def plugin_doom():
+    """The player's own Doom of Mokhaiotl completions per delve level, from the RuneLite plugin."""
+    if not USE_MONGODB:
+        return jsonify({'success': False, 'error': 'MongoDB not available'}), 503
+    tenant = get_authenticated_tenant_by_plugin_token()
+    if not tenant:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    player = _plugin_name(data.get('player'))
+    levels_in = data.get('levels')
+    past8 = _plugin_int(data.get('past8'), 0, 10_000_000)
+    if (not player or past8 is None or not isinstance(levels_in, list) or len(levels_in) != 8):
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+    levels = [_plugin_int(v, 0, 10_000_000) for v in levels_in]
+    if None in levels:
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
+    collections = get_tenant_collections(tenant['tenant_id'])
+    existing = collections['plugin_doom'].find_one({'player': player}) or {}
+    # Completions only ever go up, so a stale or out-of-order upload must never lower one.
+    old_levels = existing.get('levels') or [0] * 8
+    levels = [max(new, old_levels[i] if i < len(old_levels) else 0) for i, new in enumerate(levels)]
+    past8 = max(past8, existing.get('past8', 0))
+    now = datetime.utcnow()
+    collections['plugin_doom'].update_one(
+        {'player': player},
+        {'$set': {'levels': levels, 'past8': past8, 'updated_at': now}},
+        upsert=True,
+    )
+    # One snapshot a day, so Doom luck for an event window can be worked out later.
+    if not collections['plugin_doom_history'].find_one({'player': player, 'timestamp': {'$gte': now - timedelta(hours=24)}}):
+        collections['plugin_doom_history'].insert_one({'player': player, 'timestamp': now, 'levels': levels, 'past8': past8})
     return jsonify({'success': True})
 
 
@@ -3060,6 +3104,30 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         if bosses_out:
             bosses_out.sort(key=lambda b: b['diff'])
             breakdown[player] = {'luck_score': round(total), 'bosses': bosses_out}
+
+    # Doom of Mokhaiotl from exact per-level delve completions (see doom_luck.py). The hiscores only count
+    # deep delves and the old row used the lowest unique rates, so for anyone whose plugin has read the
+    # delve scoreboard this replaces that row. In an event window the delve counts are treated as all
+    # having happened inside it (see doom_luck.compute_doom_luck) and the actual drops are the window's.
+    doom_actual = {p: boss_items.get('doom_of_mokhaiotl', {}) for p, boss_items in player_boss_item_notable.items()}
+    for player, info in compute_doom_luck(collections, doom_actual, use_clog=all_time).items():
+        entry = breakdown.setdefault(player, {'luck_score': 0, 'bosses': []})
+        for old in [b for b in entry['bosses'] if normalize_boss_name(b['boss']) == 'doom_of_mokhaiotl']:
+            entry['bosses'].remove(old)
+            entry['luck_score'] -= old['diff']
+        entry['bosses'].append({
+            'boss': 'Doom of Mokhaiotl',
+            'kc_gained': info['completions'],
+            'expected': info['expected_uniques'],
+            'actual': info['actual_uniques'],
+            'diff': info['luck_kills'],
+            'items': info['items'],
+            'basis': 'delves',
+            'delve_levels': info['levels'],
+            'delves_past_8': info['past8'],
+        })
+        entry['luck_score'] += info['luck_kills']
+        entry['bosses'].sort(key=lambda b: b['diff'])
 
     # CoX / ToB / ToA from the RuneLite plugin's raid reports and old raid screenshots (see
     # raid_luck.py); they have no WiseOldMan-based rows, so this can't double count.
