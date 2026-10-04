@@ -220,7 +220,7 @@ def _as_epoch(value):
     return float(value) if value is not None else 0.0
 
 
-def compute_raid_luck(collections):
+def compute_raid_luck_since_sync(collections):
     """
     Per player, per raid: expected vs actual uniques since the player's collection
     log page was first synced, scored in "kills ahead (+) / behind (-)" like the
@@ -298,3 +298,191 @@ def compute_raid_luck(collections):
         entry['luck_kills'] += sum(i['diff'] for i in items_out)
         entry['items'].extend(items_out)
     return result
+
+
+# ---------------------------------------------------------------- lifetime and event windows
+
+# plugin_kc counter name for each raid + mode (the collection log's own labels, lower-cased).
+KC_NAMES = {
+    ('COX', 'NORMAL'): 'chambers of xeric', ('COX', 'CHALLENGE'): 'chambers of xeric (cm)',
+    ('TOB', 'NORMAL'): 'theatre of blood', ('TOB', 'ENTRY'): 'theatre of blood (entry)',
+    ('TOB', 'HARD'): 'theatre of blood (hard)',
+    ('TOA', 'NORMAL'): 'tombs of amascut', ('TOA', 'ENTRY'): 'tombs of amascut (entry)',
+    ('TOA', 'EXPERT'): 'tombs of amascut (expert)',
+}
+RAID_SOURCES = {'COX': 'chambers of xeric', 'TOB': 'theatre of blood', 'TOA': 'tombs of amascut'}
+# A mode's raids only count towards lifetime luck if at least this share of its completions is
+# known (plugin reports plus screenshots). The rest are assumed to look like the known ones.
+MIN_COVERAGE = 0.5
+
+
+def _group_by_player_raid_mode(collections):
+    out = {}
+    for doc in collections['plugin_raids'].find({}):
+        out.setdefault(doc['player'], {}).setdefault(doc['raid'], {}).setdefault(doc['mode'], []).append(doc)
+    return out
+
+
+def _item_name_set(raid):
+    """Lower-case names of every unique this raid can drop (any mode)."""
+    names = set()
+    if raid == 'COX':
+        for w in COX_WEIGHTS.values():
+            names |= set(w)
+    elif raid == 'TOB':
+        for w in TOB_WEIGHTS.values():
+            names |= set(w)
+    else:
+        names |= set(_TOA_BASE_WEIGHTS)
+    return names
+
+
+def _expected_items(docs, raid):
+    """(scored count, unscored count, {item: expected uniques}) over these raids."""
+    scored = unscored = 0
+    expected = {}
+    for doc in docs:
+        chance = raid_unique_chance(doc)
+        if chance is None:
+            unscored += 1
+            continue
+        scored += 1
+        for item, w in _raid_item_weights(raid, doc['mode'], doc.get('raid_level')).items():
+            expected[item] = expected.get(item, 0.0) + chance * w
+    return scored, unscored, expected
+
+
+def _items_out(expected, actual, n):
+    rows = []
+    for item, exp in expected.items():
+        if exp <= 0:
+            continue
+        rate = n / exp
+        got = actual.get(item, 0)
+        rows.append({'item': item, 'expected': round(exp, 4), 'actual': got,
+                     'rarity_1_in': round(rate, 1), 'diff': round((got - exp) * rate)})
+    rows.sort(key=lambda r: r['diff'])
+    return rows
+
+
+def compute_raid_luck_lifetime(collections):
+    """
+    Lifetime raid luck: every raid the plugin or a screenshot told us about, against the player's
+    whole collection log (nothing subtracted, since the log is lifetime).
+
+    Per raid mode, the known raids' expected uniques are scaled up to the mode's full completion
+    count (KC from the collection log page or the highest completion count seen, whichever is
+    larger), on the assumption that unknown raids resemble known ones. A mode with under
+    MIN_COVERAGE known is left out and reported in `uncovered_modes`, and so is any raid with no
+    collection log page synced yet (nothing to compare against).
+
+    Returns {player: {raid: {'basis': 'lifetime', 'raids_scored', 'kc', 'coverage', 'unscored',
+    'uncovered_modes', 'expected_uniques', 'actual_uniques', 'luck_kills', 'items'}}}
+    """
+    grouped = _group_by_player_raid_mode(collections)
+    kc_lookup = {}
+    for doc in collections['plugin_kc'].find({}):
+        kc_lookup[doc.get('player')] = {str(c.get('name', '')).lower(): c.get('kc', 0) for c in doc.get('counts') or []}
+    clog_pages = {}
+    for page in collections['plugin_clog'].find({}):
+        raid, _ = classify_clog_page(page.get('page'))
+        if raid:
+            clog_pages[(page.get('player'), raid)] = page
+
+    result = {}
+    for player, raids in grouped.items():
+        for raid, modes in raids.items():
+            page = clog_pages.get((player, raid))
+            if not page:
+                continue
+            expected_total = {}
+            kc_total = scored_total = unscored_total = 0
+            uncovered = []
+            for mode, docs in modes.items():
+                scored, unscored, expected = _expected_items(docs, raid)
+                unscored_total += unscored
+                kc = max(kc_lookup.get(player, {}).get(KC_NAMES.get((raid, mode), ''), 0),
+                         max((d.get('kill_count', 0) for d in docs), default=0))
+                if not scored or not kc or scored / kc < MIN_COVERAGE:
+                    if kc:
+                        uncovered.append({'mode': mode, 'kc': kc, 'known': scored})
+                    continue
+                factor = max(1.0, kc / scored)
+                for item, exp in expected.items():
+                    expected_total[item] = expected_total.get(item, 0.0) + exp * factor
+                kc_total += kc
+                scored_total += scored
+            if not kc_total:
+                continue
+            actual = {}
+            for it in page.get('items') or []:
+                key = _canonical_item(it.get('name'))
+                if key in expected_total and it.get('obtained'):
+                    actual[key] = max(actual.get(key, 0), it.get('quantity', 0) or 0)
+            items = _items_out(expected_total, actual, kc_total)
+            result.setdefault(player, {})[raid] = {
+                'basis': 'lifetime', 'raids_scored': scored_total, 'kc': kc_total,
+                'coverage': round(scored_total / kc_total, 3), 'unscored': unscored_total,
+                'uncovered_modes': uncovered, 'expected_uniques': round(sum(expected_total.values()), 4),
+                'actual_uniques': sum(actual.values()), 'luck_kills': sum(i['diff'] for i in items), 'items': items,
+            }
+    return result
+
+
+def _drop_raid(doc):
+    """Which raid a Dink drop document came from, by its source text, or None."""
+    source = (doc.get('source') or '').lower()
+    for raid, name in RAID_SOURCES.items():
+        if name in source:
+            return raid
+    return None
+
+
+def compute_raid_luck_event(collections, start_epoch, end_epoch, drops):
+    """
+    Raid luck for a window (a bingo event): raids completed inside [start, end] (their times come
+    from the plugin or from screenshot filenames) against uniques in the Dink drop history inside
+    the same window. `drops` are the already-deduplicated history documents for that window.
+    Nothing is scaled up here: only raids actually known count, so a missing screenshot makes a
+    player look slightly unluckier, and `unscored` is reported.
+
+    Returns {player: {raid: {'basis': 'event', 'raids_scored', 'unscored', 'expected_uniques',
+    'actual_uniques', 'luck_kills', 'items'}}}
+    """
+    result = {}
+    for player, raids in _group_by_player_raid_mode(collections).items():
+        for raid, modes in raids.items():
+            docs = [d for ds in modes.values() for d in ds if start_epoch <= d.get('completed_at', 0) <= end_epoch]
+            scored, unscored, expected = _expected_items(docs, raid)
+            if not scored:
+                continue
+            names = _item_name_set(raid)
+            actual = {}
+            for drop in drops:
+                if drop.get('player') != player or _drop_raid(drop) != raid:
+                    continue
+                key = _canonical_item(drop.get('item'))
+                if key in names:
+                    actual[key] = actual.get(key, 0) + 1
+            items = _items_out(expected, actual, scored)
+            result.setdefault(player, {})[raid] = {
+                'basis': 'event', 'raids_scored': scored, 'unscored': unscored,
+                'expected_uniques': round(sum(expected.values()), 4), 'actual_uniques': sum(actual.values()),
+                'luck_kills': sum(i['diff'] for i in items), 'items': items,
+            }
+    return result
+
+
+def compute_raid_luck(collections):
+    """
+    All Time raid luck: lifetime where enough raids are known, otherwise falling back to
+    "since the plugin first synced" for that player and raid.
+    """
+    merged = compute_raid_luck_since_sync(collections)
+    for player, raids in compute_raid_luck_lifetime(collections).items():
+        for raid, info in raids.items():
+            merged.setdefault(player, {})[raid] = info
+    for raids in merged.values():
+        for info in raids.values():
+            info.setdefault('basis', 'since_plugin')
+    return merged

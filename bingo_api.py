@@ -9,7 +9,7 @@ import re
 import csv
 import hashlib
 import secrets
-from raid_luck import compute_raid_luck
+from raid_luck import compute_raid_luck, compute_raid_luck_event
 import io
 from datetime import datetime, timedelta
 from pymongo import MongoClient
@@ -911,6 +911,12 @@ def plugin_raid():
                 deaths, team_deaths, mvp):
         return jsonify({'success': False, 'error': 'Invalid payload'}), 400
 
+    # 'screenshot' = read from an old RuneLite screenshot by tools/raid_screenshot_reader.py. Those
+    # points are approximate, so they only ever fill a gap and never overwrite exact plugin data.
+    source = data.get('source', 'plugin')
+    if source not in ('plugin', 'screenshot'):
+        return jsonify({'success': False, 'error': 'Invalid payload'}), 400
+
     team_label = data.get('teamSizeLabel')
     if team_label is not None and (not isinstance(team_label, str) or len(team_label) > 20):
         return jsonify({'success': False, 'error': 'Invalid payload'}), 400
@@ -921,15 +927,17 @@ def plugin_raid():
         'personal_points': personal_points, 'raid_level': raid_level,
         'team_size': team_size, 'team_size_label': team_label,
         'deaths': deaths, 'team_deaths': team_deaths, 'mvp': mvp,
-        'received_at': datetime.utcnow(),
+        'source': source, 'received_at': datetime.utcnow(),
     }
 
     collections = get_tenant_collections(tenant['tenant_id'])
     if kill_count >= 0:
         # A player's completion count is unique per raid+mode, so a re-send just updates it.
-        collections['plugin_raids'].update_one(
-            {'player': player, 'raid': raid, 'mode': mode, 'kill_count': kill_count},
-            {'$set': doc}, upsert=True)
+        key = {'player': player, 'raid': raid, 'mode': mode, 'kill_count': kill_count}
+        if source == 'screenshot':
+            collections['plugin_raids'].update_one(key, {'$setOnInsert': doc}, upsert=True)
+        else:
+            collections['plugin_raids'].update_one(key, {'$set': doc}, upsert=True)
     else:
         collections['plugin_raids'].insert_one(doc)
     return jsonify({'success': True})
@@ -2936,7 +2944,8 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     # so the All Time collection-log supplement below can raise one item's
     # count without clobbering a different notable item at the same boss.
     player_boss_item_notable = {}  # player -> {boss_key: {item_name_lower: count}}
-    for d in _dedupe_drops_for_recap(list(collections['history'].find(match_query))):
+    window_drops = _dedupe_drops_for_recap(list(collections['history'].find(match_query)))
+    for d in window_drops:
         player = d.get('player')
         if not player:
             continue
@@ -3041,25 +3050,39 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
             bosses_out.sort(key=lambda b: b['diff'])
             breakdown[player] = {'luck_score': round(total), 'bosses': bosses_out}
 
-    # All Time only: CoX / ToB / ToA from the RuneLite plugin's own raid reports (see
-    # raid_luck.py). These cover each player's raids since they first synced that raid's
-    # collection log page - there is nothing before that to measure - and have no
-    # WiseOldMan-based rows, so this can't double count.
+    # CoX / ToB / ToA from the RuneLite plugin's raid reports and old raid screenshots (see
+    # raid_luck.py); they have no WiseOldMan-based rows, so this can't double count.
+    #   All Time: lifetime where enough of a player's raids are known, otherwise just the raids
+    #             since their plugin first synced ('basis' says which, 'coverage' how complete).
+    #   Event:    raids completed inside the event window vs uniques in that window's drop history.
+    raid_info = None
     if all_time:
+        raid_info = compute_raid_luck(collections)
+    elif start_date and end_date:
+        raid_info = compute_raid_luck_event(
+            collections,
+            datetime.fromisoformat(start_date.replace('Z', '+00:00')).timestamp(),
+            datetime.fromisoformat(end_date.replace('Z', '+00:00')).timestamp(),
+            window_drops)
+    if raid_info:
         raid_names = {'COX': 'Chambers of Xeric', 'TOB': 'Theatre of Blood', 'TOA': 'Tombs of Amascut'}
-        for player, raids in compute_raid_luck(collections).items():
+        for player, raids in raid_info.items():
             entry = breakdown.setdefault(player, {'luck_score': 0, 'bosses': []})
             for raid, info in raids.items():
-                entry['bosses'].append({
+                row = {
                     'boss': raid_names[raid],
-                    'kc_gained': info['raids_scored'],
+                    'kc_gained': info.get('kc', info['raids_scored']),
                     'expected': info['expected_uniques'],
                     'actual': info['actual_uniques'],
                     'diff': info['luck_kills'],
                     'items': info['items'],
+                    'basis': info['basis'],
                     'unscored_raids': info['unscored'],
-                    'tracked_since_plugin': True,
-                })
+                }
+                if 'coverage' in info:
+                    row['coverage'] = info['coverage']
+                    row['uncovered_modes'] = info['uncovered_modes']
+                entry['bosses'].append(row)
                 entry['luck_score'] += info['luck_kills']
             entry['bosses'].sort(key=lambda b: b['diff'])
 
