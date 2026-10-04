@@ -57,6 +57,9 @@
   "dagannoth_supreme": {
     "archers ring": 128.0
   },
+  "demonic_gorilla": {
+    "zenyte shard": 300.0
+  },
   "doom_of_mokhaiotl": {
     "avernic treads": 1350.0,
     "eye of ayak": 2000.0,
@@ -175,6 +178,13 @@
   },
   "tempoross": {
     "dragon harpoon": 8000.0
+  },
+  "tormented_demon": {
+    "burning claw": 501.002,
+    "tormented synapse": 500.0
+  },
+  "tortured_gorilla": {
+    "zenyte shard": 3000.0
   },
   "vardorvis": {
     "chromium ingot": 362.6667,
