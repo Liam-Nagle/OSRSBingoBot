@@ -25,12 +25,20 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from GitHub Pages
 
-# Rate limiting - currently only applied to the /export/* endpoints (see below),
-# since those run the heaviest, uncapped queries in the app. In-memory storage
-# is fine as long as this runs as a single Render instance; if it's ever scaled
-# to multiple instances this stops being per-app-wide and would need a shared
-# backend (e.g. Redis) to stay accurate.
-limiter = Limiter(get_remote_address, app=app, default_limits=[])
+# Render puts a reverse proxy in front of the app, so without this every request appears to come from
+# the proxy's address and ALL visitors share one rate-limit bucket (one abuser could lock out everyone).
+# Trusting exactly one proxy hop makes request.remote_addr the real client address (from X-Forwarded-For).
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+
+# No request body should be anywhere near this big; refuse it before it is read.
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+
+# Rate limiting. Every route gets a generous per-client default (a normal page load is a couple of dozen
+# calls); routes that do heavy work or accept writes carry their own tighter limits. In-memory storage
+# is fine as long as this runs as a single Render instance; if it's ever scaled to multiple instances
+# this stops being per-app-wide and would need a shared backend (e.g. Redis) to stay accurate.
+limiter = Limiter(get_remote_address, app=app, default_limits=["300 per minute"])
 
 # MongoDB Configuration
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
@@ -781,6 +789,7 @@ def plugin_token_rotate():
 
 @app.route('/plugin/collection-log', methods=['POST'])
 @limiter.limit("120 per minute", key_func=_plugin_rate_key)
+@limiter.limit("200 per minute")
 def plugin_collection_log():
     """One collection log page from the RuneLite plugin (items, quantities, KC lines)."""
     if not USE_MONGODB:
@@ -834,6 +843,7 @@ def plugin_collection_log():
 
 @app.route('/plugin/kc', methods=['POST'])
 @limiter.limit("60 per minute", key_func=_plugin_rate_key)
+@limiter.limit("200 per minute")
 def plugin_kc():
     """The player's own kill/completion counters from the RuneLite plugin."""
     if not USE_MONGODB:
@@ -883,6 +893,7 @@ def plugin_kc():
 
 @app.route('/plugin/raid', methods=['POST'])
 @limiter.limit("60 per minute", key_func=_plugin_rate_key)
+@limiter.limit("200 per minute")
 def plugin_raid():
     """One raid completion from the RuneLite plugin (the player's own result)."""
     if not USE_MONGODB:
@@ -3289,6 +3300,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 
 
 @app.route('/event/luck', methods=['GET'])
+@limiter.limit("30 per minute")
 def get_event_luck():
     """
     Live per-boss luck breakdown (expected vs. actual notable drops) for
@@ -3335,6 +3347,7 @@ def get_event_luck():
 
 
 @app.route('/event/raid-luck', methods=['GET'])
+@limiter.limit("30 per minute")
 def get_raid_luck():
     """
     Per-player CoX/ToB/ToA unique luck from the RuneLite plugin's data (see
@@ -3354,6 +3367,7 @@ def get_raid_luck():
 
 
 @app.route('/event/recap/<player_name>', methods=['GET'])
+@limiter.limit("30 per minute")
 def get_event_recap(player_name):
     """
     Live per-player event recap, scoped to the current event_config window.
