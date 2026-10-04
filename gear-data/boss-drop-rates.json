@@ -58,6 +58,11 @@
     "archers ring": 128.0
   },
   "demonic_gorilla": {
+    "ballista limbs": 500.0,
+    "ballista spring": 500.0,
+    "heavy frame": 1500.0,
+    "light frame": 750.0,
+    "monkey tail": 1500.0,
     "zenyte shard": 300.0
   },
   "doom_of_mokhaiotl": {
@@ -184,6 +189,11 @@
     "tormented synapse": 500.0
   },
   "tortured_gorilla": {
+    "ballista limbs": 5000.0,
+    "ballista spring": 5000.0,
+    "heavy frame": 15000.0,
+    "light frame": 7500.0,
+    "monkey tail": 15000.0,
     "zenyte shard": 3000.0
   },
   "vardorvis": {
