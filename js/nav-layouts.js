@@ -77,6 +77,7 @@ const NAV_ADMIN = {
             { icon: '💾', label: 'Export Board', fn: 'exportBoard()', id: 'exportBtn' },
             { icon: '📥', label: 'Import Board', fn: 'importBoard()' },
             { icon: '🔗', label: 'API Info', fn: 'showApiInfo()' },
+            { icon: '🔌', label: 'RuneLite Plugin Token', fn: 'openPluginTokenModal()' },
         ] },
     ],
     bottom: [

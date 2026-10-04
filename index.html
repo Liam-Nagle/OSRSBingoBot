@@ -272,6 +272,26 @@ Dragon warhammer"></textarea>
         </div>
     </div>
 
+    <!-- RuneLite Plugin Token Modal -->
+    <div class="modal" id="pluginTokenModal">
+        <div class="modal-content">
+            <button onclick="closePluginTokenModal()" class="close-btn">✕</button>
+            <h2>🔌 RuneLite Plugin Token</h2>
+            <p>Your group's members paste this token into the Bingo Luck Sync plugin so it can send their collection log and raid results here. It only works for the plugin and can't change your bingo.</p>
+            <p id="pluginTokenStatus" style="margin: 12px 0; font-weight: bold;">Checking...</p>
+            <div id="pluginTokenNewBox" style="display: none; margin-bottom: 12px;">
+                <p style="font-size: 12px; color: #666;">Copy this now - it's only shown once.</p>
+                <input type="text" id="pluginTokenValue" readonly>
+                <button class="btn-save" onclick="copyPluginToken()" style="margin-top: 8px;">Copy</button>
+            </div>
+            <p style="font-size: 12px; color: #666;">Rotating creates a new token and immediately stops the old one working, so everyone will need to paste the new one.</p>
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closePluginTokenModal()">Close</button>
+                <button class="btn-save" id="pluginTokenRotateBtn" onclick="rotatePluginToken()">Generate token</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Drop History Modal -->
     <div class="modal" id="historyModal">
         <div class="modal-content" style="max-width: 1000px;">

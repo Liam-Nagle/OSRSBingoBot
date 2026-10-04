@@ -1973,6 +1973,73 @@
             document.getElementById('apiModal').classList.remove('active');
         }
 
+        async function openPluginTokenModal() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+            document.getElementById('pluginTokenNewBox').style.display = 'none';
+            document.getElementById('pluginTokenValue').value = '';
+            const status = document.getElementById('pluginTokenStatus');
+            const btn = document.getElementById('pluginTokenRotateBtn');
+            status.textContent = 'Checking...';
+            document.getElementById('pluginTokenModal').classList.add('active');
+            try {
+                const response = await fetch(`${API_URL}/admin/plugin-token/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: sessionStorage.getItem('adminPassword') })
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.error || 'Request failed');
+                if (result.has_token) {
+                    status.textContent = `Token active - last rotated ${new Date(result.rotated_at).toLocaleString()}`;
+                    btn.textContent = 'Rotate token';
+                } else {
+                    status.textContent = 'No token yet.';
+                    btn.textContent = 'Generate token';
+                }
+            } catch (error) {
+                status.textContent = `❌ Could not check token: ${error.message}`;
+            }
+        }
+
+        function closePluginTokenModal() {
+            document.getElementById('pluginTokenModal').classList.remove('active');
+            document.getElementById('pluginTokenValue').value = '';
+            document.getElementById('pluginTokenNewBox').style.display = 'none';
+        }
+
+        async function rotatePluginToken() {
+            if (!isAdmin) return;
+            const btn = document.getElementById('pluginTokenRotateBtn');
+            if (btn.textContent === 'Rotate token' &&
+                !confirm('Rotate the plugin token?\n\nThe old token stops working immediately and everyone will need to paste the new one.')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${API_URL}/admin/plugin-token/rotate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: sessionStorage.getItem('adminPassword') })
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.error || 'Request failed');
+                document.getElementById('pluginTokenValue').value = result.token;
+                document.getElementById('pluginTokenNewBox').style.display = 'block';
+                document.getElementById('pluginTokenStatus').textContent = 'Token active - just rotated';
+                btn.textContent = 'Rotate token';
+            } catch (error) {
+                alert(`❌ Failed to rotate token: ${error.message}`);
+            }
+        }
+
+        function copyPluginToken() {
+            const input = document.getElementById('pluginTokenValue');
+            input.select();
+            navigator.clipboard.writeText(input.value).catch(() => document.execCommand('copy'));
+        }
+
         function openHistoryModal() {
             document.getElementById('historyModal').classList.add('active');
             populateYearSelector();
@@ -6746,6 +6813,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.37",
+                date: "2026-10-03",
+                title: "RuneLite plugin token",
+                changes: [
+                    { type: "feature", text: "Admins can now generate and rotate a RuneLite plugin token from the Admin menu (Data > RuneLite Plugin Token). It's what your group's members paste into the Bingo Luck Sync plugin, and it only works for the plugin - it can't change your bingo. Rotating it instantly stops the old one working." },
+                ]
+            },
             {
                 version: "v2.13.36",
                 date: "2026-10-02",
