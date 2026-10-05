@@ -768,6 +768,111 @@ def plugin_token_status():
     })
 
 
+def _later(a, b):
+    """The later of two datetimes, either of which may be None."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return a if a >= b else b
+
+
+@app.route('/admin/plugin-sync-status', methods=['POST'])
+@limiter.limit("20 per minute")
+def plugin_sync_status():
+    """
+    What the RuneLite plugin has actually sent, per player, so an admin can see who is syncing and who
+    isn't without a console (admin only). Players seen in the drop history but with nothing from the
+    plugin are included as "never".
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    data = request.get_json(silent=True) or {}
+    tenant = get_tenant_from_request()
+    if not verify_admin_password(tenant, data.get('password')):
+        return jsonify({'error': 'Unauthorized'}), 401
+    collections = get_tenant_collections(tenant['tenant_id'])
+
+    rows = {}
+
+    def row(name):
+        return rows.setdefault(name, {
+            'player': name, 'clog_pages': 0, 'clog_last': None, 'kc_counters': 0, 'kc_last': None,
+            'doom_completions': 0, 'doom_last': None, 'raids_plugin': 0, 'raids_screenshot': 0, 'raids_last': None,
+        })
+
+    master_pages = set()
+    player_pages = {}
+    for d in collections['plugin_clog'].find({}, {'player': 1, 'page': 1, 'updated_at': 1, 'items': 1}):
+        r = row(d.get('player'))
+        r['clog_pages'] += 1
+        r['clog_last'] = _later(r['clog_last'], d.get('updated_at'))
+        page = d.get('page')
+        if page:
+            master_pages.add(page)
+            items = d.get('items') or []
+            player_pages.setdefault(d.get('player'), []).append({
+                'page': page,
+                'updated_at': (d['updated_at'].isoformat() + 'Z') if d.get('updated_at') else None,
+                'obtained': sum(1 for it in items if it.get('obtained')),
+                'total': len(items),
+            })
+    for d in collections['plugin_kc'].find({}, {'player': 1, 'counts': 1, 'updated_at': 1}):
+        r = row(d.get('player'))
+        r['kc_counters'] = len(d.get('counts') or [])
+        r['kc_last'] = _later(r['kc_last'], d.get('updated_at'))
+    for d in collections['plugin_doom'].find({}, {'player': 1, 'levels': 1, 'past8': 1, 'updated_at': 1}):
+        r = row(d.get('player'))
+        r['doom_completions'] = sum(d.get('levels') or []) + (d.get('past8') or 0)
+        r['doom_last'] = _later(r['doom_last'], d.get('updated_at'))
+    for d in collections['plugin_raids'].find({}, {'player': 1, 'source': 1, 'received_at': 1}):
+        r = row(d.get('player'))
+        r['raids_screenshot' if d.get('source') == 'screenshot' else 'raids_plugin'] += 1
+        r['raids_last'] = _later(r['raids_last'], d.get('received_at'))
+    try:
+        for name in collections['history'].distinct('player'):
+            if name:
+                row(name)                      # known to the bingo; stays "never" if nothing came from the plugin
+    except Exception as e:
+        print(f"[!] sync status: couldn't list bingo players: {e}")
+
+    now = datetime.utcnow()
+    out = []
+    for r in rows.values():
+        # How recently the plugin itself has been heard from. Screenshot uploads don't count: they come
+        # from the one-off reader program, not from a player's RuneLite.
+        times = [t for t in (r['clog_last'], r['kc_last'], r['doom_last']) if t]
+        if r['raids_plugin']:
+            times.append(r['raids_last'])
+        last = max(times) if times else None
+        if last is None:
+            status = 'never'
+        else:
+            age = (now - last).days
+            status = 'active' if age <= 7 else ('quiet' if age <= 30 else 'stale')
+        iso = lambda t: (t.isoformat() + 'Z') if t else None
+        out.append({
+            'player': r['player'], 'status': status, 'last_activity': iso(last),
+            'clog_pages': r['clog_pages'], 'clog_last': iso(r['clog_last']),
+            'kc_counters': r['kc_counters'], 'kc_last': iso(r['kc_last']),
+            'doom_completions': r['doom_completions'], 'doom_last': iso(r['doom_last']),
+            'raids_plugin': r['raids_plugin'], 'raids_screenshot': r['raids_screenshot'], 'raids_last': iso(r['raids_last']),
+            'pages': sorted(player_pages.get(r['player'], []), key=lambda x: x['page'].lower()),
+        })
+    order = {'active': 0, 'quiet': 1, 'stale': 2, 'never': 3}
+    # Python's sort is stable, so: name, then newest activity first, then grouped by status.
+    out.sort(key=lambda r: r['player'].lower())
+    out.sort(key=lambda r: r['last_activity'] or '', reverse=True)
+    out.sort(key=lambda r: order[r['status']])
+    return jsonify({
+        'success': True, 'generated_at': now.isoformat() + 'Z', 'players': out,
+        # Every collection log page any player has sent, with the game's own names. A page nobody has opened
+        # yet isn't known here, so one account clicking through the whole log completes the list.
+        'master_pages': sorted(master_pages, key=str.lower),
+        'has_token': bool(tenant.get('plugin_token_hash')),
+    })
+
+
 @app.route('/admin/plugin-token/rotate', methods=['POST'])
 @limiter.limit("5 per minute")
 def plugin_token_rotate():

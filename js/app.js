@@ -1973,6 +1973,123 @@
             document.getElementById('apiModal').classList.remove('active');
         }
 
+        // ---- Plugin sync status (admin) -------------------------------------------------------------
+        function _timeAgo(iso) {
+            if (!iso) return 'never';
+            const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+            if (seconds < 90) return 'just now';
+            const minutes = seconds / 60;
+            if (minutes < 90) return `${Math.round(minutes)} min ago`;
+            const hours = minutes / 60;
+            if (hours < 36) return `${Math.round(hours)} h ago`;
+            return `${Math.round(hours / 24)} days ago`;
+        }
+
+        function openSyncStatusModal() {
+            if (!isAdmin) {
+                alert('⛔ Admin access required!');
+                return;
+            }
+            document.getElementById('syncStatusModal').classList.add('active');
+            loadSyncStatus();
+        }
+
+        function closeSyncStatusModal() {
+            document.getElementById('syncStatusModal').classList.remove('active');
+        }
+
+        async function loadSyncStatus() {
+            const body = document.getElementById('syncStatusBody');
+            const meta = document.getElementById('syncStatusMeta');
+            body.textContent = 'Loading...';
+            try {
+                const response = await fetch(`${API_URL}/admin/plugin-sync-status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: sessionStorage.getItem('adminPassword') })
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.error || 'Request failed');
+                meta.textContent = `${result.master_pages.length} collection log pages known · plugin token ${result.has_token ? 'active' : 'not created yet'}`;
+                renderSyncStatus(result, body);
+            } catch (error) {
+                body.textContent = `❌ Could not load sync status: ${error.message}`;
+            }
+        }
+
+        // Built with the DOM (textContent) rather than HTML strings, so a player name can never inject markup.
+        function renderSyncStatus(result, body) {
+            const STATUS = {
+                active: { label: 'Active', color: '#2e7d32' },
+                quiet: { label: 'Quiet', color: '#b8860b' },
+                stale: { label: 'Stale', color: '#c62828' },
+                never: { label: 'Never synced', color: '#8b7355' }
+            };
+            const el = (tag, text, style) => {
+                const node = document.createElement(tag);
+                if (text !== undefined) node.textContent = text;
+                if (style) node.style.cssText = style;
+                return node;
+            };
+
+            body.textContent = '';
+            if (!result.players.length) {
+                body.appendChild(el('p', 'No players yet.'));
+                return;
+            }
+
+            const total = result.master_pages.length;
+            result.players.forEach(p => {
+                const st = STATUS[p.status] || STATUS.never;
+                const details = document.createElement('details');
+                details.style.cssText = 'padding: 8px 10px; background: rgba(255,255,255,0.3); border-radius: 4px; margin-bottom: 6px;';
+
+                const summary = document.createElement('summary');
+                summary.style.cssText = 'cursor: pointer; display: grid; grid-template-columns: 150px 110px 1fr; gap: 10px; align-items: center;';
+                summary.appendChild(el('strong', p.player));
+                summary.appendChild(el('span', st.label, `color: ${st.color}; font-weight: bold; font-size: 12px;`));
+                const bits = [
+                    `Pages ${p.clog_pages}/${total}${p.clog_last ? ' (' + _timeAgo(p.clog_last) + ')' : ''}`,
+                    `KC counters ${p.kc_counters}${p.kc_last ? ' (' + _timeAgo(p.kc_last) + ')' : ''}`,
+                    `Doom delves ${p.doom_completions.toLocaleString()}${p.doom_last ? ' (' + _timeAgo(p.doom_last) + ')' : ''}`,
+                    `Raids ${p.raids_plugin} from plugin, ${p.raids_screenshot} from screenshots`
+                ];
+                summary.appendChild(el('span', bits.join('  ·  '), 'font-size: 11px; color: #555;'));
+                details.appendChild(summary);
+
+                const sent = new Map(p.pages.map(pg => [pg.page, pg]));
+                const missing = result.master_pages.filter(name => !sent.has(name));
+
+                const toolbar = el('div', '', 'margin: 8px 0 6px; font-size: 12px; display: flex; gap: 12px; align-items: center;');
+                toolbar.appendChild(el('span', `✅ ${sent.size} sent · ❌ ${missing.length} not sent`, 'font-weight: bold;'));
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; gap: 4px; cursor: pointer;';
+                const onlyMissing = document.createElement('input');
+                onlyMissing.type = 'checkbox';
+                label.appendChild(onlyMissing);
+                label.appendChild(document.createTextNode('Show only missing'));
+                toolbar.appendChild(label);
+                details.appendChild(toolbar);
+
+                const grid = el('div', '', 'display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px;');
+                const cells = result.master_pages.map(name => {
+                    const pg = sent.get(name);
+                    const cell = el('div', '', 'font-size: 12px; padding: 1px 0;');
+                    cell.dataset.sent = pg ? '1' : '0';
+                    cell.appendChild(el('span', pg ? '✅ ' : '❌ '));
+                    cell.appendChild(el('span', name, pg ? '' : 'color: #c62828;'));
+                    if (pg) cell.appendChild(el('span', ` ${pg.obtained}/${pg.total} · ${_timeAgo(pg.updated_at)}`, 'color: #8b7355; font-size: 11px;'));
+                    grid.appendChild(cell);
+                    return cell;
+                });
+                onlyMissing.addEventListener('change', () => {
+                    cells.forEach(c => { c.style.display = (onlyMissing.checked && c.dataset.sent === '1') ? 'none' : ''; });
+                });
+                details.appendChild(grid);
+                body.appendChild(details);
+            });
+        }
+
         async function openPluginTokenModal() {
             if (!isAdmin) {
                 alert('⛔ Admin access required!');
@@ -6831,6 +6948,14 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.41",
+                date: "2026-10-05",
+                title: "Plugin sync status for admins",
+                changes: [
+                    { type: "feature", text: "Admins can now see what each player's RuneLite plugin has sent, from the Admin menu (Data > Plugin Sync Status). It shows who is syncing and when they last did, plus a tick list of every collection log page showing which ones have arrived and which haven't, so it's easy to spot when someone's plugin isn't sending properly." },
+                ]
+            },
             {
                 version: "v2.13.40",
                 date: "2026-10-05",
