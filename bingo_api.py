@@ -3157,6 +3157,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                     'items': info['items'],
                     'basis': info['basis'],
                     'unscored_raids': info['unscored'],
+                    'modes': info.get('modes', []),
                 }
                 if 'coverage' in info:
                     row['coverage'] = info['coverage']

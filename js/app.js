@@ -6253,6 +6253,24 @@ async function loadAnalyticsWithFilters() {
             }).join('');
         }
 
+        // Raid rows (CoX / ToB / ToA) carry a per-mode breakdown. The score itself stays combined because the
+        // collection log can't say which mode a unique came from, but the raids and expected uniques per mode are known.
+        const _RAID_MODE_LABELS = { NORMAL: 'Normal', CHALLENGE: 'Challenge Mode', ENTRY: 'Entry', EXPERT: 'Expert', HARD: 'Hard', STORY: 'Story' };
+        function _luckModesHtml(modes) {
+            if (!modes || modes.length === 0) return '';
+            const rows = modes.map(m => {
+                const label = _RAID_MODE_LABELS[m.mode] || m.mode;
+                const known = m.known < m.raids ? ` (${m.known} known)` : '';
+                const note = m.counted === false ? ' &middot; not counted, too few known' : ` &middot; exp ${m.expected.toFixed(2)}`;
+                return `
+                    <div style="font-size: 11px; padding: 2px 0 2px 10px; border-left: 2px solid rgba(139, 115, 85, 0.35); color: #8b7355;">
+                        <span style="color: inherit;">${label}</span> &middot; ${m.raids.toLocaleString()} raids${known}${note}
+                    </div>
+                `;
+            }).join('');
+            return `<div style="margin-bottom: 6px;"><div style="font-size: 10px; color: #8b7355; margin-bottom: 2px;">By mode</div>${rows}</div>`;
+        }
+
         function renderLuckPlayerView(data, container) {
             const players = Object.entries(data.players || {});
 
@@ -6295,7 +6313,7 @@ async function loadAnalyticsWithFilters() {
                                 </div>
                                 <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}</div>
                             </summary>
-                            <div style="margin-top: 6px;">${_luckItemsHtml(boss.items)}</div>
+                            <div style="margin-top: 6px;">${_luckModesHtml(boss.modes)}${_luckItemsHtml(boss.items)}</div>
                         </details>
                     `;
                 });
@@ -6356,7 +6374,7 @@ async function loadAnalyticsWithFilters() {
                                 </div>
                                 <span class="kc-value" style="color: ${_luckDiffColor(row.diff)};">${_formatLuck(row.diff)}</span>
                             </summary>
-                            <div style="margin-top: 6px;">${_luckItemsHtml(row.items)}</div>
+                            <div style="margin-top: 6px;">${_luckModesHtml(row.modes)}${_luckItemsHtml(row.items)}</div>
                         </details>
                     `;
                 });
@@ -6813,6 +6831,30 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.40",
+                date: "2026-10-05",
+                title: "Raid luck now shows each mode",
+                changes: [
+                    { type: "improvement", text: "Chambers of Xeric, Theatre of Blood and Tombs of Amascut rows now have a 'By mode' breakdown when you expand them - how many raids you've done in Normal, Challenge Mode, Entry, Expert or Hard, how many of those we have points for, and the uniques each mode should have given you. The luck score itself stays one combined number per raid, because the collection log can't tell which mode a unique came from." },
+                ]
+            },
+            {
+                version: "v2.13.39",
+                date: "2026-10-05",
+                title: "Doom of Mokhaiotl luck uses your real delves",
+                changes: [
+                    { type: "improvement", text: "Doom's luck used to count only the deep delves the hiscores show, each at the lowest drop rate, which was far too harsh. With the RuneLite plugin it now counts every delve you've completed at every level (read from the Doom scoreboard, then kept up to date after each delve) against the real drop rate for that level. This applies to both the current bingo and All Time." },
+                ]
+            },
+            {
+                version: "v2.13.38",
+                date: "2026-10-04",
+                title: "Raid luck for Chambers of Xeric, Theatre of Blood and Tombs of Amascut",
+                changes: [
+                    { type: "feature", text: "The Luck tab now scores the three raids. Your chance of a unique each raid comes from your own points (and the raid level for Tombs), so your luck is worked out from what you actually earned. All Time covers every raid we know about against your whole collection log; the current bingo only counts raids dated inside the event. Older raids are picked up from your saved RuneLite raid screenshots, so previous raids count as well." },
+                ]
+            },
             {
                 version: "v2.13.37",
                 date: "2026-10-03",
