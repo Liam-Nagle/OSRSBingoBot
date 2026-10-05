@@ -1819,7 +1819,8 @@ def record_drop():
 
                 if (req_item_clean == item_name_clean or
                         req_item_clean in item_name_clean or
-                        item_name_clean in req_item_clean):
+                        item_name_clean in req_item_clean or
+                        _same_item(req_item, item_name)):
 
                     # Add to progress if not already there
                     if item_name not in player_items:
@@ -1830,7 +1831,7 @@ def record_drop():
 
                     # Check if all items collected
                     has_all = all(
-                        any(req_item.strip().lower() == pi.strip().lower() for pi in player_items)
+                        any(_same_item(req_item, pi) for pi in player_items)
                         for req_item in tile['requiredItems']
                     )
 
@@ -1851,7 +1852,7 @@ def record_drop():
                 tile_item_clean = tile_item.strip().lower()
                 item_name_clean = item_name.strip().lower()
 
-                if tile_item_clean == item_name_clean:
+                if _same_item(tile_item, item_name):
                     print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
 
                     if player_name not in tile['completedBy']:
@@ -2809,6 +2810,28 @@ def _load_notable_item_names():
 NOTABLE_ITEM_NAMES = _load_notable_item_names()
 
 
+def _strip_uncharged(name):
+    """'Eye of ayak (uncharged)' -> 'Eye of ayak'. The game names some drops with this suffix; board tiles
+    and the curated unique-item list use the plain name."""
+    n = (name or '').strip()
+    return n[:-len(' (uncharged)')].rstrip() if n.lower().endswith(' (uncharged)') else n
+
+
+def _same_item(a, b):
+    """Case-insensitive item-name match that ignores a trailing '(uncharged)' on either side."""
+    a, b = (a or '').strip().lower(), (b or '').strip().lower()
+    return a == b or _strip_uncharged(a) == _strip_uncharged(b)
+
+
+def _notable_name(name):
+    """The curated-list spelling of a dropped item's name, or its own lowercase name when not curated."""
+    n = (name or '').strip()
+    if n.lower() in NOTABLE_ITEM_NAMES:
+        return n
+    stripped = _strip_uncharged(n)
+    return stripped if stripped.lower() in NOTABLE_ITEM_NAMES else n
+
+
 def _load_notable_item_sources():
     """
     item_name (lowercase) -> curated boss/source string from
@@ -3033,6 +3056,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     for d in _dedupe_drops_for_recap(list(collections['history'].find({}))):
         r1 = d.get('rarity_1_in')
         item_name = (d.get('item') or '').strip()
+        item_name = _notable_name(item_name)
         if not r1 or item_name.lower() not in NOTABLE_ITEM_NAMES:
             continue
         boss_key = _boss_key_for_drop(d, item_name)
@@ -3102,6 +3126,38 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                     player_bosses[boss_key] = entry['kc']
                     boss_display_names.setdefault(boss_key, entry['name'])
 
+    # Event window: the same plugin-only bosses, counted from each player's first plugin snapshot
+    # inside the window (the baseline) to their latest count. Approximate by design - kills before a
+    # player's first sync are unknown - so only drops dated after that baseline count (see below),
+    # otherwise an earlier drop would be credited with none of the kills that produced it.
+    plugin_since = {}  # (player, boss_key) -> baseline datetime
+    if not all_time:
+        window_start = datetime.fromisoformat(start_date.replace('Z', '+00:00')) if start_date else None
+        window_start = window_start.replace(tzinfo=None) if window_start else None
+        for kc_doc in collections['plugin_kc'].find({}):
+            player = kc_doc.get('player')
+            if not player:
+                continue
+            snap_query = {'player': player}
+            if window_start:
+                snap_query['timestamp'] = {'$gte': window_start}
+            baseline = collections['plugin_kc_history'].find_one(snap_query, sort=[('timestamp', 1)])
+            if not baseline:
+                continue
+            base_counts = {c.get('name'): c.get('kc', 0) for c in baseline.get('counts') or [] if isinstance(c, dict)}
+            for entry in kc_doc.get('counts') or []:
+                boss_key = normalize_boss_name(entry.get('name'))
+                if not boss_key or boss_key not in boss_item_rarity:
+                    continue
+                player_bosses = kc_by_boss.setdefault(player, {})
+                if boss_key in player_bosses:
+                    continue  # WiseOldMan has this boss and stays authoritative
+                gained = entry.get('kc', 0) - base_counts.get(entry.get('name'), 0)
+                if gained > 0:
+                    player_bosses[boss_key] = gained
+                    boss_display_names.setdefault(boss_key, entry['name'])
+                    plugin_since[(player, boss_key)] = baseline['timestamp']
+
     # Actual notable drops, per player per boss per item - event-windowed,
     # or every drop on record when all_time (match_query is {} in that
     # case). Tracked per item rather than summed straight to a boss total
@@ -3113,13 +3169,17 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
         player = d.get('player')
         if not player:
             continue
-        item_name = (d.get('item') or '').strip()
+        item_name = _notable_name((d.get('item') or '').strip())
         item_key = item_name.lower()
         if item_key not in NOTABLE_ITEM_NAMES:
             continue
         boss_key = _boss_key_for_drop(d, item_name, player_kc=kc_by_boss.get(player, {}))
         if not boss_key:
             continue
+        since = plugin_since.get((player, boss_key))
+        drop_ts = d.get('timestamp')
+        if since and isinstance(drop_ts, datetime) and drop_ts.replace(tzinfo=None) < since:
+            continue  # before this boss's tracking started for the player
         per_boss = player_boss_item_notable.setdefault(player, {}).setdefault(boss_key, {})
         per_boss[item_key] = per_boss.get(item_key, 0) + 1
 
@@ -3154,7 +3214,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 continue
             player_kc = kc_by_boss.get(player, {})
             for item_name, qty in owned.items():
-                item_key = item_name.lower()
+                item_key = _notable_name(item_name).lower()
                 if item_key not in NOTABLE_ITEM_NAMES or not qty or item_key in AMBIGUOUS_SOURCE_ITEMS:
                     continue
                 source = NOTABLE_ITEM_SOURCES.get(item_key) or ''
@@ -3209,6 +3269,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 'actual': sum(i['actual'] for i in items_out),
                 'diff': round(boss_kills),
                 'items': items_out,
+                **({'tracked_since': plugin_since[(player, boss_key)].isoformat()} if (player, boss_key) in plugin_since else {}),
             })
         if bosses_out:
             bosses_out.sort(key=lambda b: b['diff'])
@@ -3381,6 +3442,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         # badges below can be swayed by a common item that happens to have odds.
         r1 = d.get('rarity_1_in')
         item_name = (d.get('item') or '').strip()
+        item_name = _notable_name(item_name)
         is_curated_item = item_name.lower() in NOTABLE_ITEM_NAMES
         if is_curated_item and r1 and (stats['rarest_drop'] is None or r1 > stats['rarest_drop'][0]):
             stats['rarest_drop'] = (r1, item_name, d.get('rarity'))

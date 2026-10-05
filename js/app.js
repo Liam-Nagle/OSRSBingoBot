@@ -6451,7 +6451,7 @@ async function loadAnalyticsWithFilters() {
                                     <span>${boss.boss}</span>
                                     <span class="kc-value" style="color: ${_luckDiffColor(boss.diff)};">${_formatLuck(boss.diff)}</span>
                                 </div>
-                                <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}</div>
+                                <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}${boss.tracked_since ? ' &middot; counted since ' + new Date(boss.tracked_since).toLocaleDateString() : ''}</div>
                             </summary>
                             <div style="margin-top: 6px;">${_luckModesHtml(boss.modes)}${_luckItemsHtml(boss.items)}</div>
                         </details>
@@ -6971,6 +6971,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.43",
+                date: "2026-10-05",
+                title: "Eye of Ayak counts, and Tormented Demon / gorilla luck for the current bingo",
+                changes: [
+                    { type: "fix", text: "Drops the game names with '(uncharged)' on the end, like the Eye of Ayak, now count towards bingo tiles and the Luck tab. Before, they were missed because the name didn't match exactly." },
+                    { type: "feature", text: "Tormented Demons and the gorillas now get luck for the current bingo too. Their kills are counted from each player's first plugin sync, and only drops from then on count, so it's approximate and the Luck tab shows the date it's counted since." },
+                ]
+            },
             {
                 version: "v2.13.42",
                 date: "2026-10-05",
