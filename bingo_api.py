@@ -798,7 +798,8 @@ def plugin_sync_status():
     def row(name):
         return rows.setdefault(name, {
             'player': name, 'clog_pages': 0, 'clog_last': None, 'kc_counters': 0, 'kc_last': None,
-            'doom_completions': 0, 'doom_last': None, 'raids_plugin': 0, 'raids_screenshot': 0, 'raids_last': None,
+            'doom_completions': 0, 'doom_last': None, 'doom_levels': [], 'doom_past8': 0,
+            'raids_plugin': 0, 'raids_screenshot': 0, 'raids_last': None,
         })
 
     master_pages = set()
@@ -824,6 +825,8 @@ def plugin_sync_status():
     for d in collections['plugin_doom'].find({}, {'player': 1, 'levels': 1, 'past8': 1, 'updated_at': 1}):
         r = row(d.get('player'))
         r['doom_completions'] = sum(d.get('levels') or []) + (d.get('past8') or 0)
+        r['doom_levels'] = list(d.get('levels') or [])
+        r['doom_past8'] = d.get('past8') or 0
         r['doom_last'] = _later(r['doom_last'], d.get('updated_at'))
     for d in collections['plugin_raids'].find({}, {'player': 1, 'source': 1, 'received_at': 1}):
         r = row(d.get('player'))
@@ -856,6 +859,7 @@ def plugin_sync_status():
             'clog_pages': r['clog_pages'], 'clog_last': iso(r['clog_last']),
             'kc_counters': r['kc_counters'], 'kc_last': iso(r['kc_last']),
             'doom_completions': r['doom_completions'], 'doom_last': iso(r['doom_last']),
+            'doom_levels': r['doom_levels'], 'doom_past8': r['doom_past8'],
             'raids_plugin': r['raids_plugin'], 'raids_screenshot': r['raids_screenshot'], 'raids_last': iso(r['raids_last']),
             'pages': sorted(player_pages.get(r['player'], []), key=lambda x: x['page'].lower()),
         })
