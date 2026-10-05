@@ -199,6 +199,27 @@ def test_entry_mode_is_scored_by_raid_level():
     assert shadow['expected'] < fang['expected'] / 20            # shadow is far rarer below level 150
 
 
+def test_rows_carry_a_per_mode_breakdown():
+    # Normal + Expert ToA: 30 known of 40 Expert, 10 known of 10 Normal (all at 10% each at RL 400)
+    expert = toa_raids(30)
+    normal = [dict(d, mode='NORMAL', kill_count=100 + i) for i, d in enumerate(toa_raids(10))]
+    kc = Col([{'player': 'Zezima', 'counts': [{'name': 'Tombs of Amascut (Expert)', 'kc': 40}, {'name': 'Tombs of Amascut', 'kc': 109}]}])
+    cols = {'plugin_raids': Col(expert + normal), 'plugin_clog': Col([toa_page()]), 'plugin_kc': kc}
+    info = r.compute_raid_luck_lifetime(cols)['Zezima']['TOA']
+    modes = {m['mode']: m for m in info['modes']}
+    assert modes['EXPERT']['raids'] == 40 and modes['EXPERT']['known'] == 30 and modes['EXPERT']['counted']
+    assert close(modes['EXPERT']['expected'], 4.0)                 # 30 known x 10% scaled up to 40
+    # Normal: 10 known of 109 is under half, so it is listed but not counted
+    assert modes['NORMAL']['raids'] == 109 and not modes['NORMAL']['counted'] and modes['NORMAL']['expected'] == 0
+    # the headline expected only includes the counted mode
+    assert close(info['expected_uniques'], 4.0)
+
+    ev = r.compute_raid_luck_event(cols, 0, 4_000_000_000, [])['Zezima']['TOA']
+    ev_modes = {m['mode']: m for m in ev['modes']}
+    assert ev_modes['EXPERT']['raids'] == 30 and ev_modes['NORMAL']['raids'] == 10
+    assert close(sum(m['expected'] for m in ev['modes']), ev['expected_uniques'], 1e-2)
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_') and callable(fn):

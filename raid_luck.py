@@ -249,6 +249,7 @@ def compute_raid_luck_since_sync(collections):
 
         scored = unscored = 0
         expected = {}
+        mode_acc = {}
         for doc in raids_by_player[player]:
             if doc.get('raid') != raid or doc.get('mode') not in modes:
                 continue
@@ -259,6 +260,9 @@ def compute_raid_luck_since_sync(collections):
                 unscored += 1
                 continue
             scored += 1
+            acc = mode_acc.setdefault(doc['mode'], [0, 0.0])
+            acc[0] += 1
+            acc[1] += chance
             weights = _raid_item_weights(raid, doc['mode'], doc.get('raid_level'))
             for item, w in weights.items():
                 expected[item] = expected.get(item, 0.0) + chance * w
@@ -289,8 +293,9 @@ def compute_raid_luck_since_sync(collections):
 
         entry = result.setdefault(player, {}).setdefault(raid, {
             'raids_scored': 0, 'unscored': 0, 'expected_uniques': 0.0,
-            'actual_uniques': 0, 'luck_kills': 0, 'items': [],
+            'actual_uniques': 0, 'luck_kills': 0, 'items': [], 'modes': [],
         })
+        entry['modes'] = _merge_modes(entry['modes'], [_mode_row(m, a[0], a[0], a[1]) for m, a in mode_acc.items()])
         entry['raids_scored'] += scored
         entry['unscored'] += unscored
         entry['expected_uniques'] = round(entry['expected_uniques'] + sum(expected.values()), 4)
@@ -321,6 +326,26 @@ def _group_by_player_raid_mode(collections):
     for doc in collections['plugin_raids'].find({}):
         out.setdefault(doc['player'], {}).setdefault(doc['raid'], {}).setdefault(doc['mode'], []).append(doc)
     return out
+
+
+def _mode_row(mode, raids, known, expected, counted=True):
+    """One line of a raid row's per-mode breakdown (completions, how many were known, expected uniques)."""
+    return {'mode': mode, 'raids': raids, 'known': known, 'expected': round(expected, 3), 'counted': counted}
+
+
+def _merge_modes(existing, new_rows):
+    """Adds per-mode rows into a list, summing a mode that is already there."""
+    by_mode = {r['mode']: dict(r) for r in existing}
+    for r in new_rows:
+        if r['mode'] in by_mode:
+            cur = by_mode[r['mode']]
+            cur['raids'] += r['raids']
+            cur['known'] += r['known']
+            cur['expected'] = round(cur['expected'] + r['expected'], 3)
+            cur['counted'] = cur['counted'] or r['counted']
+        else:
+            by_mode[r['mode']] = dict(r)
+    return sorted(by_mode.values(), key=lambda r: r['mode'])
 
 
 def _item_name_set(raid):
@@ -398,6 +423,7 @@ def compute_raid_luck_lifetime(collections):
             expected_total = {}
             kc_total = scored_total = unscored_total = 0
             uncovered = []
+            mode_lines = []
             for mode, docs in modes.items():
                 scored, unscored, expected = _expected_items(docs, raid)
                 unscored_total += unscored
@@ -406,12 +432,14 @@ def compute_raid_luck_lifetime(collections):
                 if not scored or not kc or scored / kc < MIN_COVERAGE:
                     if kc:
                         uncovered.append({'mode': mode, 'kc': kc, 'known': scored})
+                        mode_lines.append(_mode_row(mode, kc, scored, 0.0, counted=False))
                     continue
                 factor = max(1.0, kc / scored)
                 for item, exp in expected.items():
                     expected_total[item] = expected_total.get(item, 0.0) + exp * factor
                 kc_total += kc
                 scored_total += scored
+                mode_lines.append(_mode_row(mode, kc, scored, sum(expected.values()) * factor))
             if not kc_total:
                 continue
             actual = {}
@@ -423,7 +451,8 @@ def compute_raid_luck_lifetime(collections):
             result.setdefault(player, {})[raid] = {
                 'basis': 'lifetime', 'raids_scored': scored_total, 'kc': kc_total,
                 'coverage': round(scored_total / kc_total, 3), 'unscored': unscored_total,
-                'uncovered_modes': uncovered, 'expected_uniques': round(sum(expected_total.values()), 4),
+                'uncovered_modes': uncovered, 'modes': sorted(mode_lines, key=lambda r: r['mode']),
+                'expected_uniques': round(sum(expected_total.values()), 4),
                 'actual_uniques': sum(actual.values()), 'luck_kills': sum(i['diff'] for i in items), 'items': items,
             }
     return result
@@ -456,6 +485,12 @@ def compute_raid_luck_event(collections, start_epoch, end_epoch, drops):
             scored, unscored, expected = _expected_items(docs, raid)
             if not scored:
                 continue
+            mode_lines = []
+            for mode, mode_docs in modes.items():
+                in_window = [d for d in mode_docs if start_epoch <= d.get('completed_at', 0) <= end_epoch]
+                m_scored, _, m_expected = _expected_items(in_window, raid)
+                if m_scored:
+                    mode_lines.append(_mode_row(mode, len(in_window), m_scored, sum(m_expected.values())))
             names = _item_name_set(raid)
             actual = {}
             for drop in drops:
@@ -467,6 +502,7 @@ def compute_raid_luck_event(collections, start_epoch, end_epoch, drops):
             items = _items_out(expected, actual, scored)
             result.setdefault(player, {})[raid] = {
                 'basis': 'event', 'raids_scored': scored, 'unscored': unscored,
+                'modes': sorted(mode_lines, key=lambda r: r['mode']),
                 'expected_uniques': round(sum(expected.values()), 4), 'actual_uniques': sum(actual.values()),
                 'luck_kills': sum(i['diff'] for i in items), 'items': items,
             }
