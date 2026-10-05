@@ -2048,14 +2048,37 @@
                 summary.style.cssText = 'cursor: pointer; display: grid; grid-template-columns: 150px 110px 1fr; gap: 10px; align-items: center;';
                 summary.appendChild(el('strong', p.player));
                 summary.appendChild(el('span', st.label, `color: ${st.color}; font-weight: bold; font-size: 12px;`));
+                const tick = ok => (ok ? '✅' : '❌');
+                const hasDoom = p.doom_completions > 0;
                 const bits = [
-                    `Pages ${p.clog_pages}/${total}${p.clog_last ? ' (' + _timeAgo(p.clog_last) + ')' : ''}`,
-                    `KC counters ${p.kc_counters}${p.kc_last ? ' (' + _timeAgo(p.kc_last) + ')' : ''}`,
-                    `Doom delves ${p.doom_completions.toLocaleString()}${p.doom_last ? ' (' + _timeAgo(p.doom_last) + ')' : ''}`,
-                    `Raids ${p.raids_plugin} from plugin, ${p.raids_screenshot} from screenshots`
+                    `Pages ${tick(p.clog_pages > 0)} ${p.clog_pages}/${total}`,
+                    `KC ${tick(p.kc_counters > 0)}`,
+                    `Doom ${tick(hasDoom)}`,
+                    `Raids ${tick(p.raids_plugin > 0)}`
                 ];
-                summary.appendChild(el('span', bits.join('  ·  '), 'font-size: 11px; color: #555;'));
+                summary.appendChild(el('span', bits.join('   '), 'font-size: 12px; color: #444;'));
                 details.appendChild(summary);
+
+                // What has arrived, by kind, with times - so "is Doom synced?" has a plain yes/no answer.
+                const levelsText = hasDoom
+                    ? p.doom_levels.map((n, i) => `L${i + 1}: ${n.toLocaleString()}`).join('  ') + `  8+: ${p.doom_past8.toLocaleString()}`
+                    : '';
+                const synced = [
+                    [p.clog_pages > 0, 'Collection log pages', p.clog_pages > 0 ? `${p.clog_pages} of ${total} pages, last ${_timeAgo(p.clog_last)}` : 'nothing received yet - open pages in the collection log with the plugin on'],
+                    [p.kc_counters > 0, 'Kill counters', p.kc_counters > 0 ? `${p.kc_counters} counters, last ${_timeAgo(p.kc_last)}` : 'nothing received yet (sent after opening collection log pages)'],
+                    [hasDoom, 'Doom of Mokhaiotl delves', hasDoom ? `${p.doom_completions.toLocaleString()} delves, last ${_timeAgo(p.doom_last)} - ${levelsText}` : 'not synced - open the Doom scoreboard in the lobby once with the plugin on'],
+                    [p.raids_plugin > 0, 'Raids (from the plugin)', p.raids_plugin > 0 ? `${p.raids_plugin} raids, last ${_timeAgo(p.raids_last)}` : 'none yet - recorded as each raid is finished'],
+                    [p.raids_screenshot > 0, 'Raids (from screenshots)', p.raids_screenshot > 0 ? `${p.raids_screenshot} raids` : 'none uploaded']
+                ];
+                const syncedBox = el('div', '', 'margin: 8px 0; padding: 8px 10px; background: rgba(255,255,255,0.4); border-radius: 4px; font-size: 12px;');
+                syncedBox.appendChild(el('div', 'Data synced', 'font-weight: bold; margin-bottom: 4px;'));
+                synced.forEach(([ok, name, detail]) => {
+                    const line = el('div', '', 'padding: 1px 0;');
+                    line.appendChild(el('span', `${tick(ok)} ${name}: `, ok ? 'font-weight: 500;' : 'font-weight: 500; color: #c62828;'));
+                    line.appendChild(el('span', detail, 'color: #666;'));
+                    syncedBox.appendChild(line);
+                });
+                details.appendChild(syncedBox);
 
                 const sent = new Map(p.pages.map(pg => [pg.page, pg]));
                 const missing = result.master_pages.filter(name => !sent.has(name));
@@ -6428,7 +6451,7 @@ async function loadAnalyticsWithFilters() {
                                     <span>${boss.boss}</span>
                                     <span class="kc-value" style="color: ${_luckDiffColor(boss.diff)};">${_formatLuck(boss.diff)}</span>
                                 </div>
-                                <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}</div>
+                                <div style="font-size: 10px; color: #8b7355;">${boss.kc_gained.toLocaleString()} KC &middot; expected ${boss.expected.toFixed(2)} &middot; actual ${boss.actual}${boss.tracked_since ? ' &middot; counted since ' + new Date(boss.tracked_since).toLocaleDateString() : ''}</div>
                             </summary>
                             <div style="margin-top: 6px;">${_luckModesHtml(boss.modes)}${_luckItemsHtml(boss.items)}</div>
                         </details>
@@ -6948,6 +6971,23 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.13.43",
+                date: "2026-10-05",
+                title: "Eye of Ayak counts, and Tormented Demon / gorilla luck for the current bingo",
+                changes: [
+                    { type: "fix", text: "Drops the game names with '(uncharged)' on the end, like the Eye of Ayak, now count towards bingo tiles and the Luck tab. Before, they were missed because the name didn't match exactly." },
+                    { type: "feature", text: "Tormented Demons and the gorillas now get luck for the current bingo too. Their kills are counted from each player's first plugin sync, and only drops from then on count, so it's approximate and the Luck tab shows the date it's counted since." },
+                ]
+            },
+            {
+                version: "v2.13.42",
+                date: "2026-10-05",
+                title: "Plugin sync status shows Doom and each kind of data",
+                changes: [
+                    { type: "improvement", text: "The Plugin Sync Status view now puts a clear tick or cross next to each kind of data - collection log pages, kill counters, Doom delves and raids - right on each player's line. Expanding a player shows exactly what has arrived and when, including their delve counts for each Doom level, and says what to do if something hasn't synced." },
+                ]
+            },
             {
                 version: "v2.13.41",
                 date: "2026-10-05",
