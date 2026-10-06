@@ -6972,6 +6972,22 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.46",
+                date: "2026-10-06",
+                title: "Fixed Tormented Demon and gorilla luck",
+                changes: [
+                    { type: "fix", text: "Tormented Demons and the gorillas no longer show a player's whole lifetime kill count against zero drops on the Luck tab when their plugin first synced without that boss. Kills are now counted from the first sync that included the boss." }
+                ]
+            },
+            {
+                version: "v2.13.45",
+                date: "2026-10-06",
+                title: "Doom kills match the in-game count",
+                changes: [
+                    { type: "fix", text: "Doom of Mokhaiotl in Boss KC now shows just two lines, Delve 8 and Delve 9+, which together equal the in-game kill count (it starts at delve 8). Delves 1 to 7 no longer count as kills there; they still count towards Doom's luck." }
+                ]
+            },
+            {
                 version: "v2.13.44",
                 date: "2026-10-06",
                 title: "Doom delves shown level by level in Boss KC",
