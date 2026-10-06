@@ -1478,13 +1478,15 @@ def get_notable_drops():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-DOOM_ROW_NAMES = [f'Doom of Mokhaiotl (Delve {i})' for i in range(1, 9)] + ['Doom of Mokhaiotl (Delve 9+)']
+# OSRS counts a Doom kill from delve 8 onwards (delve 8 itself, then each level past it), so only those
+# two rows go into the KC pages; delves 1-7 are too easy to count as kills (they show on the Luck tab).
+DOOM_ROW_NAMES = ['Doom of Mokhaiotl (Delve 8)', 'Doom of Mokhaiotl (Delve 9+)']
 
 
 def apply_doom_delve_rows(collections, bosses_by_player, event_start=None):
     """
     Replace each player's single Doom of Mokhaiotl row (the hiscores only count deep delves) with one row
-    per delve level, from the plugin's exact completions. Players whose plugin hasn't synced Doom keep
+    for delve 8 and for delves past 8, from the plugin's exact completions. Players whose plugin hasn't synced Doom keep
     the original row. `bosses_by_player` is {player: {boss: kc}} and is edited in place.
 
     With `event_start` (ISO string) the counts are gains since then, using the latest daily snapshot at
@@ -1510,7 +1512,7 @@ def apply_doom_delve_rows(collections, bosses_by_player, event_start=None):
         bosses = bosses_by_player[player]
         for name in [b for b in bosses if normalize_boss_name(b) == 'doom_of_mokhaiotl']:
             del bosses[name]
-        for name, n in zip(DOOM_ROW_NAMES, counts):
+        for name, n in zip(DOOM_ROW_NAMES, counts[7:]):
             if n > 0:
                 bosses[name] = n
 
@@ -3183,10 +3185,9 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
             snap_query = {'player': player}
             if window_start:
                 snap_query['timestamp'] = {'$gte': window_start}
-            baseline = collections['plugin_kc_history'].find_one(snap_query, sort=[('timestamp', 1)])
-            if not baseline:
+            snapshots = list(collections['plugin_kc_history'].find(snap_query, sort=[('timestamp', 1)]))
+            if not snapshots:
                 continue
-            base_counts = {c.get('name'): c.get('kc', 0) for c in baseline.get('counts') or [] if isinstance(c, dict)}
             for entry in kc_doc.get('counts') or []:
                 boss_key = normalize_boss_name(entry.get('name'))
                 if not boss_key or boss_key not in boss_item_rarity:
@@ -3194,7 +3195,15 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 player_bosses = kc_by_boss.setdefault(player, {})
                 if boss_key in player_bosses:
                     continue  # WiseOldMan has this boss and stays authoritative
-                gained = entry.get('kc', 0) - base_counts.get(entry.get('name'), 0)
+                # Baseline = the first snapshot that actually contains this boss. If the first snapshot
+                # lacked it, treating its count as 0 would credit the whole lifetime counter as
+                # in-window kills while ignoring every drop before the baseline date.
+                baseline = next((s for s in snapshots
+                                 if any(isinstance(c, dict) and c.get('name') == entry.get('name') for c in s.get('counts') or [])), None)
+                if not baseline:
+                    continue
+                base_kc = next(c.get('kc', 0) for c in baseline['counts'] if isinstance(c, dict) and c.get('name') == entry.get('name'))
+                gained = entry.get('kc', 0) - base_kc
                 if gained > 0:
                     player_bosses[boss_key] = gained
                     boss_display_names.setdefault(boss_key, entry['name'])
