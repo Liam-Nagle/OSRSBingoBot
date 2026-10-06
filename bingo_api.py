@@ -1420,6 +1420,7 @@ def get_all_kc():
                 'snapshot_type': snapshot['snapshot_type']
             }
 
+        apply_doom_delve_rows(collections, {p: d['bosses'] for p, d in all_kc.items()})
         return jsonify(all_kc)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1477,6 +1478,43 @@ def get_notable_drops():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+DOOM_ROW_NAMES = [f'Doom of Mokhaiotl (Delve {i})' for i in range(1, 9)] + ['Doom of Mokhaiotl (Delve 9+)']
+
+
+def apply_doom_delve_rows(collections, bosses_by_player, event_start=None):
+    """
+    Replace each player's single Doom of Mokhaiotl row (the hiscores only count deep delves) with one row
+    per delve level, from the plugin's exact completions. Players whose plugin hasn't synced Doom keep
+    the original row. `bosses_by_player` is {player: {boss: kc}} and is edited in place.
+
+    With `event_start` (ISO string) the counts are gains since then, using the latest daily snapshot at
+    or before the start; with no such snapshot every delve counts as inside the window (as Doom luck does).
+    """
+    start_dt = None
+    if event_start:
+        try:
+            start_dt = datetime.fromisoformat(str(event_start).replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            start_dt = None
+    for doc in collections['plugin_doom'].find({}):
+        player = doc.get('player')
+        levels = list(doc.get('levels') or [])
+        if player not in bosses_by_player or len(levels) != 8:
+            continue
+        counts = levels + [doc.get('past8') or 0]
+        if start_dt:
+            base = collections['plugin_doom_history'].find_one(
+                {'player': player, 'timestamp': {'$lte': start_dt}}, sort=[('timestamp', -1)])
+            if base and len(base.get('levels') or []) == 8:
+                counts = [max(0, n - o) for n, o in zip(counts, list(base['levels']) + [base.get('past8') or 0])]
+        bosses = bosses_by_player[player]
+        for name in [b for b in bosses if normalize_boss_name(b) == 'doom_of_mokhaiotl']:
+            del bosses[name]
+        for name, n in zip(DOOM_ROW_NAMES, counts):
+            if n > 0:
+                bosses[name] = n
+
+
 @app.route('/kc/effort', methods=['GET'])
 def get_kc_effort():
     """Calculate KC effort (gains since bingo start)"""
@@ -1511,6 +1549,10 @@ def get_kc_effort():
                 'start_timestamp': cached.get('event_start'),
                 'current_timestamp': cached.get('fetched_at').isoformat() if cached.get('fetched_at') else None
             })
+
+        if effort_results:
+            apply_doom_delve_rows(collections, {r['player']: r['effort'] for r in effort_results},
+                                  effort_results[0].get('start_timestamp'))
 
         if not effort_results:
             return jsonify({

@@ -6972,6 +6972,14 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.13.44",
+                date: "2026-10-06",
+                title: "Doom delves shown level by level in Boss KC",
+                changes: [
+                    { type: "improvement", text: "Doom of Mokhaiotl now shows in Effort, Boss Contribution and the other Boss KC pages as one line per delve level (Delve 1 to 8, then Delve 9+), using your real delve counts from the RuneLite plugin instead of the hiscores' deep-delve-only number. Players whose plugin hasn't synced Doom yet keep the old single line." }
+                ]
+            },
+            {
                 version: "v2.13.43",
                 date: "2026-10-05",
                 title: "Eye of Ayak counts, and Tormented Demon / gorilla luck for the current bingo",
