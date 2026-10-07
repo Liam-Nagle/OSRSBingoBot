@@ -1,0 +1,49 @@
+name: Archive Finished Bingo
+
+on:
+  schedule:
+    # Hourly. A no-op until the configured event's end date has passed, and again once that
+    # event is archived - so the frozen snapshot is taken within an hour of the event ending.
+    - cron: '30 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  archive-event:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Refresh KC gained so the archive has the final numbers (only if there is something to archive)
+        env:
+          API_URL: https://osrsbingobot.onrender.com
+          DROP_API_KEY: ${{ secrets.DROP_API_KEY }}
+        run: |
+          # The refresh is only worth WiseOldMan's rate limit once an ended event is waiting to be archived.
+          check=$(curl -s --max-time 90 -X POST "$API_URL/event/archive/auto" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $DROP_API_KEY" -d '{"dry_run": true}')
+          echo "$check"
+          if ! echo "$check" | grep -Eq '"needs_archive": *true'; then
+            echo "Nothing to archive right now."
+            exit 0
+          fi
+          curl -s --max-time 120 -X POST "$API_URL/kc/refresh-gained" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $DROP_API_KEY" > /dev/null
+
+      - name: Archive the finished event
+        env:
+          API_URL: https://osrsbingobot.onrender.com
+          DROP_API_KEY: ${{ secrets.DROP_API_KEY }}
+        run: |
+          response=$(curl -s -w "\n%{http_code}" --max-time 180 -X POST "$API_URL/event/archive/auto" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $DROP_API_KEY")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "$body"
+
+          if [ "$http_code" -ge 400 ]; then
+            echo "Archive failed with HTTP $http_code"
+            exit 1
+          fi

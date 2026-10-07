@@ -12,7 +12,7 @@ import secrets
 from raid_luck import compute_raid_luck, compute_raid_luck_event
 from doom_luck import compute_doom_luck
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 import requests
 import random
@@ -2745,6 +2745,16 @@ def set_event_config():
             except Exception as e:
                 return jsonify({'error': f'Invalid date format: {str(e)}'}), 400
 
+        # Safety net: starting a different event replaces this config, so freeze the finished one first if the
+        # scheduled auto-archive hasn't reached it yet. Best effort - never blocks saving the new config.
+        previous = collections['bingo'].find_one({'_id': 'event_config'})
+        if previous and previous.get('startDate') and previous.get('startDate') != start_date and _event_has_ended(previous):
+            try:
+                status, _ = archive_event_snapshot(collections, previous)
+                print(f"[OK] Archive {status} for '{previous.get('eventName', 'Bingo Event')}' before replacing its config")
+            except Exception as archive_error:
+                print(f"[!] Could not archive previous event before replacing its config: {archive_error}")
+
         # Save event config to tenant's bingo collection
         event_config = {
             '_id': 'event_config',
@@ -3441,6 +3451,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
                 bonus += diags_list[1]
 
         player_scores[player]['points'] += bonus
+        player_scores[player]['bonus'] = bonus
 
     # --- first/last tile completed per player + event-wide earliest/latest (First Blood/Closer) ---
     first_last = {}
@@ -3572,6 +3583,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 
         recap[player] = {
             'points': player_scores.get(player, {}).get('points', 0),
+            'line_bonus': player_scores.get(player, {}).get('bonus', 0),
             'tiles_completed': player_scores.get(player, {}).get('tiles', 0),
             'drop_count': stats.get('drop_count', 0),
             'gp_total': stats.get('gp_total', 0),
@@ -3716,10 +3728,221 @@ def get_event_recap(player_name):
         return jsonify({'error': str(e)}), 500
 
 
+ARCHIVE_SCHEMA_VERSION = 2
+# Heavy parts of an archive document, left out of the list/summary reads and served by their own endpoints.
+ARCHIVE_HEAVY_FIELDS = ('players', 'tiles_snapshot', 'board', 'luck', 'kc', 'deaths', 'personal_bests', 'top_drops',
+                        'leaderboard')
+# URL section name -> field in the archive document
+ARCHIVE_SECTIONS = {
+    'luck': 'luck',
+    'kc': 'kc',
+    'deaths': 'deaths',
+    'personal-bests': 'personal_bests',
+}
+
+
+def _parse_iso_utc(iso):
+    """ISO string (Z-suffixed or with an offset) -> naive UTC datetime, or None if absent/unparseable."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(iso).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _window_query(start_date, end_date):
+    """Mongo filter for documents whose 'timestamp' falls inside an event window."""
+    bounds = {}
+    start, end = _parse_iso_utc(start_date), _parse_iso_utc(end_date)
+    if start:
+        bounds['$gte'] = start
+    if end:
+        bounds['$lte'] = end
+    return {'timestamp': bounds} if bounds else {}
+
+
+def _iso(value):
+    return value.isoformat() if hasattr(value, 'isoformat') else value
+
+
+def _rank_leaderboard(recap):
+    """Players ranked by points (ties share a rank; tiles then name only fix the display order)."""
+    rows = [{
+        'player': player,
+        'points': r.get('points', 0),
+        'tile_points': r.get('points', 0) - r.get('line_bonus', 0),
+        'line_bonus': r.get('line_bonus', 0),
+        'tiles_completed': r.get('tiles_completed', 0),
+        'kc_gained': r.get('kc_gained', 0),
+        'luck_score': r.get('luck_score'),
+        'drop_count': r.get('drop_count', 0),
+        'gp_total': r.get('gp_total', 0),
+        'badges': r.get('badges', []),
+    } for player, r in recap.items()]
+    rows.sort(key=lambda r: (-r['points'], -r['tiles_completed'], r['player'].lower()))
+    previous_points = None
+    rank = 0
+    for position, row in enumerate(rows, start=1):
+        if row['points'] != previous_points:
+            rank = position
+            previous_points = row['points']
+        row['rank'] = rank
+    return rows
+
+
+def _archive_summary(leaderboard):
+    """Short card-sized summary for the past-bingos picker."""
+    return {
+        'winners': [r['player'] for r in leaderboard if r['rank'] == 1 and r['points'] > 0],
+        'top_points': leaderboard[0]['points'] if leaderboard else 0,
+        'player_count': len(leaderboard),
+        'total_tiles_completed': sum(r['tiles_completed'] for r in leaderboard),
+        'total_gp': sum(r['gp_total'] for r in leaderboard),
+        'total_drops': sum(r['drop_count'] for r in leaderboard),
+        'total_kc_gained': sum(r['kc_gained'] for r in leaderboard),
+    }
+
+
+def build_archive_snapshot(collections, event_config):
+    """
+    Freeze everything the past-bingos pages need for the given event into one document, so the archive
+    never depends on data that later gets overwritten (the board, event_config, gained_cache) or
+    recomputed with different luck/droprate files. Returns the document (without an _id).
+    """
+    start_date = event_config.get('startDate')
+    end_date = event_config.get('endDate')
+    window = _window_query(start_date, end_date)
+    warnings = []
+
+    board = collections['bingo'].find_one({'type': 'current_board'}) or {}
+    board = {k: v for k, v in board.items() if k not in ('_id', 'type')}
+    tiles = board.get('tiles', [])
+    if not any(t.get('completedBy') for t in tiles):
+        warnings.append('board_empty')
+
+    recap = compute_event_recap(collections, start_date, end_date, board_doc=board)
+    luck = compute_luck_breakdown(collections, start_date, end_date)
+    leaderboard = _rank_leaderboard(recap)
+
+    # KC gained per boss, frozen from the WOM-authoritative gained_cache. That cache is rewritten for
+    # whatever event is current, so an entry that doesn't cover this window is skipped rather than archived wrong.
+    start_dt, end_dt = _parse_iso_utc(start_date), _parse_iso_utc(end_date)
+    kc_players = {}
+    kc_not_final = False
+    for cached in collections['gained_cache'].find({}):
+        player = cached.get('player')
+        gained = {boss: d.get('gained', 0) for boss, d in (cached.get('bosses') or {}).items() if d.get('gained', 0) > 0}
+        if not player or not gained:
+            continue
+        if _parse_iso_utc(cached.get('event_start')) != start_dt:
+            warnings.append(f'kc_window_mismatch:{player}')
+            continue
+        cached_end = _parse_iso_utc(cached.get('event_end'))
+        if end_dt and cached_end and cached_end < end_dt:
+            kc_not_final = True
+        kc_players[player] = gained
+    if kc_not_final:
+        warnings.append('kc_not_final')
+    apply_doom_delve_rows(collections, kc_players, start_date)
+
+    # Biggest drops of the event; the full log is served live from drop history by date window.
+    drops = [d for d in _dedupe_drops_for_recap(list(collections['history'].find(window))) if (d.get('value') or 0) > 0]
+    drops.sort(key=lambda d: d.get('value') or 0, reverse=True)
+    top_drops = [{
+        'player': d.get('player'), 'item': d.get('item'), 'value': d.get('value'), 'source': d.get('source'),
+        'rarity': d.get('rarity'), 'timestamp': _iso(d.get('timestamp')),
+    } for d in drops[:25]]
+
+    deaths_by_player, deaths_by_npc = {}, {}
+    total_deaths = 0
+    for d in collections['deaths'].find(window):
+        player, npc = d.get('player'), d.get('npc')
+        if not player:
+            continue
+        total_deaths += 1
+        entry = deaths_by_player.setdefault(player, {'deaths': 0, 'npcs': {}})
+        entry['deaths'] += 1
+        if npc:
+            entry['npcs'][npc] = entry['npcs'].get(npc, 0) + 1
+            npc_entry = deaths_by_npc.setdefault(npc, {'deaths': 0, 'players': set()})
+            npc_entry['deaths'] += 1
+            npc_entry['players'].add(player)
+    deaths = {
+        'total': total_deaths,
+        'players': sorted(({
+            'player': p,
+            'deaths': e['deaths'],
+            'top_npcs': [{'npc': n, 'count': c} for n, c in sorted(e['npcs'].items(), key=lambda kv: -kv[1])[:3]],
+        } for p, e in deaths_by_player.items()), key=lambda r: -r['deaths']),
+        'npcs': sorted(({'npc': n, 'deaths': e['deaths'], 'players': sorted(e['players'])}
+                        for n, e in deaths_by_npc.items()), key=lambda r: -r['deaths'])[:15],
+    }
+
+    personal_bests = []
+    for rec in collections['personal_bests'].find(window, {'_id': 0}):
+        if rec.get('boss') and rec.get('player'):
+            rec['timestamp'] = _iso(rec.get('timestamp'))
+            personal_bests.append(rec)
+    personal_bests.sort(key=lambda r: (r['boss'].lower(), r.get('invocation_level') or 0, r['time_seconds']))
+
+    return {
+        'schema_version': ARCHIVE_SCHEMA_VERSION,
+        'event_name': event_config.get('eventName', 'Bingo Event'),
+        'start_date': start_date,
+        'end_date': end_date,
+        'archived_at': datetime.utcnow().isoformat(),
+        'summary': _archive_summary(leaderboard),
+        'totals': {
+            'tiles_total': len(tiles),
+            'tiles_with_completions': sum(1 for t in tiles if t.get('completedBy')),
+            'total_points': sum(r['points'] for r in leaderboard),
+            'total_deaths': total_deaths,
+        },
+        'leaderboard': leaderboard,
+        'players': recap,
+        'player_names': sorted(recap.keys()),
+        'board': board,
+        'luck': luck,
+        'kc': {'window_start': start_date, 'window_end': end_date, 'players': kc_players},
+        'top_drops': top_drops,
+        'deaths': deaths,
+        'personal_bests': personal_bests,
+        'warnings': warnings,
+    }
+
+
+def archive_event_snapshot(collections, event_config, replace_existing=False):
+    """
+    Archive the given event unless that exact window is already archived (or replace_existing).
+    Returns (status, archive_id): status is 'created', 'replaced' or 'exists'.
+    """
+    existing = collections['archive'].find_one(
+        {'start_date': event_config.get('startDate'), 'end_date': event_config.get('endDate')}, {'_id': 1})
+    if existing and not replace_existing:
+        return 'exists', str(existing['_id'])
+    doc = build_archive_snapshot(collections, event_config)
+    if existing:
+        collections['archive'].replace_one({'_id': existing['_id']}, doc)
+        return 'replaced', str(existing['_id'])
+    result = collections['archive'].insert_one(doc)
+    return 'created', str(result.inserted_id)
+
+
+def _event_has_ended(event_config):
+    end_dt = _parse_iso_utc((event_config or {}).get('endDate'))
+    return bool(end_dt) and datetime.utcnow() > end_dt
+
+
 @app.route('/event/archive', methods=['POST'])
 @limiter.limit("10 per minute")
 def archive_event():
-    """Snapshot the current event's recap data + board tiles into the archive (admin only)."""
+    """
+    Freeze the current event (board, leaderboard, luck, KC gained, deaths, PBs, top drops) into the archive
+    (admin only). Refuses before the event's end date, or to duplicate an already-archived event, unless
+    {"force": true} - which for a duplicate replaces that archive in place.
+    """
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
@@ -3730,60 +3953,222 @@ def archive_event():
 
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
     collections = get_tenant_collections(tenant_id)
+    force = bool(data.get('force'))
 
     try:
         event_config = collections['bingo'].find_one({'_id': 'event_config'})
-        if not event_config:
+        if not event_config or not event_config.get('startDate'):
             return jsonify({'error': 'No event is currently configured'}), 404
 
-        board = collections['bingo'].find_one({'type': 'current_board'}) or {}
-        recap = compute_event_recap(
-            collections,
-            event_config.get('startDate'),
-            event_config.get('endDate'),
-            board_doc=board
-        )
+        if not force and not _event_has_ended(event_config):
+            return jsonify({'error': 'The event has not ended yet. Archive anyway with force.',
+                            'code': 'event_not_ended'}), 409
 
-        archive_doc = {
-            'event_name': event_config.get('eventName', 'Bingo Event'),
-            'start_date': event_config.get('startDate'),
-            'end_date': event_config.get('endDate'),
-            'archived_at': datetime.utcnow().isoformat(),
-            'players': recap,
-            'player_names': sorted(recap.keys()),
-            'tiles_snapshot': board.get('tiles', [])
-        }
-        result = collections['archive'].insert_one(archive_doc)
+        status, archive_id = archive_event_snapshot(collections, event_config, replace_existing=force)
+        if status == 'exists':
+            return jsonify({'error': 'This event is already archived. Re-archive with force to replace it.',
+                            'code': 'already_archived', 'archive_id': archive_id}), 409
 
-        print(f"[OK] Archived event '{archive_doc['event_name']}' ({len(recap)} players)")
-
+        name = event_config.get('eventName', 'Bingo Event')
+        print(f"[OK] Archive {status}: '{name}'")
         return jsonify({
             'success': True,
-            'message': f"Archived '{archive_doc['event_name']}' with {len(recap)} players",
-            'archive_id': str(result.inserted_id)
+            'message': f"{'Replaced archive of' if status == 'replaced' else 'Archived'} '{name}'",
+            'archive_id': archive_id,
         })
     except Exception as e:
         print(f"[X] Error archiving event: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/event/archive/list', methods=['GET'])
-def list_event_archives():
-    """List past archived events, newest first."""
+@app.route('/event/archive/auto', methods=['POST'])
+@limiter.limit("20 per minute")
+def auto_archive_event():
+    """
+    Called on a schedule by a GitHub Action (API key): archives the configured event once its end date has
+    passed, if that exact window isn't archived yet. Safe to call repeatedly - every other case is a no-op.
+    """
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
 
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
-    collections = get_tenant_collections(tenant_id)
+    tenant = get_authenticated_tenant_by_api_key()
+    if not tenant:
+        return jsonify({'error': 'Unauthorized'}), 401
+    collections = get_tenant_collections(tenant['tenant_id'])
 
     try:
-        archives = list(collections['archive'].find({}, {'players': 0, 'tiles_snapshot': 0}).sort('archived_at', -1))
+        event_config = collections['bingo'].find_one({'_id': 'event_config'})
+        if not event_config or not event_config.get('enabled') or not event_config.get('startDate'):
+            return jsonify({'archived': False, 'reason': 'no_event'})
+        if not _event_has_ended(event_config):
+            return jsonify({'archived': False, 'reason': 'not_ended'})
+        if (request.get_json(silent=True) or {}).get('dry_run'):
+            # Lets the scheduled job ask "is there anything to do?" before spending a WiseOldMan refresh on it.
+            already = collections['archive'].find_one(
+                {'start_date': event_config.get('startDate'), 'end_date': event_config.get('endDate')}, {'_id': 1})
+            return jsonify({'archived': False, 'needs_archive': not already,
+                            **({'reason': 'already_archived'} if already else {})})
+        status, archive_id = archive_event_snapshot(collections, event_config)
+        if status == 'exists':
+            return jsonify({'archived': False, 'reason': 'already_archived', 'archive_id': archive_id})
+        print(f"[OK] Auto-archived '{event_config.get('eventName', 'Bingo Event')}'")
+        return jsonify({'archived': True, 'archive_id': archive_id})
+    except Exception as e:
+        print(f"[X] Auto-archive failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def _legacy_archive_view(doc):
+    """Fill in leaderboard/summary/board for an archive taken before schema_version 2 (recaps + tiles only)."""
+    doc['leaderboard'] = _rank_leaderboard(doc.get('players') or {})
+    doc['summary'] = _archive_summary(doc['leaderboard'])
+    tiles = doc.get('tiles_snapshot') or []
+    doc['board'] = {'tiles': tiles, 'boardSize': round(len(tiles) ** 0.5) or 5}
+    doc['legacy'] = True
+    return doc
+
+
+def _load_archive(collections, archive_id, projection=None):
+    from bson import ObjectId
+    try:
+        oid = ObjectId(archive_id)
+    except Exception:
+        return None
+    return collections['archive'].find_one({'_id': oid}, projection)
+
+
+def _archive_collections():
+    tenant = get_tenant_from_request()
+    return get_tenant_collections(tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID)
+
+
+@app.route('/event/archive/list', methods=['GET'])
+@limiter.limit("60 per minute")
+def list_event_archives():
+    """Past events, newest first, each with a short summary (winners, player count, totals) for the picker."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    collections = _archive_collections()
+
+    try:
+        archives = list(collections['archive'].find({}, {f: 0 for f in ARCHIVE_HEAVY_FIELDS}).sort('start_date', -1))
         for a in archives:
+            if not a.get('schema_version'):
+                a['summary'] = _legacy_archive_view(collections['archive'].find_one({'_id': a['_id']}))['summary']
             a['_id'] = str(a['_id'])
         return jsonify({'archives': archives})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/archive/<archive_id>', methods=['GET'])
+@limiter.limit("60 per minute")
+def get_event_archive(archive_id):
+    """One past event: dates, summary, totals, ranked leaderboard, the frozen board and the biggest drops."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    collections = _archive_collections()
+
+    try:
+        doc = _load_archive(collections, archive_id, {f: 0 for f in ('luck', 'kc', 'deaths', 'personal_bests', 'players')})
+        if not doc:
+            return jsonify({'error': 'Archive not found'}), 404
+        if not doc.get('schema_version'):
+            doc = _legacy_archive_view(_load_archive(collections, archive_id))
+            for f in ('players', 'tiles_snapshot', 'luck', 'kc', 'deaths', 'personal_bests'):
+                doc.pop(f, None)
+        doc['_id'] = str(doc['_id'])
+        doc['sections'] = [] if doc.get('legacy') else list(ARCHIVE_SECTIONS) + ['drops']
+        return jsonify(doc)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/archive/<archive_id>/<section>', methods=['GET'])
+@limiter.limit("60 per minute")
+def get_event_archive_section(archive_id, section):
+    """
+    One frozen section of a past event, shaped like the live endpoint it replaces so the existing pages can render it:
+      luck           -> like /event/luck   {eventName, startDate, endDate, players}
+      kc             -> like /kc/effort    {success, players: [{player, effort, ...}]}
+      deaths         -> {eventName, startDate, endDate, total, players, npcs}
+      personal-bests -> like /pbs          {success, personal_bests}
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    field = ARCHIVE_SECTIONS.get(section)
+    if not field:
+        return jsonify({'error': f'Unknown section "{section}". Choose from: {", ".join(list(ARCHIVE_SECTIONS) + ["drops"])}'}), 404
+    collections = _archive_collections()
+
+    try:
+        doc = _load_archive(collections, archive_id,
+                            {field: 1, 'event_name': 1, 'start_date': 1, 'end_date': 1, 'schema_version': 1})
+        if not doc:
+            return jsonify({'error': 'Archive not found'}), 404
+        if not doc.get('schema_version') or field not in doc:
+            return jsonify({'error': 'This archive was taken before detailed snapshots existed', 'code': 'legacy_archive'}), 404
+
+        meta = {'eventName': doc.get('event_name', 'Bingo Event'), 'startDate': doc.get('start_date'), 'endDate': doc.get('end_date')}
+        data = doc[field]
+        if section == 'luck':
+            return jsonify({**meta, 'players': data})
+        if section == 'kc':
+            return jsonify({
+                'success': True,
+                'players': [{'player': p, 'effort': effort, 'start_timestamp': data.get('window_start'),
+                             'current_timestamp': data.get('window_end')} for p, effort in data.get('players', {}).items()],
+            })
+        if section == 'personal-bests':
+            return jsonify({'success': True, 'personal_bests': data})
+        return jsonify({**meta, **data})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/event/archive/<archive_id>/drops', methods=['GET'])
+@limiter.limit("60 per minute")
+def get_event_archive_drops(archive_id):
+    """
+    Drop log for a past event: the live drop history re-sliced to the archived event's dates (drops are
+    timestamped and never overwritten, so they aren't copied into the archive). Same filters/paging/shape
+    as /history: player, type, search, minValue, maxValue, skip, limit.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    collections = _archive_collections()
+
+    try:
+        doc = _load_archive(collections, archive_id, {'start_date': 1, 'end_date': 1})
+        if not doc:
+            return jsonify({'error': 'Archive not found'}), 404
+
+        query = _window_query(doc.get('start_date'), doc.get('end_date'))
+        if request.args.get('player'):
+            query['player'] = request.args['player']
+        if request.args.get('type'):
+            query['drop_type'] = request.args['type']
+        if request.args.get('search'):
+            query['item'] = {'$regex': re.escape(request.args['search']), '$options': 'i'}
+        if request.args.get('minValue') or request.args.get('maxValue'):
+            query['value'] = {}
+            if request.args.get('minValue'):
+                query['value']['$gte'] = float(request.args['minValue'])
+            if request.args.get('maxValue'):
+                query['value']['$lte'] = float(request.args['maxValue'])
+        skip = max(0, int(request.args.get('skip', 0)))
+        limit = min(max(1, int(request.args.get('limit', 100))), 500)
+
+        total = collections['history'].count_documents(query)
+        history = list(collections['history'].find(query).sort('timestamp', -1).skip(skip).limit(limit))
+        for item in history:
+            item['_id'] = str(item['_id'])
+            item['timestamp'] = _iso(item.get('timestamp'))
+        return jsonify({'history': history, 'count': len(history), 'total': total})
+    except ValueError:
+        return jsonify({'error': 'Invalid numeric parameter'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Failed to get archived drops: {str(e)}'}), 500
 
 
 @app.route('/event/archive/<archive_id>/player/<player_name>', methods=['GET'])
@@ -3791,14 +4176,10 @@ def get_archived_player_recap(archive_id, player_name):
     """A single player's frozen recap from a past archived event."""
     if not USE_MONGODB:
         return jsonify({'error': 'MongoDB not available'}), 503
-
-    tenant = get_tenant_from_request()
-    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
-    collections = get_tenant_collections(tenant_id)
+    collections = _archive_collections()
 
     try:
-        from bson import ObjectId
-        archive_doc = collections['archive'].find_one({'_id': ObjectId(archive_id)})
+        archive_doc = _load_archive(collections, archive_id)
         if not archive_doc:
             return jsonify({'error': 'Archive not found'}), 404
 
