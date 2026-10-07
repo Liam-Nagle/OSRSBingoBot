@@ -47,6 +47,7 @@ const NAV_SECTIONS = [
     { icon: '🏁', label: 'Progress', columns: [
         { title: 'Bingo', items: [
             { icon: '📅', label: 'Tile Race Timeline', desc: 'Which tiles got done each day', go: 'timeline' },
+            { icon: '📚', label: 'Past Bingos', desc: 'Scores, boards, luck and more from earlier bingos', go: 'past' },
         ] },
         { title: 'Group', items: [
             { icon: '📈', label: 'Group Rank History', desc: 'GIM overall & prestige rank over time', go: 'rank' },
@@ -71,7 +72,7 @@ const NAV_ADMIN = {
             { icon: '⏱️', label: 'Event Timer', fn: 'openEventConfigModal()', id: 'eventTimerBtn' },
             { icon: '⚙️', label: 'Configure Bonuses', fn: 'openBonusConfig()' },
             { icon: '📦', label: 'Archive Current Event', fn: 'archiveCurrentEvent()' },
-            { icon: '🏛️', label: 'Event Archive', fn: 'openArchiveModal()' },
+            { icon: '📚', label: 'Past Bingos', fn: 'openPastBingosModal()' },
         ] },
         { title: 'Data', icon: '💾', items: [
             { icon: '💾', label: 'Export Board', fn: 'exportBoard()', id: 'exportBtn' },
@@ -322,6 +323,7 @@ async function navGo(target) {
         case 'rank':     openRankHistoryModal(); break;
         case 'timeline': openTimelineModal(); break;
         case 'pbs':      openPBsModal(); break;
+        case 'past':     openPastBingosModal(sub); break;
         case 'export':   openExportModal(); break;
 
         case 'analytics':

@@ -4171,6 +4171,36 @@ def get_event_archive_drops(archive_id):
         return jsonify({'error': f'Failed to get archived drops: {str(e)}'}), 500
 
 
+@app.route('/event/player-history/<player_name>', methods=['GET'])
+@limiter.limit("60 per minute")
+def get_player_event_history(player_name):
+    """One player's result in every archived bingo, newest first: rank, points, tiles, KC, luck, GP and badges."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    collections = _archive_collections()
+
+    try:
+        wanted = player_name.strip().lower()
+        light = {'event_name': 1, 'start_date': 1, 'end_date': 1, 'leaderboard': 1, 'players': 1, 'schema_version': 1}
+        rows = []
+        for doc in collections['archive'].find({}, light).sort('start_date', -1):
+            leaderboard = doc.get('leaderboard') or _rank_leaderboard(doc.get('players') or {})
+            entry = next((r for r in leaderboard if r['player'].lower() == wanted), None)
+            if not entry:
+                continue
+            rows.append({
+                'archive_id': str(doc['_id']),
+                'event_name': doc.get('event_name', 'Bingo Event'),
+                'start_date': doc.get('start_date'),
+                'end_date': doc.get('end_date'),
+                'field_size': len(leaderboard),
+                **entry,
+            })
+        return jsonify({'player': player_name, 'events': rows})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/event/archive/<archive_id>/player/<player_name>', methods=['GET'])
 def get_archived_player_recap(archive_id, player_name):
     """A single player's frozen recap from a past archived event."""

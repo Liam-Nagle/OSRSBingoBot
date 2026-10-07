@@ -530,19 +530,22 @@
 
         // ---- Admin: Event Archive ----
 
-        async function archiveCurrentEvent() {
+        async function archiveCurrentEvent(force = false) {
             if (!isAdmin) {
                 alert('⛔ Admin access required!');
                 return;
             }
 
-            const confirmed = confirm(
-                "📦 Archive the current event's stats now?\n\n" +
-                "This freezes a copy of every player's recap (and the board's tile state) into the Event Archive.\n" +
-                "It does NOT reset or clear the live board.\n\n" +
-                "Continue?"
-            );
-            if (!confirmed) return;
+            if (!force) {
+                const confirmed = confirm(
+                    "📦 Archive the current event now?\n\n" +
+                    "This freezes the scores, board, luck, KC and PBs into Past Bingos.\n" +
+                    "It does NOT reset or clear the live board.\n" +
+                    "(Finished events are also archived automatically within an hour of ending.)\n\n" +
+                    "Continue?"
+                );
+                if (!confirmed) return;
+            }
 
             const password = sessionStorage.getItem('adminPassword');
             if (!password) {
@@ -554,94 +557,21 @@
                 const response = await fetch(`${API_URL}/event/archive`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: password })
+                    body: JSON.stringify({ password: password, force: force })
                 });
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    alert(`✅ ${result.message}\n\nView it anytime under "🏛️ Event Archive".`);
-                } else {
+                    alert(`✅ ${result.message}\n\nView it anytime under "📚 Past Bingos".`);
+                    if (document.getElementById('pastBingosModal') && typeof pbShowPicker === 'function') pbShowPicker();
+                } else if (response.status === 409 && !force && confirm(`${result.error}\n\nDo it anyway?`)) {
+                    archiveCurrentEvent(true);
+                } else if (response.status !== 409) {
                     alert(`❌ ${result.error || 'Failed to archive event'}`);
                 }
             } catch (e) {
                 console.error('Archive error:', e);
                 alert('❌ Could not connect to server. Make sure the API is running.');
-            }
-        }
-
-        async function openArchiveModal() {
-            const modalHtml = `
-                <div class="modal" id="archiveModal">
-                    <div class="modal-content">
-                        <button class="close-btn" onclick="closeArchiveModal()">×</button>
-                        <h2>🏛️ Event Archive</h2>
-                        <div id="archiveModalBody"><div class="recap-empty">Loading past events...</div></div>
-                    </div>
-                </div>
-            `;
-            const existing = document.getElementById('archiveModal');
-            if (existing) existing.remove();
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            document.getElementById('archiveModal').classList.add('active');
-
-            try {
-                const res = await fetch(`${API_URL}/event/archive/list`);
-                const data = await res.json();
-                const archives = data.archives || [];
-                const body = document.getElementById('archiveModalBody');
-                if (archives.length === 0) {
-                    body.innerHTML = '<div class="recap-empty">No archived events yet. Use "📦 Archive Current Event" once one wraps up.</div>';
-                    return;
-                }
-                body.innerHTML = `<div class="archive-list">${archives.map(a => `
-                    <div class="archive-entry" onclick='openArchivePlayerPicker(${JSON.stringify(a._id)}, ${JSON.stringify(a.event_name)}, ${JSON.stringify(a.player_names || [])})'>
-                        <div class="archive-entry-name">${a.event_name}</div>
-                        <div class="archive-entry-meta">${(a.player_names || []).length} player(s) • Archived ${formatRecapDate(a.archived_at) || ''}</div>
-                    </div>
-                `).join('')}</div>`;
-            } catch (e) {
-                document.getElementById('archiveModalBody').innerHTML = '<div class="recap-empty">Could not load archived events.</div>';
-            }
-        }
-
-        function closeArchiveModal() {
-            const modal = document.getElementById('archiveModal');
-            if (modal) modal.remove();
-        }
-
-        function openArchivePlayerPicker(archiveId, eventName, playerNames) {
-            const body = document.getElementById('archiveModalBody');
-            if (!playerNames || playerNames.length === 0) {
-                body.innerHTML = `<div class="recap-empty">No players recorded for ${eventName}.</div>
-                    <div class="modal-buttons"><button class="btn-cancel" onclick="openArchiveModal()">← Back</button></div>`;
-                return;
-            }
-            const options = playerNames.map(p => `<option value="${p}">${p}</option>`).join('');
-            body.innerHTML = `
-                <p style="margin-bottom:10px;"><strong>${eventName}</strong> — pick a player:</p>
-                <select id="archivePlayerSelect" style="margin-bottom:14px;">${options}</select>
-                <div class="modal-buttons">
-                    <button class="btn-cancel" onclick="openArchiveModal()">← Back</button>
-                    <button class="btn-save" onclick="viewArchivedRecap(${JSON.stringify(archiveId)})">View Recap</button>
-                </div>
-            `;
-        }
-
-        async function viewArchivedRecap(archiveId) {
-            const player = document.getElementById('archivePlayerSelect').value;
-            closeArchiveModal();
-            renderRecapModalContent({ loading: true });
-
-            try {
-                const res = await fetch(`${API_URL}/event/archive/${archiveId}/player/${encodeURIComponent(player)}`);
-                const data = await res.json();
-                if (!res.ok) {
-                    renderRecapModalContent({ error: data.error || 'No recap available.' });
-                    return;
-                }
-                renderRecapModalContent({ data });
-            } catch (e) {
-                renderRecapModalContent({ error: 'Could not load recap — check your connection.' });
             }
         }
 
@@ -6465,7 +6395,8 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = html;
         }
 
-        function renderLuckBossView(data, container) {
+        // idPrefix keeps element ids unique when a second copy is on the page (Past Bingos next to the Luck tab)
+        function renderLuckBossView(data, container, idPrefix = '') {
             const players = Object.entries(data.players || {});
 
             const bossMap = new Map();
@@ -6491,7 +6422,7 @@ async function loadAnalyticsWithFilters() {
 
             bossList.forEach(({ boss, rows, totalKc }) => {
                 html += `
-                    <div class="player-kc-card" style="cursor: pointer;" onclick="toggleLuckBossDetail('${boss.replace(/'/g, "\\'")}')">
+                    <div class="player-kc-card" style="cursor: pointer;" onclick="toggleLuckBossDetail('${boss.replace(/'/g, "\\'")}', '${idPrefix}')">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <h3 style="margin: 0;">🎯 ${boss}</h3>
                             <div style="text-align: right;">
@@ -6499,7 +6430,7 @@ async function loadAnalyticsWithFilters() {
                                 <div style="font-size: 11px; color: #8b7355;">Team KC Gained</div>
                             </div>
                         </div>
-                        <div id="luck-boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 2px solid rgba(205, 139, 45, 0.3);">
+                        <div id="${idPrefix}luck-boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 2px solid rgba(205, 139, 45, 0.3);">
                 `;
 
                 rows.forEach(row => {
@@ -6526,8 +6457,8 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = html;
         }
 
-        function toggleLuckBossDetail(boss) {
-            const elementId = `luck-boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        function toggleLuckBossDetail(boss, idPrefix = '') {
+            const elementId = `${idPrefix}luck-boss-detail-${boss.replace(/[^a-zA-Z0-9]/g, '_')}`;
             const element = document.getElementById(elementId);
             if (element) {
                 element.style.display = element.style.display === 'none' ? 'block' : 'none';
@@ -6971,6 +6902,16 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.14.0",
+                date: "2026-10-07",
+                title: "Past Bingos",
+                changes: [
+                    { type: "feature", text: "Added '📚 Past Bingos' (under Progress). Every finished bingo is kept so you can look back at it any time: the final standings, the board with who completed what, boss kills, luck, drops and personal bests." },
+                    { type: "feature", text: "Click anyone in a past bingo's standings to see their recap card, and use 'Player history' to see how a player did in every bingo they've played." },
+                    { type: "improvement", text: "A bingo is saved automatically soon after it ends, so nothing is lost when the next one starts." }
+                ]
+            },
             {
                 version: "v2.13.46",
                 date: "2026-10-06",
