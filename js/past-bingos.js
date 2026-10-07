@@ -225,9 +225,13 @@ async function pbOpenEvent(id, tab) {
     }
     const d = PB.detail;
     const winners = (d.summary?.winners || []).map(pbEsc).join(', ');
+    // Only real problems get a banner, each in plain words (anything else in warnings is internal)
     const warnings = d.warnings || [];
-    const note = warnings.length
-        ? `<div class="pb-note" title="${pbEsc(warnings.join(', '))}">Some figures for this bingo may be incomplete.</div>` : '';
+    const notes = [
+        warnings.includes('board_empty') && 'The board was empty when this bingo was saved, so tile scores are missing.',
+        warnings.includes('kc_not_final') && "The last kill count update hadn't finished when this bingo was saved, so KC may be a little short.",
+    ].filter(Boolean);
+    const note = notes.map(n => `<div class="pb-note">${pbEsc(n)}</div>`).join('');
     const tabs = PB_TABS.filter(t => !d.legacy || PB_LEGACY_TABS.includes(t.key));
 
     pbBody().innerHTML = `

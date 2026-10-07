@@ -3145,7 +3145,7 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
             if player_bosses:
                 kc_by_boss[snap_player] = player_bosses
     else:
-        for cached in collections['gained_cache'].find({}):
+        for cached in _gained_cache_docs(collections, start_date):
             snap_player = cached.get('player')
             boss_gains = cached.get('bosses', {})
             if not snap_player or not boss_gains:
@@ -3521,7 +3521,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
     # late-captured 'start' snapshot could show 0 gained when real gains
     # happened before it was taken). ---
     kc_gained = {}
-    for cached in collections['gained_cache'].find({}):
+    for cached in _gained_cache_docs(collections, start_date):
         snap_player = cached.get('player')
         boss_gains = cached.get('bosses', {})
         if not snap_player or not boss_gains:
@@ -3763,6 +3763,19 @@ def _window_query(start_date, end_date):
     return {'timestamp': bounds} if bounds else {}
 
 
+def _gained_cache_docs(collections, start_date):
+    """
+    KC-gained cache entries that belong to the event starting at start_date. The cache holds one document per
+    player and is only rewritten for players refreshed in the current event, so anyone who wasn't (e.g. played last
+    bingo but not this one) still carries the previous event's numbers and must not be counted in this one.
+    """
+    start_dt = _parse_iso_utc(start_date)
+    for cached in collections['gained_cache'].find({}):
+        if start_dt and _parse_iso_utc(cached.get('event_start')) != start_dt:
+            continue
+        yield cached
+
+
 def _iso(value):
     return value.isoformat() if hasattr(value, 'isoformat') else value
 
@@ -3827,17 +3840,14 @@ def build_archive_snapshot(collections, event_config):
     leaderboard = _rank_leaderboard(recap)
 
     # KC gained per boss, frozen from the WOM-authoritative gained_cache. That cache is rewritten for
-    # whatever event is current, so an entry that doesn't cover this window is skipped rather than archived wrong.
-    start_dt, end_dt = _parse_iso_utc(start_date), _parse_iso_utc(end_date)
+    # whatever event is current, so _gained_cache_docs only returns entries for this event's window.
+    end_dt = _parse_iso_utc(end_date)
     kc_players = {}
     kc_not_final = False
-    for cached in collections['gained_cache'].find({}):
+    for cached in _gained_cache_docs(collections, start_date):
         player = cached.get('player')
         gained = {boss: d.get('gained', 0) for boss, d in (cached.get('bosses') or {}).items() if d.get('gained', 0) > 0}
         if not player or not gained:
-            continue
-        if _parse_iso_utc(cached.get('event_start')) != start_dt:
-            warnings.append(f'kc_window_mismatch:{player}')
             continue
         cached_end = _parse_iso_utc(cached.get('event_end'))
         if end_dt and cached_end and cached_end < end_dt:
