@@ -276,150 +276,6 @@
         // EVENT RECAP + ARCHIVE
         // ============================================
 
-        // Inline SVG (not <img src="...">) so these decorative flourishes are part of the
-        // document itself — an externally-loaded image would risk tainting the canvas
-        // html2canvas needs to read back out as a PNG. Defined once and reused per card.
-        const RECAP_CORNER_SVG = `
-            <svg class="recap-corner" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 28 C2 14, 14 2, 28 2" stroke="#8B6914" stroke-width="2" fill="none"/>
-                <path d="M2 28 C2 20, 8 14, 16 14" stroke="#8B6914" stroke-width="1.3" fill="none" opacity="0.6"/>
-                <circle cx="28" cy="2" r="2.5" fill="#DAA520"/>
-            </svg>
-        `;
-        const RECAP_LAUREL_SVG = `
-            <svg class="recap-laurel" viewBox="0 0 20 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 32 C10 20, 10 10, 8 2" stroke="#8B6914" stroke-width="1.4" fill="none"/>
-                <ellipse cx="6" cy="8" rx="3" ry="1.6" fill="#DAA520" transform="rotate(-30 6 8)"/>
-                <ellipse cx="5" cy="14" rx="3" ry="1.6" fill="#DAA520" transform="rotate(-30 5 14)"/>
-                <ellipse cx="6" cy="20" rx="3" ry="1.6" fill="#DAA520" transform="rotate(-30 6 20)"/>
-                <ellipse cx="12" cy="6" rx="3" ry="1.6" fill="#c9971a" transform="rotate(30 12 6)"/>
-                <ellipse cx="13" cy="12" rx="3" ry="1.6" fill="#c9971a" transform="rotate(30 13 12)"/>
-                <ellipse cx="12" cy="18" rx="3" ry="1.6" fill="#c9971a" transform="rotate(30 12 18)"/>
-            </svg>
-        `;
-
-        const RECAP_BADGE_INFO = {
-            mvp: { emoji: '🏆', label: 'MVP', desc: 'Highest points this event (tiles + line bonuses)' },
-            biggest_drop: { emoji: '💰', label: 'Biggest Drop', desc: "The event's single most valuable drop" },
-            rarest_drop: { emoji: '💎', label: 'Rarest Drop', desc: "The event's lowest-odds drop" },
-            most_consistent: { emoji: '📅', label: 'Most Consistent', desc: 'Logged drops on the most different days' },
-            top_grinder: { emoji: '⚔️', label: 'Top Grinder', desc: 'Most KC gained this event' },
-            first_blood: { emoji: '🥇', label: 'First Blood', desc: "Completed the event's very first tile" },
-            closer: { emoji: '🌒', label: 'Closer', desc: "Completed the event's last tile" },
-            tiny_violin: { emoji: '🎻', label: 'Tiny Violin', desc: 'Furthest below expected drops for their kill count — the driest streak on the team' },
-            silver_spoon: { emoji: '🥄', label: 'Silver Spoon', desc: 'Furthest above expected drops for their kill count — the luckiest streak on the team' }
-        };
-
-        function formatRecapGp(value) {
-            if (!value) return '0 gp';
-            if (value >= 1000000) return (value / 1000000).toFixed(2).replace(/\.00$/, '').replace(/0$/, '') + 'M gp';
-            if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'K gp';
-            return `${value.toLocaleString()} gp`;
-        }
-
-        function formatRecapDate(iso) {
-            if (!iso) return null;
-            try {
-                return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            } catch (e) {
-                return null;
-            }
-        }
-
-        // Dink's "Item Rarity" embed field comes through wrapped in Discord code-block
-        // fences (e.g. "```\n1 in 500.0 (0.2%)\n```"), and that raw text is what's stored —
-        // strip the fences/whitespace for display rather than showing them verbatim.
-        function formatRarityText(raw) {
-            if (!raw) return '';
-            return raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').replace(/\s+/g, ' ').trim();
-        }
-
-        function buildRecapCardHtml(data) {
-            const earnedBadges = (data.badges || []).map(key => RECAP_BADGE_INFO[key]).filter(Boolean);
-
-            // Hover tooltip helps on the live page; it does nothing once this is a downloaded/
-            // pasted-into-Discord PNG, so the key below is what actually explains the badge
-            // to someone who only ever sees the shared image.
-            const medallions = earnedBadges.map(info => `
-                <div class="recap-medallion" title="${info.desc}">
-                    <div class="recap-medallion-seal">${info.emoji}</div>
-                    <div class="recap-medallion-label">${info.label}</div>
-                </div>
-            `).join('');
-
-            const badgeKeyHtml = earnedBadges.length ? `
-                <div class="recap-badge-key">
-                    ${earnedBadges.map(info => `<div class="recap-badge-key-item"><strong>${info.emoji} ${info.label}</strong> — ${info.desc}</div>`).join('')}
-                </div>
-            ` : '';
-
-            let highlightsHtml = '';
-            if (data.most_valuable_drop) {
-                highlightsHtml += `<div class="recap-highlight">💰 Most valuable drop: <strong>${data.most_valuable_drop.item}</strong> (${formatRecapGp(data.most_valuable_drop.value)})</div>`;
-            }
-            if (data.rarest_drop) {
-                highlightsHtml += `<div class="recap-highlight">💎 Rarest drop: <strong>${data.rarest_drop.item}</strong> (${formatRarityText(data.rarest_drop.rarity)})</div>`;
-            }
-            if (typeof data.luck_score === 'number' && (data.badges || []).some(b => b === 'tiny_violin' || b === 'silver_spoon')) {
-                const magnitude = Math.round(Math.abs(data.luck_score)).toLocaleString();
-                const verdict = data.luck_score < 0
-                    ? `${magnitude} kills behind drop rate`
-                    : `${magnitude} kills ahead of drop rate`;
-                highlightsHtml += `<div class="recap-highlight">${data.luck_score < 0 ? '🎻' : '🥄'} Luck score: <strong>${verdict}</strong></div>`;
-            }
-            const firstDate = formatRecapDate(data.first_tile_at);
-            const lastDate = formatRecapDate(data.last_tile_at);
-            if (data.first_tile) {
-                highlightsHtml += `<div class="recap-highlight">🎯 First tile completed: <strong>${data.first_tile}</strong>${firstDate ? ` (${firstDate})` : ''}</div>`;
-            }
-            if (data.last_tile && data.last_tile_at !== data.first_tile_at) {
-                highlightsHtml += `<div class="recap-highlight">🏁 Last tile completed: <strong>${data.last_tile}</strong>${lastDate ? ` (${lastDate})` : ''}</div>`;
-            }
-
-            const cornerTL = RECAP_CORNER_SVG.replace('class="recap-corner"', 'class="recap-corner recap-corner-tl"');
-            const cornerTR = RECAP_CORNER_SVG.replace('class="recap-corner"', 'class="recap-corner recap-corner-tr"');
-            const laurelLeft = RECAP_LAUREL_SVG;
-            const laurelRight = RECAP_LAUREL_SVG.replace('class="recap-laurel"', 'class="recap-laurel recap-laurel-right"');
-
-            return `
-                <div class="recap-card" id="recapCardCapture">
-                    ${cornerTL}
-                    ${cornerTR}
-
-                    <div class="recap-ribbon">
-                        <div class="recap-ribbon-notch recap-ribbon-notch-left"></div>
-                        <div class="recap-ribbon-band">${data.eventName || 'Bingo Event'}</div>
-                        <div class="recap-ribbon-notch recap-ribbon-notch-right"></div>
-                    </div>
-
-                    <div class="recap-card-body">
-                        <div class="recap-card-player">${data.player}</div>
-                        ${medallions ? `<div class="recap-medallion-row">${medallions}</div>` : ''}
-                        ${badgeKeyHtml}
-
-                        <div class="recap-hero-stat">
-                            ${laurelLeft}
-                            <div class="recap-hero-text">
-                                <div class="recap-hero-value">💰 ${formatRecapGp(data.gp_total)}</div>
-                                <div class="recap-hero-label">GP Looted</div>
-                            </div>
-                            ${laurelRight}
-                        </div>
-
-                        <div class="recap-stat-grid">
-                            <div class="recap-stat"><div class="recap-stat-value">${data.drop_count || 0}</div><div class="recap-stat-label">Drops</div></div>
-                            <span class="recap-stat-divider"></span>
-                            <div class="recap-stat"><div class="recap-stat-value">${data.tiles_completed || 0}</div><div class="recap-stat-label">Tiles</div></div>
-                            <span class="recap-stat-divider"></span>
-                            <div class="recap-stat"><div class="recap-stat-value">${data.kc_gained || 0}</div><div class="recap-stat-label">KC Gained</div></div>
-                        </div>
-
-                        ${highlightsHtml}
-                    </div>
-                </div>
-            `;
-        }
-
         // state: {loading:true} | {error:'...'} | {data:{...}} — creates the modal shell once,
         // then only swaps the inner body, so repeated loading/error/data transitions don't
         // rebuild the close button / heading each time.
@@ -454,6 +310,7 @@
             }
             document.getElementById('recapModalBody').innerHTML = bodyHtml;
             modal.classList.add('active');
+            if (document.getElementById('recapCardCapture')) prepareRecapCard();
         }
 
         function closeRecapModal() {
@@ -489,12 +346,6 @@
             } catch (e) {
                 renderRecapModalContent({ error: 'Could not load recap — check your connection.' });
             }
-        }
-
-        async function captureRecapCanvas() {
-            const card = document.getElementById('recapCardCapture');
-            if (!card || typeof html2canvas === 'undefined') return null;
-            return await html2canvas(card, { backgroundColor: '#f4e4c1', scale: 2 });
         }
 
         async function downloadRecapImage() {
@@ -6903,6 +6754,19 @@ async function loadAnalyticsWithFilters() {
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
             {
+                version: "v2.15.0",
+                date: "2026-10-08",
+                title: "Year in Review makeover",
+                changes: [
+                    { type: "feature", text: "Brand new Year in Review card: a dark and gold design with custom artwork, a big GP figure, your stats and highlights, and a trophy cabinet. Still downloadable as a PNG or copyable straight into Discord." },
+                    { type: "feature", text: "Your final place on the points leaderboard (1st, 2nd, 3rd...) now shows big on the card, with a line to either celebrate or roast it." },
+                    { type: "feature", text: "12 new trophies to win: Completionist, Bingo!, Gold Hoarder, Boss Hopper, Specialist, Last-Minute Hero, Speed Demon, Lone Wolf, Night Owl, Dry Spell Survivor, Weekend Warrior and Weekday Warrior. Every trophy has its own artwork." },
+                    { type: "improvement", text: "Hover over (or tap) a trophy to see what it's for. The downloaded image still spells every trophy out, since a picture can't be hovered." },
+                    { type: "improvement", text: "The little comments on the card are different for different people now, and depend on where you finished on points and on GP looted. Expect some banter." },
+                    { type: "improvement", text: "The page is now called 'Unsociables 2026 Bingo' (tab title, header and the default event name)." }
+                ]
+            },
+            {
                 version: "v2.14.0",
                 date: "2026-10-07",
                 title: "Past Bingos",
@@ -8456,7 +8320,7 @@ async function loadAnalyticsWithFilters() {
             const widget = document.getElementById('eventTimerWidget');
             const nameEl = document.getElementById('eventName');
 
-            nameEl.textContent = config.eventName || 'Bingo Event';
+            nameEl.textContent = config.eventName || 'Unsociables 2026 Bingo';
 
             widget.classList.add('active'); // Use class instead of inline style
         }
@@ -8558,7 +8422,7 @@ function startEventCountdown(config) {
                 const config = await response.json();
 
                 document.getElementById('eventEnabled').checked = config.enabled || false;
-                document.getElementById('eventNameInput').value = config.eventName || 'Bingo Event';
+                document.getElementById('eventNameInput').value = config.eventName || 'Unsociables 2026 Bingo';
 
                 if (config.startDate) {
                     // Convert ISO string to datetime-local format
@@ -8657,7 +8521,7 @@ function startEventCountdown(config) {
                 const payload = {
                     password: password,
                     enabled: enabled,
-                    eventName: eventName || 'Bingo Event',
+                    eventName: eventName || 'Unsociables 2026 Bingo',
                     startDate: startDate ? new Date(startDate).toISOString() : null,
                     endDate: endDate ? new Date(endDate).toISOString() : null
                 };

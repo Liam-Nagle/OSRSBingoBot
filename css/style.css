@@ -3122,252 +3122,224 @@
         EVENT RECAP CARD + ARCHIVE
         ============================================ */
 
-        #recapModal .modal-content,
+        #recapModal .modal-content {
+            max-width: 620px;
+        }
+
         #archiveModal .modal-content {
             max-width: 480px;
         }
 
-        /* Parchment/gold palette stays exactly what the site already uses — the "Year in
-           Review" borrowing is about DENSITY OF ORNAMENT (ribbon banner, corner flourishes,
-           a laurel on the headline stat, textured ground), not a different color story. */
-        .recap-card {
-            position: relative;
-            background-image:
-                radial-gradient(ellipse at top, #f8ecd4 0%, #ecdab3 55%, #ddc596 100%),
-                repeating-linear-gradient(135deg, rgba(139,105,20,0.05) 0px, rgba(139,105,20,0.05) 1px, transparent 1px, transparent 7px);
-            border: 3px solid #DAA520;
-            border-radius: 10px;
-            padding-bottom: 22px;
-            color: #2c1810;
-            overflow: hidden;
-            box-shadow:
-                0 0 0 1px rgba(139,105,20,0.5),
-                inset 0 0 46px rgba(139,105,20,0.15),
-                0 8px 24px rgba(0,0,0,0.35);
-        }
+        /* The recap card: artwork from img/recap/ with live text on top (see js/recap-card.js).
+           html2canvas exports it to PNG, so no background-clip:text, mask or backdrop-filter in here. */
+        .rc-scale { display: flex; justify-content: center; }
 
-        .recap-card-body {
+        .rc {
+            --rc-gold: #e9b94a;
+            --rc-gold-hi: #f8e2a0;
+            --rc-cream: #f4e7c6;
+            --rc-dim: #b9a27a;
+            --rc-good: #8fd36b;
+            --rc-bad: #e08a6a;
             position: relative;
-            padding: 0 22px;
+            flex: none;
+            width: 540px;
+            aspect-ratio: 900 / 1704;
+            color: var(--rc-cream);
+            font-family: 'Crimson Pro', Georgia, serif;
             text-align: center;
         }
 
-        /* Illuminated-manuscript-style corner flourishes — inline SVG (not an <img>), so it's
-           part of the document and can't taint the html2canvas capture the way a loaded
-           cross-origin image would. */
-        .recap-corner {
+        /* the backing is pre-cut to the frame's outline, so nothing shows outside the border */
+        .rc-back, .rc-frame {
             position: absolute;
-            width: 30px;
-            height: 30px;
-            opacity: 0.8;
-            z-index: 1;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }
+        .rc-back { z-index: 0; }
+        .rc-frame { z-index: 5; }
 
-        .recap-corner-tl { top: 8px; left: 8px; }
-        .recap-corner-tr { top: 8px; right: 8px; transform: scaleX(-1); }
-
-        /* Ribbon banner for the event name — Old School's own marketing device (see its
-           "#MyYearInOSRS" banner), recolored into the site's existing button-gold rather
-           than the reference's red. Built from real elements, not ::before/::after — those
-           render unreliably in html2canvas and this needs to survive the PNG capture. */
-        .recap-ribbon {
-            display: flex;
-            justify-content: center;
-            margin: 18px 0 16px;
-            position: relative;
-        }
-
-        .recap-ribbon-band {
-            background: linear-gradient(180deg, #cd8b2d 0%, #a67318 100%);
-            border-top: 2px solid #e2a850;
-            border-bottom: 2px solid #6b5410;
-            color: #fff8e7;
-            font-weight: 900;
-            font-size: 12px;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.4);
-            padding: 7px 20px;
-            white-space: nowrap;
-        }
-
-        .recap-ribbon-notch {
-            width: 0;
-            height: 0;
-            border-top: 16px solid transparent;
-            border-bottom: 16px solid transparent;
-        }
-
-        .recap-ribbon-notch-left { border-right: 11px solid #6b5410; }
-        .recap-ribbon-notch-right { border-left: 11px solid #6b5410; }
-
-        /* Bold caps (real Arial/Helvetica — no custom @font-face for html2canvas to lose
-           the load race on) stands in for the reference's game-title display face. */
-        .recap-card-player {
-            font-family: Arial, Helvetica, sans-serif;
-            font-weight: 900;
-            font-size: 26px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #7a3b12;
-            text-shadow: 1px 1px 0 rgba(255,255,255,0.5);
-        }
-
-        /* Badges as wax-seal medallions — the card's own signature flourish. */
-        .recap-medallion-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 14px;
-            justify-content: center;
-            margin-top: 14px;
-        }
-
-        .recap-medallion {
+        .rc-inner {
+            position: absolute;
+            left: 8.6%;
+            right: 8.6%;
+            top: 6.4%;
+            bottom: 6.2%;
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 64px;
+            justify-content: space-between;
+            z-index: 2;
         }
 
-        .recap-medallion-seal {
-            width: 46px;
-            height: 46px;
-            border-radius: 50%;
-            background: radial-gradient(circle at 35% 30%, #FFE58A 0%, #DAA520 55%, #93690f 100%);
-            border: 2px solid #7a5510;
-            box-shadow:
-                inset 0 2px 3px rgba(255,255,255,0.6),
-                inset 0 -3px 4px rgba(0,0,0,0.35),
-                0 3px 6px rgba(0,0,0,0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-        }
-
-        .recap-medallion-label {
-            margin-top: 5px;
-            font-size: 9px;
-            font-weight: bold;
+        .rc-eyebrow {
+            margin-top: 2px;
+            font: 700 10.5px/1 'Cinzel', serif;
+            letter-spacing: 3px;
+            color: var(--rc-dim);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #6b5842;
-            text-align: center;
-            line-height: 1.2;
         }
 
-        /* Baked into the card itself (not just a hover tooltip) so badge meanings survive
-           being downloaded/pasted into Discord as a flat PNG — only lists badges this
-           player actually earned, so it costs nothing on a card with none. */
-        .recap-badge-key {
-            margin-top: 10px;
-            padding-top: 8px;
-            border-top: 1px dashed rgba(139,105,20,0.3);
-            text-align: left;
-        }
-
-        .recap-badge-key-item {
-            font-size: 10px;
-            color: #6b5842;
-            line-height: 1.5;
-        }
-
-        .recap-badge-key-item strong {
-            color: #7a3b12;
-        }
-
-        /* GP is the one number OSRS players actually brag about — the card's hero figure,
-           flanked by a small laurel motif (a real achievement device, not decoration for its
-           own sake) instead of sitting equal-weight with drop count and KC. */
-        .recap-hero-stat {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin: 20px 0 4px;
-        }
-
-        .recap-laurel {
-            width: 20px;
-            height: 34px;
-            flex-shrink: 0;
-            opacity: 0.85;
-        }
-
-        .recap-laurel-right { transform: scaleX(-1); }
-
-        .recap-hero-text {
-            text-align: center;
-        }
-
-        .recap-hero-value {
-            font-family: Arial, Helvetica, sans-serif;
-            font-weight: 900;
-            font-size: 34px;
-            letter-spacing: 0.5px;
-            color: #6b3e0a;
-            line-height: 1.1;
-        }
-
-        .recap-hero-label {
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
+        .rc-event {
+            margin-top: 6px;
+            font: 900 19px/1.1 'Cinzel', serif;
             letter-spacing: 1.5px;
-            color: #8B6914;
-            margin-top: 4px;
-        }
-
-        /* Number-over-label pairs split by hairline dividers — the reference's actual stat
-           device (its 2-col "HOURS PLAYED / XP GAINED" grid) rather than filled boxes. */
-        .recap-stat-grid {
-            display: flex;
-            align-items: stretch;
-            margin: 16px 0 4px;
-            padding-top: 14px;
-            border-top: 1px solid rgba(139,105,20,0.35);
-        }
-
-        .recap-stat {
-            flex: 1;
-            text-align: center;
-        }
-
-        .recap-stat-divider {
-            width: 1px;
-            background: rgba(139,105,20,0.35);
-            margin: 2px 6px;
-        }
-
-        .recap-stat-value {
-            font-family: Arial, Helvetica, sans-serif;
-            font-weight: 900;
-            font-size: 19px;
-            color: #4a2c1a;
-        }
-
-        .recap-stat-label {
-            font-size: 9.5px;
-            color: #6b5842;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 3px;
+            color: var(--rc-gold-hi);
+            text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
         }
 
-        .recap-highlight {
-            background: rgba(255,255,255,0.4);
-            border-left: 3px solid #cd8b2d;
-            border-radius: 4px;
-            padding: 8px 12px;
-            margin-top: 10px;
-            font-size: 13px;
+        .rc-player {
+            margin-top: 6px;
+            width: 100%;
+            padding: 2px 0 4px;
+            font: 900 36px/1.1 'Cinzel', serif;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            overflow: hidden;
+            color: #f3cf6a;
+            text-shadow: 0 2px 0 rgba(60, 30, 0, 0.75), 0 0 14px rgba(255, 190, 60, 0.35);
+        }
+
+        .rc-place { display: flex; flex-direction: column; align-items: center; margin-top: -2px; }
+        .rc-place-num {
+            font: 900 60px/1 'Cinzel', serif;
+            color: #fff1b8;
+            text-shadow: 0 0 16px rgba(255, 190, 60, 0.5), 0 3px 0 rgba(60, 30, 0, 0.8);
+        }
+        .rc-place-num sup {
+            position: relative;
+            top: 4px;
+            margin-left: 2px;
+            font-size: 22px;
+            vertical-align: top;
+            text-transform: uppercase;
+            color: var(--rc-gold);
+        }
+        .rc-place-quip {
+            margin-top: 2px;
+            font: italic 500 14px/1.1 'Crimson Pro', serif;
+            color: var(--rc-cream);
+            opacity: 0.9;
+        }
+        .rc-place-first .rc-place-num {
+            color: #fff6cc;
+            text-shadow: 0 0 26px rgba(255, 205, 90, 0.85), 0 0 8px rgba(255, 235, 160, 0.6), 0 3px 0 rgba(60, 30, 0, 0.8);
+        }
+
+        .rc-hero {
+            position: relative;
+            width: 100%;
+            margin-top: 4px;
+            aspect-ratio: 900 / 396;
+            background: url('../img/recap/hero-panel.png') center / 100% 100% no-repeat;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 0 26px;
+        }
+        .rc-hero-label { font: 700 10.5px/1 'Cinzel', serif; letter-spacing: 3px; color: #f8e2a0; text-transform: uppercase; }
+        .rc-hero-value {
+            margin-top: 6px;
+            font: 900 62px/1 'Cinzel', serif;
+            color: #fff1b8;
+            text-shadow: 0 0 18px rgba(255, 190, 60, 0.55), 0 3px 0 rgba(60, 30, 0, 0.8);
+        }
+        .rc-hero-value small { margin-left: 6px; font-size: 24px; color: #e9b94a; }
+        .rc-hero-tag { margin-top: 6px; font: italic 500 14px/1 'Crimson Pro', serif; color: #e8cf93; }
+
+        .rc-stats { display: flex; width: 100%; margin-top: 4px; }
+        .rc-stat { flex: 1; display: flex; flex-direction: column; align-items: center; }
+        .rc-stat + .rc-stat { border-left: 1px solid rgba(233, 185, 74, 0.28); }
+        .rc-stat img { width: 34px; height: 34px; }
+        .rc-stat b { margin-top: 2px; font: 900 24px/1 'Cinzel', serif; color: var(--rc-cream); }
+        .rc-stat i { margin-top: 3px; font: 700 9.5px/1 'Cinzel', serif; font-style: normal; letter-spacing: 2px; text-transform: uppercase; color: var(--rc-dim); }
+
+        .rc-divider {
+            flex: none;
+            width: 78%;
+            aspect-ratio: 900 / 78;
+            margin: 4px 0;
+            background: url('../img/recap/divider.png') center / 100% 100% no-repeat;
+        }
+        .rc-section-title { margin: 2px 0 7px; font: 700 11px/1 'Cinzel', serif; letter-spacing: 3px; text-transform: uppercase; color: var(--rc-gold); }
+
+        .rc-highlights { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; width: 100%; }
+        .rc-hl {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            padding: 5px 7px;
             text-align: left;
-            color: #2c1810;
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(233, 185, 74, 0.22);
+            border-radius: 8px;
         }
+        .rc-hl img { flex: none; width: 34px; height: 34px; }
+        .rc-hl div { min-width: 0; }
+        .rc-hl small { display: block; font: 700 9px/1 'Cinzel', serif; letter-spacing: 1.6px; text-transform: uppercase; color: var(--rc-gold); }
+        .rc-hl strong { display: block; margin-top: 3px; font: 700 14px/1.1 'Crimson Pro', serif; color: var(--rc-cream); overflow-wrap: anywhere; }
+        .rc-hl em { display: block; margin-top: 1px; font: italic 500 12.5px/1.1 'Crimson Pro', serif; color: var(--rc-dim); }
+        .rc-luck, .rc-wide { grid-column: 1 / -1; }
+        .rc-hl strong.rc-good { color: var(--rc-good); }
+        .rc-hl strong.rc-bad { color: var(--rc-bad); }
 
-        .recap-highlight strong {
-            color: #8B4513;
+        .rc-trophies { display: flex; flex: none; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+        .rc-badge-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 8px; }
+        .rc-badge { position: relative; display: flex; flex-direction: column; align-items: center; width: var(--rc-bsize, 78px); cursor: help; outline: none; }
+        .rc-badge img { width: var(--rc-bsize, 78px); height: var(--rc-bsize, 78px); }
+        .rc-badge span { margin-top: 1px; font: 700 8.5px/1.05 'Cinzel', serif; letter-spacing: 0.8px; text-transform: uppercase; color: var(--rc-gold-hi); }
+        .rc-tip {
+            display: none;
+            position: absolute;
+            bottom: calc(100% - 6px);
+            left: 50%;
+            z-index: 9;
+            width: 150px;
+            padding: 6px 8px;
+            transform: translateX(-50%);
+            font: 500 11px/1.2 'Crimson Pro', serif;
+            letter-spacing: 0;
+            text-align: center;
+            text-transform: none;
+            color: #f4e7c6;
+            background: #1b120a;
+            border: 1px solid #e9b94a;
+            border-radius: 6px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
         }
+        .rc-badge:hover .rc-tip, .rc-badge:focus .rc-tip { display: block; }
+
+        /* on screen the explanations are hover tooltips; the exported PNG can't hover, so it prints them instead */
+        .rc-badge-key { display: none; width: 100%; margin-top: 6px; padding: 0 10px 12px; text-align: left; grid-template-columns: 1fr; gap: 2px; }
+        .rc-badge-key.rc-two { grid-template-columns: 1fr 1fr; gap: 1px 10px; }
+        .rc-badge-key div { font: 500 10.5px/1.12 'Crimson Pro', serif; color: var(--rc-dim); }
+        .rc-badge-key.rc-two div { font-size: 9.6px; line-height: 1.08; }
+        .rc-badge-key b { font-weight: 700; color: var(--rc-gold-hi); }
+        .rc-export .rc-badge-key { display: grid; }
+        .rc-export .rc-tip { display: none !important; }
+        .rc-more { margin-top: -6px; font: italic 500 11px/1 'Crimson Pro', serif; color: var(--rc-dim); }
+        .rc-no-trophies { padding: 18px 20px; font: italic 500 14px/1.3 'Crimson Pro', serif; color: var(--rc-dim); }
+
+        /* crowded cards (7+ trophies) get a compact layout so everything still fits inside the frame */
+        .rc-tight .rc-hero { aspect-ratio: 900 / 300; }
+        .rc-tight .rc-hero-value { margin-top: 3px; font-size: 48px; }
+        .rc-tight .rc-hero-tag { margin-top: 3px; font-size: 13px; }
+        .rc-tight .rc-place-num { font-size: 46px; }
+        .rc-tight .rc-place-quip { font-size: 13px; }
+        .rc-tight .rc-stat img { width: 26px; height: 26px; }
+        .rc-tight .rc-stat b { font-size: 20px; }
+        .rc-tight .rc-hl { padding: 3px 6px; }
+        .rc-tight .rc-hl img { width: 28px; height: 28px; }
+        .rc-tight .rc-divider { width: 64%; margin: 0; }
+        .rc-tight .rc-section-title { margin: 0 0 3px; }
+        .rc-tight .rc-badge-key { padding: 0 16px 14px; }
 
         .recap-actions {
             display: flex;

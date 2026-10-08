@@ -3400,6 +3400,55 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     return breakdown
 
 
+# Time-of-day / day-of-week badges (Night Owl, Weekend/Weekday Warrior) need a wall-clock timezone,
+# and drop timestamps are stored in UTC. Defaults to the UK; override with the RECAP_TIMEZONE env var.
+try:
+    from zoneinfo import ZoneInfo
+    RECAP_TZ = ZoneInfo(os.environ.get('RECAP_TIMEZONE', 'Europe/London'))
+except Exception:
+    RECAP_TZ = timezone.utc
+
+RECAP_NIGHT_HOURS = range(0, 6)   # 00:00-05:59 local time counts as "late hours"
+RECAP_MIN_DROPS_FOR_DAY_BADGES = 10   # Weekend/Weekday Warrior compare shares, so need a real sample
+
+
+def _local_dt(ts):
+    """Naive-UTC datetime (how Mongo hands timestamps back) -> aware datetime in RECAP_TZ."""
+    return ts.replace(tzinfo=timezone.utc).astimezone(RECAP_TZ)
+
+
+def _max_in_window(times, hours=24):
+    """Largest number of datetimes falling inside any rolling window of `hours` (timezone-independent)."""
+    times = sorted(times)
+    best, lo = 0, 0
+    for hi, t in enumerate(times):
+        while (t - times[lo]).total_seconds() > hours * 3600:
+            lo += 1
+        best = max(best, hi - lo + 1)
+    return best
+
+
+def _top_players(values, minimum=1):
+    """{player: number} -> set of the player(s) tied on the highest value, or empty if nobody reaches `minimum`."""
+    top = max(values.values(), default=0)
+    return {p for p, v in values.items() if top >= minimum and v == top}
+
+
+def _attach_places(recap):
+    """
+    Adds, to every player's recap: `place` (rank by points, ties share a place - same rule as
+    _rank_leaderboard), `gp_rank` (rank by GP looted, ties share) and `field_size`. The recap card shows
+    the points place big and uses the GP rank to pick its joke about the GP total.
+    """
+    n = len(recap)
+    for r in recap.values():
+        pts, gp = r.get('points', 0), r.get('gp_total', 0)
+        r['place'] = 1 + sum(1 for o in recap.values() if o.get('points', 0) > pts)
+        r['gp_rank'] = 1 + sum(1 for o in recap.values() if o.get('gp_total', 0) > gp)
+        r['field_size'] = n
+    return recap
+
+
 def compute_event_recap(collections, start_date, end_date, board_doc=None):
     """
     Compute per-player recap stats + team-wide superlative badges for the given
@@ -3433,33 +3482,48 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         cols_list = line_bonuses.get('cols', [])
         diags_list = line_bonuses.get('diags', [])
 
+        lines_done = 0   # full rows/cols/diagonals, whether or not they carry a bonus (Bingo! badge)
+
         for row in range(board_size):
             if all(player in tile_at(row, col).get('completedBy', []) for col in range(board_size)):
+                lines_done += 1
                 if row < len(rows_list):
                     bonus += rows_list[row]
 
         for col in range(board_size):
             if all(player in tile_at(row, col).get('completedBy', []) for row in range(board_size)):
+                lines_done += 1
                 if col < len(cols_list):
                     bonus += cols_list[col]
 
         if all(player in tile_at(i, i).get('completedBy', []) for i in range(board_size)):
+            lines_done += 1
             if len(diags_list) > 0:
                 bonus += diags_list[0]
         if all(player in tile_at(i, board_size - 1 - i).get('completedBy', []) for i in range(board_size)):
+            lines_done += 1
             if len(diags_list) > 1:
                 bonus += diags_list[1]
 
         player_scores[player]['points'] += bonus
         player_scores[player]['bonus'] = bonus
+        player_scores[player]['lines'] = lines_done
 
     # --- first/last tile completed per player + event-wide earliest/latest (First Blood/Closer) ---
     first_last = {}
     event_earliest = None  # (iso, player)
     event_latest = None
+    completion_times = {}   # player -> [naive-UTC datetimes], for Speed Demon / Last-Minute Hero
+    lone_tiles = {}         # player -> tiles nobody else completed, for Lone Wolf
     for tile in tiles:
+        completers = tile.get('completedBy', [])
+        if len(completers) == 1:
+            lone_tiles[completers[0]] = lone_tiles.get(completers[0], 0) + 1
         title = tile.get('displayTitle') or (tile.get('items') or [{}])[0].get('name') or 'a tile'
         for player, iso in (tile.get('completedAt') or {}).items():
+            done_at = _parse_iso_utc(iso)
+            if done_at:
+                completion_times.setdefault(player, []).append(done_at)
             entry = first_last.setdefault(player, {'first': iso, 'first_tile': title, 'last': iso, 'last_tile': title})
             if iso < entry['first']:
                 entry['first'], entry['first_tile'] = iso, title
@@ -3484,7 +3548,8 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         if not player:
             continue
         stats = drop_stats.setdefault(player, {
-            'drop_count': 0, 'gp_total': 0, 'days': set(), 'most_valuable': None, 'rarest_drop': None
+            'drop_count': 0, 'gp_total': 0, 'days': set(), 'most_valuable': None, 'rarest_drop': None,
+            'night': 0, 'weekend': 0, 'weekday': 0
         })
         stats['drop_count'] += 1
         value = d.get('value', 0) or 0
@@ -3492,6 +3557,10 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         ts = d.get('timestamp')
         if isinstance(ts, datetime):
             stats['days'].add(ts.date().isoformat())
+            local = _local_dt(ts)
+            if local.hour in RECAP_NIGHT_HOURS:
+                stats['night'] += 1
+            stats['weekend' if local.weekday() >= 5 else 'weekday'] += 1
         if value > 0 and (stats['most_valuable'] is None or value > stats['most_valuable'][0]):
             stats['most_valuable'] = (value, d.get('item'))
         if value > 0 and (biggest_drop is None or value > biggest_drop[0]):
@@ -3521,14 +3590,19 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
     # late-captured 'start' snapshot could show 0 gained when real gains
     # happened before it was taken). ---
     kc_gained = {}
+    bosses_killed = {}      # player -> number of different bosses with KC gained (Boss Hopper)
+    top_single_boss = {}    # player -> most KC gained at any one boss (Specialist)
     for cached in _gained_cache_docs(collections, start_date):
         snap_player = cached.get('player')
         boss_gains = cached.get('bosses', {})
         if not snap_player or not boss_gains:
             continue
-        total_gained = sum(bg.get('gained', 0) for bg in boss_gains.values() if bg.get('gained', 0) > 0)
+        gains = [bg.get('gained', 0) for bg in boss_gains.values() if bg.get('gained', 0) > 0]
+        total_gained = sum(gains)
         if total_gained > 0:
             kc_gained[snap_player] = total_gained
+            bosses_killed[snap_player] = len(gains)
+            top_single_boss[snap_player] = max(gains)
 
     # --- luck score (tiny_violin/silver_spoon): expected-vs-actual notable
     # drops, per boss, summed per player. See compute_luck_breakdown, which
@@ -3542,6 +3616,12 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         tiny_violin_player = min(luck_score, key=luck_score.get)
         silver_spoon_player = max(luck_score, key=luck_score.get)
 
+    # Dry Spell Survivor: the most kills at a single boss without one notable drop from it.
+    dry_spell = {}
+    for player, data in luck_breakdown.items():
+        dry_spell[player] = max((b.get('kc_gained', 0) for b in data.get('bosses', []) if b.get('actual', 0) == 0),
+                                default=0)
+
     roster = set(player_scores) | set(drop_stats) | set(kc_gained)
 
     # --- team-wide superlatives ---
@@ -3553,6 +3633,30 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
 
     top_kc = max(kc_gained.values(), default=0)
     top_grinders = {p for p, v in kc_gained.items() if top_kc > 0 and v == top_kc}
+
+    # --- badges added after the original nine; a tie shares the badge, like the originals ---
+    completionists = _top_players({p: sc['tiles'] for p, sc in player_scores.items()})
+    bingo_players = {p for p, sc in player_scores.items() if sc.get('lines', 0) >= 1}
+    gold_hoarders = _top_players({p: st['gp_total'] for p, st in drop_stats.items()})
+    boss_hoppers = _top_players(bosses_killed)
+    specialists = _top_players(top_single_boss)
+    end_dt = _parse_iso_utc(end_date)
+    last_minute = _top_players({
+        p: sum(1 for t in times if end_dt and t >= end_dt - timedelta(hours=24))
+        for p, times in completion_times.items()
+    })
+    speed_demons = _top_players({p: _max_in_window(times) for p, times in completion_times.items()})
+    lone_wolves = _top_players(lone_tiles)
+    night_owls = _top_players({p: st['night'] for p, st in drop_stats.items()})
+    dry_spellers = _top_players(dry_spell)
+
+    def _share_winners(key):
+        shares = {p: st[key] / st['drop_count'] for p, st in drop_stats.items()
+                  if st['drop_count'] >= RECAP_MIN_DROPS_FOR_DAY_BADGES and st[key] > 0}
+        top = max(shares.values(), default=0)
+        return {p for p, v in shares.items() if v == top}
+    weekend_warriors = _share_winners('weekend')
+    weekday_warriors = _share_winners('weekday')
 
     recap = {}
     for player in roster:
@@ -3575,6 +3679,14 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
             badges.append('tiny_violin')
         if silver_spoon_player == player:
             badges.append('silver_spoon')
+        for key, winners in (
+            ('completionist', completionists), ('bingo', bingo_players), ('gold_hoarder', gold_hoarders),
+            ('boss_hopper', boss_hoppers), ('specialist', specialists), ('last_minute', last_minute),
+            ('speed_demon', speed_demons), ('lone_wolf', lone_wolves), ('night_owl', night_owls),
+            ('dry_spell', dry_spellers), ('weekend', weekend_warriors), ('weekday', weekday_warriors),
+        ):
+            if player in winners:
+                badges.append(key)
 
         stats = drop_stats.get(player, {})
         most_valuable = stats.get('most_valuable')
@@ -3599,7 +3711,7 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
             'badges': badges
         }
 
-    return recap
+    return _attach_places(recap)
 
 
 @app.route('/event/luck', methods=['GET'])
@@ -4223,9 +4335,13 @@ def get_archived_player_recap(archive_id, player_name):
         if not archive_doc:
             return jsonify({'error': 'Archive not found'}), 404
 
-        player_recap = archive_doc.get('players', {}).get(player_name)
+        players = archive_doc.get('players', {})
+        player_recap = players.get(player_name)
         if not player_recap:
             return jsonify({'error': f'No recorded activity for {player_name} in this event'}), 404
+        if 'place' not in player_recap:
+            # archived before the redesigned recap card: work the places out from the frozen recaps
+            player_recap = _attach_places({p: dict(r) for p, r in players.items()})[player_name]
 
         return jsonify({
             'player': player_name,

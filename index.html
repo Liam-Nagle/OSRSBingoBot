@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unsociables Bingo Board</title>
+    <title>Unsociables 2026 Bingo</title>
 
     <!-- External Stylesheet -->
-    <link rel="stylesheet" href="css/style.css?v=2.12">
+    <link rel="stylesheet" href="css/style.css?v=2.13">
 </head>
 <body>
     <div class="container">
             <!-- Navigation banner / menu button (rendered by js/nav-layouts.js). display: contents lets the sticky menu button travel the whole page -->
             <div id="navHeadMount" style="display: contents;"></div>
 
-            <h1>⚔️ Unsociables Bingo Board ⚔️</h1>
+            <h1>⚔️ Unsociables 2026 Bingo ⚔️</h1>
 
             <!-- Legend (compact, sits right under the title) -->
             <div class="view-legend view-legend-compact">
@@ -50,7 +50,7 @@
                 <div id="eventTimerWidget" class="event-timer-widget">
                     <div class="event-timer-container">
                         <div class="event-timer-header">
-                            <div class="event-timer-name" id="eventName">Bingo Event</div>
+                            <div class="event-timer-name" id="eventName">Unsociables 2026 Bingo</div>
                         </div>
                         <div class="event-timer-countdown" id="eventCountdown">--:--:--</div>
                         <div class="event-timer-status-container">
@@ -831,7 +831,7 @@ Dragon warhammer"></textarea>
 
             <div id="eventFields" style="display: none;">
                 <label>Event Name:</label>
-                <input type="text" id="eventNameInput" placeholder="e.g., January 2026 Bingo" value="Bingo Event">
+                <input type="text" id="eventNameInput" placeholder="e.g., January 2026 Bingo" value="Unsociables 2026 Bingo">
 
                 <label>Start Date & Time:</label>
                 <input type="datetime-local" id="eventStartDate">
@@ -1125,7 +1125,8 @@ Dragon warhammer"></textarea>
     <!-- Navigation must load before app.js so its elements exist when app.js wires them up -->
     <script src="js/nav-layouts.js?v=1.1"></script>
 
-    <script src="js/app.js?v=3.7"></script>
+    <script src="js/recap-card.js?v=1.0"></script>
+    <script src="js/app.js?v=3.8"></script>
     <script src="js/past-bingos.js?v=1.0"></script>
 </body>
 </html>
