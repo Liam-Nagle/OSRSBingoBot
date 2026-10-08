@@ -3385,37 +3385,295 @@
             color: #6b5842;
         }
 
-        .archive-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+        /* ---- Past Bingos ---- */
+        .pb-modal {
+            max-width: 1100px;
+            width: 95%;
+        }
+
+        .pb-title {
+            margin-bottom: 4px;
+        }
+
+        .pb-sub {
+            color: #6b5842;
+            font-size: 13px;
             margin-bottom: 14px;
         }
 
-        .archive-entry {
-            background: rgba(139,105,20,0.15);
+        .pb-muted {
+            color: #8b7355;
+            font-size: 12px;
+            font-weight: normal;
+        }
+
+        .pb-back {
+            margin-bottom: 10px;
+            padding: 6px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .pb-note {
+            background: rgba(205, 139, 45, 0.15);
+            border-left: 3px solid #cd8b2d;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #6d5635;
+            margin-bottom: 12px;
+        }
+
+        .pb-bonus {
+            margin-top: 12px;
+        }
+
+        .pb-h3 {
+            color: #6d5635;
+            margin: 20px 0 8px;
+            font-size: 16px;
+        }
+
+        .pb-event-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .pb-event-card {
+            background: rgba(139, 105, 20, 0.15);
             border: 2px solid #8B6914;
-            border-radius: 6px;
-            padding: 10px 14px;
+            border-radius: 8px;
+            padding: 14px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
-        .archive-entry:hover {
-            background: rgba(139,105,20,0.3);
-            transform: translateX(3px);
+        .pb-event-card:hover {
+            background: rgba(139, 105, 20, 0.3);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
         }
 
-        .archive-entry-name {
+        .pb-event-name {
             font-weight: bold;
+            font-size: 17px;
             color: #8B4513;
         }
 
-        .archive-entry-meta {
-            font-size: 11px;
+        .pb-event-dates {
+            font-size: 12px;
             color: #6b5842;
+            margin: 2px 0 10px;
+        }
+
+        .pb-event-winner {
+            font-weight: bold;
+            color: #2c1810;
+            margin-bottom: 8px;
+        }
+
+        .pb-event-winner span {
+            color: #8b7355;
+            font-weight: normal;
+            font-size: 12px;
+        }
+
+        .pb-event-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+            font-size: 12px;
+            color: #6b5842;
+        }
+
+        .pb-admin-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 12px;
+            color: #6b5842;
+            margin-bottom: 16px;
+        }
+
+        .pb-history-box {
+            border-top: 2px solid rgba(139, 105, 20, 0.4);
+            padding-top: 6px;
+        }
+
+        .pb-history-box h3 {
+            color: #6d5635;
+            margin: 10px 0 8px;
+        }
+
+        .pb-history-box select {
+            margin-bottom: 12px;
+        }
+
+        .pb-tabs {
+            flex-wrap: wrap;
+        }
+
+        .pb-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+
+        .pb-stat {
+            flex: 1 1 130px;
+            background: rgba(255, 255, 255, 0.45);
+            border: 2px solid #cd8b2d;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .pb-stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #6d5635;
+        }
+
+        .pb-stat-label {
+            font-size: 11px;
+            color: #8b7355;
             margin-top: 2px;
         }
+
+        .pb-table-wrap {
+            overflow-x: auto;
+        }
+
+        .pb-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            color: #2c1810;
+        }
+
+        .pb-table th {
+            text-align: left;
+            padding: 8px 10px;
+            color: #6d5635;
+            border-bottom: 2px solid #cd8b2d;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .pb-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(139, 111, 71, 0.25);
+            vertical-align: top;
+        }
+
+        .pb-table tr.pb-click {
+            cursor: pointer;
+        }
+
+        .pb-table tr.pb-click:hover td {
+            background: rgba(205, 139, 45, 0.18);
+        }
+
+        .pb-toggle,
+        .pb-board-controls,
+        .pb-filters {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .pb-filters select,
+        .pb-filters input,
+        .pb-board-controls select {
+            width: auto;
+            min-width: 150px;
+            margin: 0;
+        }
+
+        .pb-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 14px;
+        }
+
+        .pb-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .pb-more summary,
+        .pb-boss-card summary {
+            cursor: pointer;
+            font-size: 12px;
+            color: #8b7355;
+            margin-top: 6px;
+        }
+
+        .pb-boss-card summary {
+            display: flex;
+            justify-content: space-between;
+            font-size: 15px;
+            font-weight: bold;
+            color: #6d5635;
+            margin: 0 0 6px;
+        }
+
+        /* A read-only copy of the live board: no hover lift, no click */
+        .pb-board .bingo-tile {
+            cursor: default;
+            min-height: 150px;
+        }
+
+        .pb-board .bingo-tile:hover {
+            transform: none;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        @media (max-width: 640px) {
+            .pb-board {
+                gap: 4px;
+            }
+
+            .pb-board .bingo-tile {
+                padding: 6px;
+                min-height: 90px;
+            }
+
+            .pb-board .tile-content {
+                font-size: 10px;
+                margin-bottom: 4px;
+            }
+
+            .pb-board .item-icon {
+                width: 32px;
+                height: 32px;
+            }
+
+            .pb-board .tile-value,
+            .pb-board .tile-players {
+                font-size: 9px;
+            }
+
+            .pb-table th,
+            .pb-table td {
+                padding: 6px;
+            }
+
+            .pb-tabs .kc-tab {
+                padding: 8px 10px;
+                font-size: 13px;
+            }
+        }
+
         /* ============================================
            10. Congrats Popup
            ============================================ */
