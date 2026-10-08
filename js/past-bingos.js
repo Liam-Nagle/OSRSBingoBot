@@ -5,7 +5,7 @@
 // Everything is read from the /event/archive/* endpoints; nothing here ever changes data.
 //
 // Loaded after app.js and relies on its globals: API_URL, isAdmin, currentPlayer, loadItemImage,
-// formatRecapGp, RECAP_BADGE_INFO, renderRecapModalContent, renderLuckPlayerView/renderLuckBossView
+// formatRecapGp, RECAP_BADGE_INFO (js/recap-card.js), renderRecapModalContent, renderLuckPlayerView/renderLuckBossView
 // (also used by the live Luck tab) and _formatLuck/_luckDiffColor.
 
 const PB = {
