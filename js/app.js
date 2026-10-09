@@ -276,46 +276,44 @@
         // EVENT RECAP + ARCHIVE
         // ============================================
 
-        // state: {loading:true} | {error:'...'} | {data:{...}} — creates the modal shell once,
-        // then only swaps the inner body, so repeated loading/error/data transitions don't
-        // rebuild the close button / heading each time.
+        // state: {loading:true} | {error:'...'} | {data:{...}}. The recap opens as a bare lightbox: just the
+        // card on a dark backdrop with two buttons under it. Clicking the backdrop (or Esc, or the corner x) closes it.
         function renderRecapModalContent(state) {
             let bodyHtml;
             if (state.loading) {
-                bodyHtml = '<div class="recap-empty">Loading...</div>';
+                bodyHtml = '<div class="rc-msg">Loading your recap...</div>';
             } else if (state.error || !state.data) {
-                bodyHtml = `<div class="recap-empty">${state.error || 'No recap data available.'}</div>`;
+                bodyHtml = `<div class="rc-msg">${state.error || 'No recap data available.'}</div>`;
             } else {
                 bodyHtml = buildRecapCardHtml(state.data) + `
                     <div class="recap-actions">
-                        <button class="btn-save" onclick="downloadRecapImage()">⬇️ Download PNG</button>
-                        <button class="btn-cancel" onclick="copyRecapImage()">📋 Copy to Clipboard</button>
+                        <button class="rc-btn" onclick="downloadRecapImage()">Download PNG</button>
+                        <button class="rc-btn" onclick="copyRecapImage()">Copy to Clipboard</button>
                     </div>
-                    <p id="recapActionStatus" style="font-size:12px; color:#6b5842; margin-top:8px; text-align:center;"></p>
+                    <p id="recapActionStatus" class="rc-status"></p>
                 `;
             }
 
             let modal = document.getElementById('recapModal');
             if (!modal) {
                 document.body.insertAdjacentHTML('beforeend', `
-                    <div class="modal" id="recapModal">
-                        <div class="modal-content">
-                            <button class="close-btn" onclick="closeRecapModal()">×</button>
-                            <h2>🎁 Event Recap</h2>
-                            <div id="recapModalBody"></div>
-                        </div>
+                    <div class="modal recap-lightbox" id="recapModal" onclick="closeRecapModal()">
+                        <button class="rc-close" onclick="closeRecapModal()" aria-label="Close">×</button>
+                        <div class="recap-stage" id="recapModalBody" onclick="event.stopPropagation()"></div>
                     </div>
                 `);
                 modal = document.getElementById('recapModal');
             }
             document.getElementById('recapModalBody').innerHTML = bodyHtml;
             modal.classList.add('active');
+            document.body.classList.add('recap-open');
             if (document.getElementById('recapCardCapture')) prepareRecapCard();
         }
 
         function closeRecapModal() {
             const modal = document.getElementById('recapModal');
             if (modal) modal.remove();
+            document.body.classList.remove('recap-open');
         }
 
         async function openRecapModal(player) {
@@ -6753,6 +6751,15 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.15.1",
+                date: "2026-10-09",
+                title: "Cleaner Year in Review view",
+                changes: [
+                    { type: "improvement", text: "The Year in Review now opens as just the card on its own, with no box around it and no scroll bar. Click anywhere outside it (or press Esc) to close it." },
+                    { type: "improvement", text: "The Download PNG and Copy to Clipboard buttons now match the card's dark and gold look." }
+                ]
+            },
             {
                 version: "v2.15.0",
                 date: "2026-10-08",
