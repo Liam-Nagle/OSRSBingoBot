@@ -44,6 +44,8 @@ const RECAP_BADGE_ORDER = [
     'speed_demon', 'lone_wolf', 'night_owl', 'dry_spell', 'weekend', 'weekday'
 ];
 const RECAP_MAX_BADGES = 9;
+const RECAP_CARD_WIDTH = 540;
+const RECAP_CARD_HEIGHT = Math.round(RECAP_CARD_WIDTH * 1704 / 900);   // frame art is 900x1704
 
 // Flavour lines. One is picked per player from a hash of their name (+ the event), so a player's card
 // never changes between opens, but different players get different lines.
@@ -354,10 +356,12 @@ function layoutRecapCard() {
             name.style.fontSize = size + 'px';
         }
     }
+    // The card is a fixed 540px wide; shrink it so the whole card plus its buttons fits on screen without scrolling.
     const scale = document.querySelector('#recapModalBody .rc-scale');
-    const body = document.getElementById('recapModalBody');
-    if (scale && body) {
-        scale.style.zoom = Math.min(1, (body.clientWidth - 4) / 540);
+    if (scale) {
+        const fitWidth = (window.innerWidth - 24) / RECAP_CARD_WIDTH;
+        const fitHeight = (window.innerHeight - 96) / RECAP_CARD_HEIGHT;
+        scale.style.zoom = Math.max(0.25, Math.min(1, fitWidth, fitHeight));
     }
 }
 
@@ -388,3 +392,7 @@ async function captureRecapCanvas() {
 }
 
 window.addEventListener('resize', () => { if (document.getElementById('recapCardCapture')) layoutRecapCard(); });
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('recapModal')) closeRecapModal();
+});

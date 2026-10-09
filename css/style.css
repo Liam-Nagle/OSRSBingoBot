@@ -3122,10 +3122,6 @@
         EVENT RECAP CARD + ARCHIVE
         ============================================ */
 
-        #recapModal .modal-content {
-            max-width: 620px;
-        }
-
         #archiveModal .modal-content {
             max-width: 480px;
         }
@@ -3341,14 +3337,82 @@
         .rc-tight .rc-section-title { margin: 0 0 3px; }
         .rc-tight .rc-badge-key { padding: 0 16px 14px; }
 
-        .recap-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 18px;
+        /* Lightbox: the card sits straight on the dark backdrop, no box, border or scroll bar */
+        #recapModal.recap-lightbox {
+            z-index: 3000;
+            overflow: hidden;
+            background: rgba(8, 5, 3, 0.88);
+            cursor: pointer;
         }
 
-        .recap-actions button {
-            flex: 1;
+        body.recap-open { overflow: hidden; }
+
+        .recap-stage {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            cursor: default;
+        }
+
+        .rc-close {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            font: 400 30px/1 'Crimson Pro', Georgia, serif;
+            color: #b9a27a;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        .rc-close:hover { color: #f8e2a0; }
+
+        .recap-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .rc-btn {
+            padding: 10px 20px;
+            font: 700 12px/1 'Cinzel', Georgia, serif;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #f8e2a0;
+            background: linear-gradient(180deg, #5c3b12 0%, #3a2209 100%);
+            border: 2px solid #e9b94a;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 226, 160, 0.25);
+            cursor: pointer;
+        }
+        .rc-btn:hover {
+            color: #fff6cc;
+            background: linear-gradient(180deg, #7a5018 0%, #4d2d0c 100%);
+            box-shadow: 0 2px 14px rgba(233, 185, 74, 0.45), inset 0 1px 0 rgba(255, 226, 160, 0.35);
+        }
+        .rc-btn:active { transform: translateY(1px); }
+
+        .rc-status {
+            min-height: 14px;
+            margin: -4px 0 0;
+            font: italic 500 14px/1 'Crimson Pro', Georgia, serif;
+            color: #e8cf93;
+            text-align: center;
+        }
+
+        .rc-msg {
+            padding: 14px 26px;
+            font: 700 13px/1.3 'Cinzel', Georgia, serif;
+            letter-spacing: 1.5px;
+            text-align: center;
+            color: #f8e2a0;
+            background: #2a190e;
+            border: 2px solid #e9b94a;
+            border-radius: 8px;
         }
 
         .recap-empty {
