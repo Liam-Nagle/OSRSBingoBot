@@ -41,6 +41,13 @@
         const API_URL = 'https://osrsbingobot.onrender.com'; //Production ENV Oracle Cloud
         //const API_URL = 'http://localhost:5000'; //Local Testing
 
+        // Multi-board (see js/boards.js). All of these quietly do nothing/return the old behaviour when the
+        // original single board is showing, so existing URLs and requests are unchanged for it.
+        const boardQ = () => (typeof BoardsUI !== 'undefined' ? BoardsUI.boardQuery() : '');
+        const currentBoardId = () => (typeof BoardsUI !== 'undefined' ? BoardsUI.currentBoardId() : 'main');
+        const statsScopeQ = (prefix) => (typeof BoardsUI !== 'undefined' ? BoardsUI.statsScopeQuery(prefix) : '');
+        const analyticsScopeQ = (prefix) => (typeof BoardsUI !== 'undefined' ? BoardsUI.analyticsScopeQuery(prefix) : '');
+
         // Tenant & Plan tracking
         let currentTenant = null;
         let tenantPlan = 'free';
@@ -586,7 +593,8 @@
                         password: password,
                         tileIndex: tileNum - 1,
                         playerName: playerName,
-                        action: action
+                        action: action,
+                        boardId: currentBoardId()
                     })
                 });
 
@@ -786,8 +794,11 @@
             // Load tenant info FIRST
             await loadTenantInfo();
 
+            // Which boards exist and which one to show (a no-op for the original single board)
+            if (typeof BoardsUI !== 'undefined') await BoardsUI.init();
+
             try {
-                const response = await fetch(`${API_URL}/bingo`);
+                const response = await fetch(`${API_URL}/bingo${boardQ()}`);
                 console.log(`API Response Status: ${response.status}`);
 
                 if (response.ok) {
@@ -880,16 +891,24 @@
             };
         }
 
-        async function refreshFromAPI() {
+        // Switching boards: forget the previous board's rank order / "since last visit" baseline so nothing
+        // animates or compares across two different boards.
+        function resetBoardView() {
+            previousPlayerRankOrder = null;
+            if (currentBoardId() !== 'main') visitBaselineScores = null;
+        }
+
+        async function refreshFromAPI(force = false) {
             try {
-                const response = await fetch(`${API_URL}/bingo`);
-                if (response.ok) {
+                const boardAtRequest = currentBoardId();
+                const response = await fetch(`${API_URL}/bingo${boardQ()}`);
+                if (response.ok && boardAtRequest === currentBoardId()) {
                     const newData = await response.json();
 
                     const oldDataStr = JSON.stringify(bingoData);
                     const newDataStr = JSON.stringify(newData);
 
-                    if (oldDataStr !== newDataStr) {
+                    if (force || oldDataStr !== newDataStr) {
                         console.log('📊 Data updated from API');
                         bingoData = newData;
 
@@ -913,7 +932,7 @@
                         renderBoard();
                         updatePlayerStats();
 
-                        localStorage.setItem('bingoData', JSON.stringify(bingoData));
+                        if (currentBoardId() === 'main') localStorage.setItem('bingoData', JSON.stringify(bingoData));
                     }
                 }
             } catch (err) {
@@ -1441,7 +1460,7 @@
                 const response = await fetch(`${API_URL}/shuffle-board`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ password: password })
+                    body: JSON.stringify({ password: password, boardId: currentBoardId() })
                 });
 
                 const result = await response.json();
@@ -1526,7 +1545,7 @@
                 delete dataToSave.adminPassword;
             }
 
-            localStorage.setItem('bingoData', JSON.stringify(dataToSave));
+            if (currentBoardId() === 'main') localStorage.setItem('bingoData', JSON.stringify(dataToSave));
 
             const adminPw = sessionStorage.getItem('adminPassword');
             if (!adminPw) {
@@ -1538,7 +1557,7 @@
                 const response = await fetch(`${API_URL}/update`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({...dataToSave, password: adminPw})
+                    body: JSON.stringify({...dataToSave, password: adminPw, boardId: currentBoardId()})
                 });
 
                 if (response.ok) {
@@ -1595,6 +1614,12 @@
         }
 
         function updatePlayerStats() {
+            // Combined / team standings come from the server (see js/boards.js); a plain individual board
+            // keeps the exact live calculation below.
+            if (typeof BoardsUI !== 'undefined' && BoardsUI.needsServerLeaderboard()) {
+                BoardsUI.renderServerLeaderboard();
+                return;
+            }
             const statsDiv = document.getElementById('playerStats');
             const playerScores = {};
 
@@ -2407,6 +2432,7 @@
 
         function openAnalyticsModal() {
             document.getElementById('analyticsModal').classList.add('active');
+            if (typeof BoardsUI !== 'undefined') BoardsUI.populateAnalyticsScope();
             loadAnalyticsEventConfig().then(() => loadAnalytics());
         }
 
@@ -2458,6 +2484,7 @@
             const hasEvent = _analyticsEventConfig && _analyticsEventConfig.enabled && _analyticsEventConfig.startDate;
             if (mode === 'bingo' && !hasEvent) return; // nothing to scope to
 
+            if (typeof BoardsUI !== 'undefined') BoardsUI.clearAnalyticsScope();
             _analyticsMode = mode;
             document.getElementById('analyticsModeBingo').classList.toggle('active', mode === 'bingo');
             document.getElementById('analyticsModeAlltime').classList.toggle('active', mode === 'alltime');
@@ -2469,6 +2496,7 @@
 
         // Returns the start_date query param to scope fetches to the current event, or null for all-time
         function getAnalyticsStartDate() {
+            if (typeof BoardsUI !== 'undefined' && BoardsUI.hasAnalyticsScope()) return null; // the server scope covers it
             if (_analyticsMode !== 'bingo') return null;
             if (!_analyticsEventConfig || !_analyticsEventConfig.enabled || !_analyticsEventConfig.startDate) return null;
             return _analyticsEventConfig.startDate;
@@ -2907,6 +2935,7 @@
             if (!dateStart) {
                 const eventStartDate = getAnalyticsStartDate();
                 if (eventStartDate) params.append('start_date', eventStartDate);
+                if (typeof BoardsUI !== 'undefined') BoardsUI.applyAnalyticsScope(params);
             }
 
             try {
@@ -3123,6 +3152,7 @@
                 const params = new URLSearchParams({ limit: 10000 });
                 const startDate = getAnalyticsStartDate();
                 if (startDate) params.append('start_date', startDate);
+                const scopedAnalytics = typeof BoardsUI !== 'undefined' && BoardsUI.applyAnalyticsScope(params);
 
                 const [response] = await Promise.all([
                     fetch(`${API_URL}/history?${params}`),
@@ -3133,7 +3163,7 @@
                 const data = await response.json();
 
                 if (!data.history || data.history.length === 0) {
-                    const msg = startDate ? 'No drops recorded yet for the current event!' : 'No data available yet!';
+                    const msg = (startDate || scopedAnalytics) ? 'No drops recorded yet for the current event!' : 'No data available yet!';
                     loadingDiv.innerHTML = `<div style="text-align: center; padding: 60px; color: #666;">${msg}</div>`;
                     loadingDiv.style.display = 'block';
                     contentDiv.style.display = 'none';
@@ -3466,6 +3496,7 @@
             if (searchFilter) params.append('search', searchFilter);
             const expandedEventStartDate = getAnalyticsStartDate();
             if (expandedEventStartDate) params.append('start_date', expandedEventStartDate);
+            if (typeof BoardsUI !== 'undefined') BoardsUI.applyAnalyticsScope(params);
 
             try {
                 const response = await fetch(`${API_URL}/history?${params}`);
@@ -4651,6 +4682,7 @@ async function loadAnalyticsWithFilters() {
 
             const eventStartDate = getAnalyticsStartDate();
             if (eventStartDate) params.append('start_date', eventStartDate);
+            if (typeof BoardsUI !== 'undefined') BoardsUI.applyAnalyticsScope(params);
 
             try {
                 const response = await fetch(`${API_URL}/history?${params}`);
@@ -4993,9 +5025,9 @@ async function loadAnalyticsWithFilters() {
             try {
                 // Fetch player deaths, NPC deaths, AND player-NPC breakdown
                 const [playerResponse, npcResponse, playerNpcResponse] = await Promise.all([
-                    fetch(`${API_URL}/deaths`),
-                    fetch(`${API_URL}/deaths/by-npc`),
-                    fetch(`${API_URL}/deaths/by-player-npc`)  // ⭐ NEW ENDPOINT
+                    fetch(`${API_URL}/deaths${analyticsScopeQ()}`),
+                    fetch(`${API_URL}/deaths/by-npc${analyticsScopeQ()}`),
+                    fetch(`${API_URL}/deaths/by-player-npc${analyticsScopeQ()}`)  // ⭐ NEW ENDPOINT
                 ]);
 
                 if (!playerResponse.ok) {
@@ -5221,7 +5253,7 @@ async function loadAnalyticsWithFilters() {
             container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><p>Loading death breakdown...</p></div>';
 
             try {
-                const response = await fetch(`${API_URL}/deaths/by-player-npc`);
+                const response = await fetch(`${API_URL}/deaths/by-player-npc${analyticsScopeQ()}`);
                 const data = await response.json();
 
                 if (!data.player_npc_deaths || Object.keys(data.player_npc_deaths).length === 0) {
@@ -5442,6 +5474,7 @@ async function loadAnalyticsWithFilters() {
 
         async function openKCModal() {
             document.getElementById('kcModal').classList.add('active');
+            if (typeof BoardsUI !== 'undefined') BoardsUI.mountStatsScope('kcScopeHost');
 
             // Show admin controls if admin
             if (isAdmin) {
@@ -5495,8 +5528,8 @@ async function loadAnalyticsWithFilters() {
             try {
                 const [allResp, effortResp, luckResp, luckAllTimeResp] = await Promise.all([
                     fetch(`${API_URL}/kc/all`),
-                    fetch(`${API_URL}/kc/effort`),
-                    fetch(`${API_URL}/event/luck`),
+                    fetch(`${API_URL}/kc/effort${statsScopeQ()}`),
+                    fetch(`${API_URL}/event/luck${statsScopeQ()}`),
                     fetch(`${API_URL}/event/luck?all_time=true`)
                 ]);
                 _kcAllData = await allResp.json();
@@ -5545,13 +5578,40 @@ async function loadAnalyticsWithFilters() {
             }
         }
 
+        // What the KC screen's "Current Bingo" side is showing, in words (names the chosen board/event/range)
+        function kcModeLabelText(mode) {
+            if (mode !== 'bingo') return 'Total account KC';
+            if (typeof BoardsUI !== 'undefined' && BoardsUI.hasStatsScope() && _kcEffortData) {
+                let text = `Gains during ${_kcEffortData.label || 'the chosen period'}`;
+                if (_kcEffortData.spans_gaps) text += ' (covers the gap between boards)';
+                const n = (_kcEffortData.unavailable || []).length;
+                if (n) text += ` - ${n} player${n > 1 ? 's' : ''} could not be fetched from WiseOldMan`;
+                return text;
+            }
+            return 'Gains since bingo start';
+        }
+
         function switchKCMode(mode) {
             _kcMode = mode;
             document.getElementById('kcModeBingo').classList.toggle('active', mode === 'bingo');
             document.getElementById('kcModeAlltime').classList.toggle('active', mode === 'alltime');
             const label = document.getElementById('kcModeLabel');
-            if (label) label.textContent = mode === 'bingo' ? 'Gains since bingo start' : 'Total account KC';
+            if (label) label.textContent = kcModeLabelText(mode);
+            // The scope picker is for gains/luck over a period; All Time is a lifetime total, so it has no scope.
+            const scopeHost = document.getElementById('kcScopeHost');
+            if (scopeHost) scopeHost.style.display = mode === 'bingo' ? '' : 'none';
             _renderAllKCTabs();
+        }
+
+        // Scope picker (js/boards.js) changed: reload KC gained + luck for that period. Gains only make sense on
+        // the Current Bingo side, so pick it.
+        async function kcScopeChanged() {
+            const modal = document.getElementById('kcModal');
+            if (!modal || !modal.classList.contains('active')) return;
+            const label = document.getElementById('kcModeLabel');
+            if (label) label.textContent = 'Loading (a new period can take a few seconds)...';
+            await loadKCData();
+            switchKCMode('bingo');
         }
 
         function renderKCDetails(mode) {
@@ -6522,7 +6582,13 @@ async function loadAnalyticsWithFilters() {
 
         function openPBsModal() {
             document.getElementById('pbsModal').classList.add('active');
+            if (typeof BoardsUI !== 'undefined') BoardsUI.mountStatsScope('pbScopeHost');
             loadPBs();
+        }
+
+        function pbScopeChanged() {
+            const modal = document.getElementById('pbsModal');
+            if (modal && modal.classList.contains('active')) loadPBs();
         }
 
         function closePBsModal() {
@@ -6540,10 +6606,16 @@ async function loadAnalyticsWithFilters() {
             contentDiv.innerHTML = '';
 
             try {
-                const response = await fetch(`${API_URL}/pbs`);
+                const response = await fetch(`${API_URL}/pbs${statsScopeQ()}`);
                 const data = await response.json();
                 const pbs = data.personal_bests || [];
 
+                if (pbs.length === 0 && typeof BoardsUI !== 'undefined' && BoardsUI.hasStatsScope()) {
+                    contentDiv.innerHTML = '<div style="text-align:center;padding:60px;color:#666;">No personal bests were set in that period.</div>';
+                    loadingDiv.style.display = 'none';
+                    contentDiv.style.display = 'block';
+                    return;
+                }
                 if (pbs.length === 0) {
                     contentDiv.innerHTML = '<div style="text-align:center;padding:60px;color:#666;">No personal bests recorded yet.<br><br>Use <strong>!import_pbs</strong> in Discord to backfill from history.</div>';
                     loadingDiv.style.display = 'none';
@@ -6751,6 +6823,30 @@ async function loadAnalyticsWithFilters() {
 
         // Changelog data (update this manually or load from JSON file)
         const changelogData = [
+            {
+                version: "v2.16.1",
+                date: "2026-10-16",
+                title: "Look at any board, any month",
+                changes: [
+                    { type: "feature", text: "KC gained, the Luck tracker and Personal Bests can now be filtered to any board, a whole event, or a custom date range - so you can look back at, say, just February's board or a 6 month board. Doom delves, raids and the plugin's kill counts are included for whatever period you pick. All Time views are unchanged." },
+                    { type: "improvement", text: "When an event has lots of boards (like a year of monthly boards), the board switcher now shows the long boards as buttons and the monthly ones in a dropdown with previous and next arrows, so it's easy to go back and look at January." },
+                    { type: "improvement", text: "KC gained now also counts the bosses only the RuneLite plugin tracks - Tormented Demons, the gorillas and the raid entry modes - for the current bingo and for any period you pick." },
+                    { type: "improvement", text: "Drops and deaths that happen outside the event's dates are now properly ignored." }
+                ]
+            },
+            {
+                version: "v2.16.0",
+                date: "2026-10-15",
+                title: "Multiple boards",
+                changes: [
+                    { type: "feature", text: "An event can now run more than one board at once - for example a long board running underneath with shorter seasonal or monthly boards on top. Switch between them with the buttons above the board." },
+                    { type: "feature", text: "A drop now counts on every board it's on while that board is live, so one item can score on several boards at once." },
+                    { type: "feature", text: "The leaderboard can show a single board, a combined leaderboard that adds up each board's points, or any boards you pick yourself." },
+                    { type: "feature", text: "Analytics can now be filtered by board, by a whole event, or by a custom date range." },
+                    { type: "feature", text: "Boards can be set up as team boards, where tiles and lines count for the team instead of the individual." },
+                    { type: "improvement", text: "Past Bingos now keeps every board from an event together, with each board's standings, its board, and the combined standings." }
+                ]
+            },
             {
                 version: "v2.15.1",
                 date: "2026-10-09",
@@ -8573,7 +8669,7 @@ function startEventCountdown(config) {
             if (!amountEl) return;
 
             try {
-                const response = await fetch(`${API_URL}/history/total-value`);
+                const response = await fetch(`${API_URL}/history/total-value${currentBoardId() === 'main' ? '' : `?scope=board:${encodeURIComponent(currentBoardId())}`}`);
                 if (!response.ok) throw new Error('Failed to fetch total value');
 
                 const data = await response.json();

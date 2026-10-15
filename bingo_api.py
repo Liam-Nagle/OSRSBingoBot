@@ -11,6 +11,8 @@ import hashlib
 import secrets
 from raid_luck import compute_raid_luck, compute_raid_luck_event
 from doom_luck import compute_doom_luck
+import multiboard
+from multiboard import MAIN_ID
 import io
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
@@ -259,6 +261,7 @@ def get_tenant_collections(tenant_id=None):
         'personal_bests': db[f'tenant_{subdomain}_personal_bests'],
         'archive': db[f'tenant_{subdomain}_archive'],
         'gained_cache': db[f'tenant_{subdomain}_gained_cache'],
+        'gained_windows': db[f'tenant_{subdomain}_gained_windows'],
         'collection_log_cache': db[f'tenant_{subdomain}_collection_log_cache'],
         'plugin_clog': db[f'tenant_{subdomain}_plugin_clog'],
         'plugin_kc': db[f'tenant_{subdomain}_plugin_kc'],
@@ -1483,7 +1486,7 @@ def get_notable_drops():
 DOOM_ROW_NAMES = ['Doom of Mokhaiotl (Delve 8)', 'Doom of Mokhaiotl (Delve 9+)']
 
 
-def apply_doom_delve_rows(collections, bosses_by_player, event_start=None):
+def apply_doom_delve_rows(collections, bosses_by_player, event_start=None, event_end=None):
     """
     Replace each player's single Doom of Mokhaiotl row (the hiscores only count deep delves) with one row
     for delve 8 and for delves past 8, from the plugin's exact completions. Players whose plugin hasn't synced Doom keep
@@ -1498,12 +1501,26 @@ def apply_doom_delve_rows(collections, bosses_by_player, event_start=None):
             start_dt = datetime.fromisoformat(str(event_start).replace('Z', '+00:00')).replace(tzinfo=None)
         except ValueError:
             start_dt = None
+    end_dt = None
+    if event_end:
+        try:
+            end_dt = datetime.fromisoformat(str(event_end).replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            end_dt = None
+    if end_dt and end_dt >= datetime.utcnow():
+        end_dt = None  # window still running: "now" is the end
     for doc in collections['plugin_doom'].find({}):
         player = doc.get('player')
         levels = list(doc.get('levels') or [])
         if player not in bosses_by_player or len(levels) != 8:
             continue
         counts = levels + [doc.get('past8') or 0]
+        if end_dt:
+            # A finished window: count delves up to its end, from the latest snapshot at or before it.
+            at_end = collections['plugin_doom_history'].find_one(
+                {'player': player, 'timestamp': {'$lte': end_dt}}, sort=[('timestamp', -1)])
+            if at_end and len(at_end.get('levels') or []) == 8:
+                counts = list(at_end['levels']) + [at_end.get('past8') or 0]
         if start_dt:
             base = collections['plugin_doom_history'].find_one(
                 {'player': player, 'timestamp': {'$lte': start_dt}}, sort=[('timestamp', -1)])
@@ -1515,6 +1532,142 @@ def apply_doom_delve_rows(collections, bosses_by_player, event_start=None):
         for name, n in zip(DOOM_ROW_NAMES, counts[7:]):
             if n > 0:
                 bosses[name] = n
+
+
+GAINED_WINDOW_REFRESH = timedelta(hours=3)
+
+
+def _scope_single_window(collections, scope):
+    """
+    (label, start_dt, end_dt, is_hull) for views that can only look at ONE contiguous span (KC gained, luck).
+    A scope made of several separate windows (e.g. a January board and a March board) is covered by the span
+    from the earliest start to the latest end, and is_hull says so - the gap between them is included.
+    """
+    label, windows = _scope_windows(collections, scope)
+    if not windows:
+        return label, None, None, False
+    starts = [w[0] for w in windows]
+    ends = [w[1] for w in windows]
+    start = None if any(x is None for x in starts) else min(starts)
+    end = None if any(x is None for x in ends) else max(ends)
+    return label, start, end, len(windows) > 1
+
+
+def _iso_z(dt_):
+    return dt_.isoformat() + 'Z' if dt_ else None
+
+
+def gained_for_window(collections, start_dt, end_dt, players):
+    """
+    KC gained per boss over an arbitrary window, from WiseOldMan, cached per (player, window).
+    Returns ({player: {boss: {start, end, gained}}}, missing_players). A window that has ended is fetched once
+    and kept; one still running is refreshed when its cached copy is a few hours old.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    now = datetime.utcnow()
+    start_dt = start_dt or datetime(2013, 1, 1)
+    if start_dt >= now:
+        return {}, []
+    ended = bool(end_dt) and end_dt <= now
+    fetch_end = end_dt if ended else now
+    skey, ekey = _iso_z(start_dt), _iso_z(end_dt) if end_dt else None
+
+    result, todo = {}, []
+    for player in players:
+        doc = collections['gained_windows'].find_one({'player': player, 'start': skey, 'end': ekey})
+        fresh = doc and ((ended and doc.get('final')) or (not ended and doc.get('fetched_at') and now - doc['fetched_at'] < GAINED_WINDOW_REFRESH))
+        if fresh:
+            result[player] = doc.get('bosses') or {}
+        else:
+            todo.append(player)
+
+    missing = []
+    if todo:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            fetched = list(pool.map(lambda pl: (pl, fetch_wom_gained(pl, _iso_z(start_dt), _iso_z(fetch_end))[0]), todo))
+        for player, bosses in fetched:
+            if bosses is None:
+                stale = collections['gained_windows'].find_one({'player': player, 'start': skey, 'end': ekey})
+                if stale:
+                    result[player] = stale.get('bosses') or {}  # better stale than nothing
+                missing.append(player)
+                continue
+            collections['gained_windows'].update_one(
+                {'player': player, 'start': skey, 'end': ekey},
+                {'$set': {'player': player, 'start': skey, 'end': ekey, 'bosses': bosses,
+                          'fetched_at': now, 'final': ended}},
+                upsert=True)
+            result[player] = bosses
+    return result, missing
+
+
+# Raid modes WiseOldMan has no metric for. The other raid modes (CoX, CoX CM, ToB, ToB hard, ToA, ToA expert) come
+# from WiseOldMan, so the plugin's counters for those are skipped rather than double counted.
+PLUGIN_ONLY_RAID_COUNTERS = {'theatre_of_blood_entry', 'tombs_of_amascut_entry'}
+
+
+def _plugin_only_kc_key(name):
+    """Boss key for a plugin kill counter WiseOldMan doesn't cover (Tormented Demon, gorillas, raid entry modes), else None."""
+    key = normalize_boss_name(name)
+    if not key:
+        return None
+    if key in PLUGIN_ONLY_RAID_COUNTERS:
+        return key
+    wom_keys = {normalize_boss_name(v) for v in WOM_BOSS_MAPPING.values()} | set(WOM_BOSS_MAPPING)
+    if key in wom_keys or key == 'doom_of_mokhaiotl':
+        return None
+    return key if key in BOSS_DROP_RATES else None
+
+
+def plugin_only_kc_gained(collections, start_dt, end_dt):
+    """
+    KC gained over [start, end] for the bosses only the RuneLite plugin counts, as {player: {boss name: gained}}.
+    Taken from the plugin's daily counter snapshots: the count at the window's end (the latest snapshot at or
+    before it, or the live counter while it is still running) minus the count at its start (the latest snapshot at
+    or before it; failing that, the first snapshot inside the window). Kills before a player's first sync can't be
+    known, so this can undercount slightly, and a boss with no usable snapshot is left out rather than guessed.
+    """
+    now = datetime.utcnow()
+    over = bool(end_dt) and end_dt < now
+    result = {}
+    for doc in collections['plugin_kc'].find({}):
+        player = doc.get('player')
+        if not player:
+            continue
+        snapshots = list(collections['plugin_kc_history'].find({'player': player}, sort=[('timestamp', 1)]))
+
+        def count_in(snap, name):
+            return next((c.get('kc', 0) for c in snap.get('counts') or [] if isinstance(c, dict) and c.get('name') == name), None)
+
+        for entry in doc.get('counts') or []:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get('name')
+            if not _plugin_only_kc_key(name):
+                continue
+            with_boss = [sn for sn in snapshots if count_in(sn, name) is not None]
+            if over:
+                before_end = [sn for sn in with_boss if sn['timestamp'] <= end_dt]
+                if not before_end:
+                    continue
+                end_kc = count_in(before_end[-1], name)
+                pool = before_end
+            else:
+                end_kc = entry.get('kc', 0)
+                pool = with_boss
+            base_kc = None
+            if start_dt:
+                earlier = [sn for sn in pool if sn['timestamp'] <= start_dt]
+                if earlier:
+                    base_kc = count_in(earlier[-1], name)
+            if base_kc is None:
+                inside = [sn for sn in pool if not start_dt or sn['timestamp'] >= start_dt]
+                if not inside:
+                    continue
+                base_kc = count_in(inside[0], name)
+            if end_kc - base_kc > 0:
+                result.setdefault(player, {})[name] = end_kc - base_kc
+    return result
 
 
 @app.route('/kc/effort', methods=['GET'])
@@ -1531,6 +1684,25 @@ def get_kc_effort():
     try:
         # Get all players
         players = collections['kc'].distinct('player')
+
+        if request.args.get('scope') and request.args.get('scope') != 'all':
+            # Any board / event / date range: gains over that window, straight from WiseOldMan (cached).
+            label, start_dt, end_dt, hull = _scope_single_window(collections, request.args['scope'])
+            gained, missing = gained_for_window(collections, start_dt, end_dt, players)
+            plugin_extra = plugin_only_kc_gained(collections, start_dt, end_dt)
+            scoped = []
+            for player in sorted(set(gained) | set(plugin_extra)):
+                effort = {boss: d['gained'] for boss, d in (gained.get(player) or {}).items() if d.get('gained', 0) > 0}
+                effort.update(plugin_extra.get(player, {}))
+                if effort:
+                    scoped.append({'player': player, 'effort': effort, 'start_timestamp': _iso_z(start_dt),
+                                   'current_timestamp': datetime.utcnow().isoformat()})
+            if scoped:
+                apply_doom_delve_rows(collections, {r['player']: r['effort'] for r in scoped},
+                                      _iso_z(start_dt), _iso_z(end_dt))
+            return jsonify({'success': bool(scoped), 'players': scoped, 'label': label, 'spans_gaps': hull,
+                            'unavailable': missing,
+                            **({} if scoped else {'message': 'No KC gained in that period.'})})
 
         effort_results = []
 
@@ -1552,6 +1724,20 @@ def get_kc_effort():
                 'current_timestamp': cached.get('fetched_at').isoformat() if cached.get('fetched_at') else None
             })
 
+        # Bosses only the plugin counts (Tormented Demon, gorillas, raid entry modes), over the same window.
+        if effort_results:
+            first = effort_results[0]
+            plugin_extra = plugin_only_kc_gained(collections, _parse_iso_utc(first.get('start_timestamp')),
+                                                 _parse_iso_utc((collections['gained_cache'].find_one({'player': first['player']}) or {}).get('event_end')))
+            by_player = {r['player']: r for r in effort_results}
+            for player, extra in plugin_extra.items():
+                if player in by_player:
+                    by_player[player]['effort'].update(extra)
+                else:
+                    effort_results.append({'player': player, 'effort': dict(extra),
+                                           'start_timestamp': first.get('start_timestamp'),
+                                           'current_timestamp': first.get('current_timestamp')})
+
         if effort_results:
             apply_doom_delve_rows(collections, {r['player']: r['effort'] for r in effort_results},
                                   effort_results[0].get('start_timestamp'))
@@ -1568,6 +1754,8 @@ def get_kc_effort():
             'players': effort_results
         })
 
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return jsonify({
             'success': False,
@@ -1671,19 +1859,28 @@ def check_duplicate_in_history(player, item, message_timestamp, seconds=5):
         return False
 
 
-def load_bingo_data(tenant_id=None):
-    """Load bingo board data from MongoDB or file"""
+def _board_query(board_id):
+    """Mongo filter for a board document. "main" is the original single board, kept where it always lived."""
+    if not board_id or board_id == MAIN_ID:
+        return {'type': 'current_board'}
+    return {'type': 'board', 'board_id': board_id}
+
+
+def load_bingo_data(tenant_id=None, board_id=None):
+    """Load bingo board data from MongoDB or file. board_id None/"main" is the original board."""
     if USE_MONGODB:
         try:
             # Get tenant-specific collection
             collections = get_tenant_collections(tenant_id)
             bingo_coll = collections['bingo']
 
-            board = bingo_coll.find_one({'type': 'current_board'})
+            board = bingo_coll.find_one(_board_query(board_id))
             if board:
                 board.pop('_id', None)
                 board.pop('type', None)
                 return board
+            if board_id and board_id != MAIN_ID:
+                return None
         except Exception as e:
             print(f"Error loading from MongoDB: {e}")
 
@@ -1717,20 +1914,27 @@ def load_bingo_data(tenant_id=None):
     }
 
 
-def save_bingo_data(data, tenant_id=None):
-    """Save bingo board data to MongoDB or file"""
+def save_bingo_data(data, tenant_id=None, board_id=None):
+    """Save bingo board data to MongoDB or file. board_id None/"main" is the original board."""
     if USE_MONGODB:
         try:
             # Get tenant-specific collection
             collections = get_tenant_collections(tenant_id)
             bingo_coll = collections['bingo']
+            query = _board_query(board_id)
 
-            data['type'] = 'current_board'
-            bingo_coll.replace_one(
-                {'type': 'current_board'},
-                data,
-                upsert=True
-            )
+            # The editor round-trips whole boards; never let a save drop the board's own settings
+            # (name, dates, team setup, weight...) just because the client didn't send them back.
+            existing = bingo_coll.find_one(query, {k: 1 for k in multiboard.BOARD_META_KEYS})
+            if existing:
+                for key in multiboard.BOARD_META_KEYS:
+                    if key not in data and key in existing:
+                        data[key] = existing[key]
+
+            data['type'] = query['type']
+            if 'board_id' in query:
+                data['board_id'] = query['board_id']
+            bingo_coll.replace_one(query, data, upsert=True)
             print("[OK] Saved to MongoDB")
             return
         except Exception as e:
@@ -1741,12 +1945,116 @@ def save_bingo_data(data, tenant_id=None):
         json.dump(data, f, indent=2)
 
 
+# ============================================
+# EVENTS + BOARDS (multi-board)
+# ============================================
+# An event is the container (name + dates); boards live inside it. The original event/board are event/board
+# "main": the event is the long-standing {_id: 'event_config'} document and the board is {type: 'current_board'},
+# so existing data and every older endpoint keep working untouched. Extra events/boards are additional documents
+# in the same collection: {type: 'event', event_id, ...} and {type: 'board', board_id, event_id, ...}.
+
+def _event_view(doc):
+    return {
+        'event_id': doc.get('event_id') or MAIN_ID,
+        'eventName': doc.get('eventName', 'Bingo Event'),
+        'enabled': bool(doc.get('enabled', False)),
+        'startDate': doc.get('startDate'),
+        'endDate': doc.get('endDate'),
+    }
+
+
+def list_events(collections):
+    """All events, "main" first."""
+    events = []
+    main = collections['bingo'].find_one({'_id': 'event_config'})
+    if main:
+        events.append(_event_view(main))
+    extras = sorted(collections['bingo'].find({'type': 'event'}), key=lambda d: d.get('startDate') or '')
+    events.extend(_event_view(d) for d in extras)
+    return events
+
+
+def get_event(collections, event_id):
+    for event in list_events(collections):
+        if event['event_id'] == (event_id or MAIN_ID):
+            return event
+    return None
+
+
+def list_boards(collections, event_id=None, include_tiles=False):
+    """
+    Board documents with normalized settings under 'meta', "main" first then by order/name.
+    include_tiles=False drops the heavy tile data for list/picker views.
+    """
+    docs = []
+    main = collections['bingo'].find_one({'type': 'current_board'})
+    if main:
+        docs.append(main)
+    docs.extend(sorted(collections['bingo'].find({'type': 'board'}),
+                       key=lambda d: (d.get('order', 0), (d.get('name') or '').lower())))
+    boards = []
+    for doc in docs:
+        meta = multiboard.normalize_board_meta(doc)
+        if event_id and meta['event_id'] != event_id:
+            continue
+        doc.pop('_id', None)
+        doc.pop('type', None)
+        if not include_tiles:
+            summary = {k: v for k, v in doc.items() if k not in ('tiles', 'completions')}
+            summary['meta'] = meta
+            summary['tileCount'] = len(doc.get('tiles', []))
+            boards.append(summary)
+        else:
+            doc['meta'] = meta
+            boards.append(doc)
+    return boards
+
+
+def get_board(collections, board_id):
+    wanted = board_id or MAIN_ID
+    for board in list_boards(collections, include_tiles=True):
+        if board['meta']['board_id'] == wanted:
+            return board
+    return None
+
+
+def active_boards_at(collections, when):
+    """
+    Boards that should receive a drop timestamped `when` (naive UTC): the board is enabled, its event is enabled,
+    and `when` is inside the board's window (its own dates, else the event's). The original main board follows
+    the historical rule - it always takes drops the event window already let through - unless the admin has
+    given it dates of its own.
+    """
+    events = {e['event_id']: e for e in list_events(collections)}
+    active = []
+    for board in list_boards(collections, include_tiles=True):
+        meta = board['meta']
+        if not meta['enabled']:
+            continue
+        event = events.get(meta['event_id'])
+        if meta['board_id'] == MAIN_ID:
+            has_own_dates = bool(meta['startDate'] or meta['endDate'])
+            if has_own_dates and not multiboard.window_contains(multiboard.board_window(meta, event), when):
+                continue
+            active.append(board)
+            continue
+        if not event or not event['enabled']:
+            continue
+        if multiboard.window_contains(multiboard.board_window(meta, event), when):
+            active.append(board)
+    return active
+
+
 @app.route('/bingo', methods=['GET'])
 def get_bingo():
-    """Get current bingo board state"""
+    """Get a bingo board's state (?board=<id>; the original board when omitted)"""
     tenant = get_tenant_from_request()
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
-    return jsonify(load_bingo_data(tenant_id))
+    board_id = request.args.get('board') or MAIN_ID
+    board = load_bingo_data(tenant_id, board_id)
+    if board is None:
+        return jsonify({'error': 'Board not found'}), 404
+    return jsonify(board)
 
 @app.route('/login', methods=['POST'])
 @limiter.limit("10 per minute")
@@ -1760,6 +2068,89 @@ def admin_login():
         return jsonify({'success': True, 'message': 'Login successful'})
     else:
         return jsonify({'success': False, 'message': 'Incorrect password'}), 401
+
+
+def _apply_drop_to_board(bingo_data, player_name, item_name, completed_at_iso):
+    """
+    Check one drop against one board's tiles, marking any tile it completes. Mutates bingo_data.
+    Returns (updated, completed_tiles).
+    """
+    updated = False
+    completed_tiles = []
+
+    for index, tile in enumerate(bingo_data['tiles']):
+        if not tile['items']:
+            continue
+
+        # Check if this is a multi-item requirement tile
+        if tile.get('requiredItems') and len(tile['requiredItems']) > 1:
+            # Multi-item tile - track progress
+            if 'itemProgress' not in tile:
+                tile['itemProgress'] = {}
+
+            if player_name not in tile['itemProgress']:
+                tile['itemProgress'][player_name] = []
+
+            player_items = tile['itemProgress'][player_name]
+
+            # Check if this item is required and not yet collected
+            for req_item in tile['requiredItems']:
+                req_item_clean = req_item.strip().lower()
+                item_name_clean = item_name.strip().lower()
+
+                if (req_item_clean == item_name_clean or
+                        req_item_clean in item_name_clean or
+                        item_name_clean in req_item_clean or
+                        _same_item(req_item, item_name)):
+
+                    # Add to progress if not already there
+                    if item_name not in player_items:
+                        player_items.append(item_name)
+                        print(
+                            f"   Tile {index + 1}: Added {item_name} to {player_name}'s progress ({len(player_items)}/{len(tile['requiredItems'])})")
+                        updated = True
+
+                    # Check if all items collected
+                    has_all = all(
+                        any(_same_item(req_item, pi) for pi in player_items)
+                        for req_item in tile['requiredItems']
+                    )
+
+                    if has_all and player_name not in tile['completedBy']:
+                        tile['completedBy'].append(player_name)
+                        tile.setdefault('completedAt', {})[player_name] = completed_at_iso
+                        completed_tiles.append({
+                            'tile': index + 1,
+                            'items': tile['items'],
+                            'value': tile['value']
+                        })
+                        print(f"   ✅ Tile {index + 1} COMPLETED by {player_name} (all items collected)!")
+
+                    break
+        else:
+            # Regular tile - any matching item completes it
+            for tile_item in tile['items']:
+                tile_item_clean = tile_item.strip().lower()
+                item_name_clean = item_name.strip().lower()
+
+                if _same_item(tile_item, item_name):
+                    print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
+
+                    if player_name not in tile['completedBy']:
+                        tile['completedBy'].append(player_name)
+                        tile.setdefault('completedAt', {})[player_name] = completed_at_iso
+                        completed_tiles.append({
+                            'tile': index + 1,
+                            'items': tile['items'],
+                            'value': tile['value']
+                        })
+                        updated = True
+                        print(f"      → Added {player_name} to completedBy list")
+                    else:
+                        print(f"      → {player_name} already completed this tile")
+                    break
+
+    return updated, completed_tiles
 
 
 @app.route('/drop', methods=['POST'])
@@ -1834,87 +2225,40 @@ def record_drop():
     except (ValueError, AttributeError):
         completed_at_iso = datetime.utcnow().isoformat()
 
-    # Check tiles for completion (using tenant's bingo data)
-    bingo_data = load_bingo_data(tenant_id)
+    # Fan the drop out to every board that is live at the drop's time: the original board plus any extra
+    # boards (a year-long, a 6-month, monthly...) whose window contains it. The same item on several boards
+    # scores on each of them.
+    try:
+        drop_when = multiboard.parse_iso_utc(completed_at_iso) or datetime.utcnow()
+    except Exception:
+        drop_when = datetime.utcnow()
+    try:
+        target_boards = active_boards_at(collections, drop_when)
+    except Exception as e:
+        print(f"[!] Could not resolve active boards, falling back to the main board: {e}")
+        target_boards = [{'meta': multiboard.normalize_board_meta({'board_id': MAIN_ID})}]
+    if not any(b['meta']['board_id'] == MAIN_ID for b in target_boards) and not USE_MONGODB:
+        target_boards.append({'meta': multiboard.normalize_board_meta({'board_id': MAIN_ID})})
+
     updated = False
     completed_tiles = []
-
-    print(f"[*] Checking {len(bingo_data['tiles'])} tiles...")
-
-    for index, tile in enumerate(bingo_data['tiles']):
-        if not tile['items']:
+    for target in target_boards:
+        board_id = target['meta']['board_id']
+        bingo_data = load_bingo_data(tenant_id, board_id)
+        if not bingo_data:
             continue
-
-        # Check if this is a multi-item requirement tile
-        if tile.get('requiredItems') and len(tile['requiredItems']) > 1:
-            # Multi-item tile - track progress
-            if 'itemProgress' not in tile:
-                tile['itemProgress'] = {}
-
-            if player_name not in tile['itemProgress']:
-                tile['itemProgress'][player_name] = []
-
-            player_items = tile['itemProgress'][player_name]
-
-            # Check if this item is required and not yet collected
-            for req_item in tile['requiredItems']:
-                req_item_clean = req_item.strip().lower()
-                item_name_clean = item_name.strip().lower()
-
-                if (req_item_clean == item_name_clean or
-                        req_item_clean in item_name_clean or
-                        item_name_clean in req_item_clean or
-                        _same_item(req_item, item_name)):
-
-                    # Add to progress if not already there
-                    if item_name not in player_items:
-                        player_items.append(item_name)
-                        print(
-                            f"   Tile {index + 1}: Added {item_name} to {player_name}'s progress ({len(player_items)}/{len(tile['requiredItems'])})")
-                        updated = True
-
-                    # Check if all items collected
-                    has_all = all(
-                        any(_same_item(req_item, pi) for pi in player_items)
-                        for req_item in tile['requiredItems']
-                    )
-
-                    if has_all and player_name not in tile['completedBy']:
-                        tile['completedBy'].append(player_name)
-                        tile.setdefault('completedAt', {})[player_name] = completed_at_iso
-                        completed_tiles.append({
-                            'tile': index + 1,
-                            'items': tile['items'],
-                            'value': tile['value']
-                        })
-                        print(f"   ✅ Tile {index + 1} COMPLETED by {player_name} (all items collected)!")
-
-                    break
-        else:
-            # Regular tile - any matching item completes it
-            for tile_item in tile['items']:
-                tile_item_clean = tile_item.strip().lower()
-                item_name_clean = item_name.strip().lower()
-
-                if _same_item(tile_item, item_name):
-                    print(f"      ✓ MATCH: '{item_name}' matches '{tile_item}'")
-
-                    if player_name not in tile['completedBy']:
-                        tile['completedBy'].append(player_name)
-                        tile.setdefault('completedAt', {})[player_name] = completed_at_iso
-                        completed_tiles.append({
-                            'tile': index + 1,
-                            'items': tile['items'],
-                            'value': tile['value']
-                        })
-                        updated = True
-                        print(f"      → Added {player_name} to completedBy list")
-                    else:
-                        print(f"      → {player_name} already completed this tile")
-                    break
+        print(f"[*] Checking {len(bingo_data['tiles'])} tiles on board '{target['meta']['name']}'...")
+        board_updated, board_completed = _apply_drop_to_board(bingo_data, player_name, item_name, completed_at_iso)
+        if board_updated:
+            save_bingo_data(bingo_data, tenant_id, board_id)
+            updated = True
+        for entry in board_completed:
+            if board_id != MAIN_ID:
+                entry['board'] = target['meta']['name']
+                entry['board_id'] = board_id
+            completed_tiles.append(entry)
 
     if updated:
-        save_bingo_data(bingo_data, tenant_id)
         print(f"[OK] Saved updated board data")
         print(f"{'=' * 60}\n")
         return jsonify({
@@ -2296,7 +2640,8 @@ def get_deaths():
 
     try:
         # Sort by timestamp BEFORE grouping
-        pipeline = [
+        scope_match = _request_scope_query(collections)
+        pipeline = ([{'$match': scope_match}] if scope_match else []) + [
             {
                 '$sort': {'timestamp': -1}  # Sort newest first
             },
@@ -2353,7 +2698,7 @@ def get_deaths_by_npc():
         # Aggregate deaths by NPC
         pipeline = [
             {
-                '$match': {'npc': {'$ne': None}}  # Only include deaths with NPC
+                '$match': {'npc': {'$ne': None}, **_request_scope_query(collections)}  # Only include deaths with NPC
             },
             {
                 '$sort': {'timestamp': -1}  # Sort by timestamp descending (newest first)
@@ -2517,6 +2862,11 @@ def get_history():
         if drop_type:
             query['drop_type'] = drop_type
 
+        # Board/event/custom-range scope (analytics). Replaces any plain start/end dates.
+        if request.args.get('scope'):
+            query.pop('timestamp', None)
+            query.update(_request_scope_query(collections))
+
         # Value range filter (either bound optional, combined into one $gte/$lte dict
         # so both can be supplied together - e.g. the History page's "100k-1m" range
         # filter, or its "=500k" filter translated to a ±10% band)
@@ -2556,6 +2906,8 @@ def get_history():
             'total': total
         })
 
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': f'Failed to get history: {str(e)}'}), 500
 
@@ -2579,6 +2931,9 @@ def get_total_value_looted():
 
         match_query = {}
         since = None
+        if request.args.get('scope'):
+            match_query.update(_request_scope_query(collections))
+            all_time = True  # an explicit scope replaces the "since the main event started" default
         if not all_time:
             event_config = collections['bingo'].find_one({'_id': 'event_config'})
             if event_config and event_config.get('enabled') and event_config.get('startDate'):
@@ -2606,7 +2961,10 @@ def update_board():
     if not data or not verify_admin_password(tenant, data.get('password')):
         return jsonify({'error': 'Unauthorized'}), 401
     tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
-    save_bingo_data(data, tenant_id=tenant_id)
+    board_id = data.pop('boardId', None) or MAIN_ID
+    if board_id != MAIN_ID and load_bingo_data(tenant_id, board_id) is None:
+        return jsonify({'error': 'Board not found'}), 404
+    save_bingo_data(data, tenant_id=tenant_id, board_id=board_id)
     return jsonify({'success': True})
 
 
@@ -2632,7 +2990,8 @@ def shuffle_board():
             return jsonify({'error': 'Unauthorized'}), 401
 
         # Get current board from tenant collection
-        bingo_doc = collections['bingo'].find_one({'type': 'current_board'})
+        shuffle_query = _board_query(data.get('boardId'))
+        bingo_doc = collections['bingo'].find_one(shuffle_query)
         if not bingo_doc:
             return jsonify({'error': 'No board found'}), 404
 
@@ -2648,7 +3007,7 @@ def shuffle_board():
 
         # Update the board with shuffled tiles
         collections['bingo'].update_one(
-            {'type': 'current_board'},
+            shuffle_query,
             {'$set': {'tiles': tiles}}
         )
 
@@ -2784,9 +3143,14 @@ def set_event_config():
 
 
 def is_within_event_window(timestamp=None, tenant_id=None):
-    """Check if a timestamp is within the current event window"""
+    """
+    Is a moment (default: now) inside a live event? With no event configured/enabled everything is allowed.
+    Otherwise the moment must fall inside the main event's dates or any other enabled event's.
+
+    All times are compared as naive UTC. (This used to compare a naive "now" against timezone-aware event dates,
+    which raised, was swallowed by the fail-open handler below, and so let every drop through regardless of dates.)
+    """
     try:
-        # Get tenant's bingo collection for event config
         collections = get_tenant_collections(tenant_id)
         event_config = collections['bingo'].find_one({'_id': 'event_config'})
 
@@ -2794,36 +3158,414 @@ def is_within_event_window(timestamp=None, tenant_id=None):
         if not event_config or not event_config.get('enabled', False):
             return True
 
-        # Use provided timestamp or current time
-        if timestamp is None:
+        check_time = multiboard.parse_iso_utc(timestamp) if timestamp is not None else None
+        if check_time is None:
             check_time = datetime.utcnow()
-        else:
-            # Convert timestamp to datetime if it's a string
-            if isinstance(timestamp, str):
-                check_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            elif isinstance(timestamp, datetime):
-                check_time = timestamp
-            else:
-                check_time = datetime.utcnow()
 
-        # Get event dates
-        start_date = event_config.get('startDate')
-        end_date = event_config.get('endDate')
-
-        if not start_date or not end_date:
+        start = multiboard.parse_iso_utc(event_config.get('startDate'))
+        end = multiboard.parse_iso_utc(event_config.get('endDate'))
+        if not start or not end:
+            return True
+        if start <= check_time <= end:
             return True
 
-        # Parse dates
-        start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-        end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-
-        # Check if within window
-        return start <= check_time <= end
+        # Outside the main event's dates - still fine if another event (e.g. a year-long running underneath,
+        # or a later seasonal) is live at that moment.
+        for other in collections['bingo'].find({'type': 'event', 'enabled': True}):
+            other_start = multiboard.parse_iso_utc(other.get('startDate'))
+            other_end = multiboard.parse_iso_utc(other.get('endDate'))
+            if other_start and other_end and other_start <= check_time <= other_end:
+                return True
+        return False
 
     except Exception as e:
         print(f"[!] Error checking event window: {e}")
         # On error, allow the action (fail open)
         return True
+
+
+# ============================================
+# MULTI-BOARD ROUTES
+# ============================================
+
+def _slug(text):
+    return re.sub(r'[^a-z0-9]+', '-', (text or '').lower()).strip('-') or 'board'
+
+
+def _unique_id(existing_ids, base):
+    candidate, n = base, 2
+    while candidate in existing_ids or candidate == MAIN_ID:
+        candidate = f'{base}-{n}'
+        n += 1
+    return candidate
+
+
+def _blank_board(size):
+    return {
+        'boardSize': size,
+        'tiles': [{'items': [], 'value': 10, 'completedBy': [], 'completedAt': {}, 'displayTitle': ''}
+                  for _ in range(size * size)],
+        'completions': {},
+        'lineBonuses': {'rows': [50] * size, 'cols': [50] * size, 'diags': [100, 100]},
+    }
+
+
+def _admin_context():
+    """(tenant, tenant_id, collections, error_response) for an admin-only multi-board write."""
+    data = request.get_json(silent=True) or {}
+    tenant = get_tenant_from_request()
+    if not verify_admin_password(tenant, data.get('password')):
+        return data, None, None, (jsonify({'error': 'Unauthorized'}), 401)
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    return data, tenant_id, get_tenant_collections(tenant_id), None
+
+
+def _read_collections():
+    tenant = get_tenant_from_request()
+    tenant_id = tenant['tenant_id'] if tenant else DEFAULT_TENANT_ID
+    return tenant_id, get_tenant_collections(tenant_id)
+
+
+@app.route('/events', methods=['GET'])
+@limiter.limit("120 per minute")
+def get_events():
+    """Every event with the boards inside it (no tile data) - drives the board/leaderboard/analytics pickers."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    try:
+        _, collections = _read_collections()
+        events = list_events(collections)
+        boards = list_boards(collections)
+        for event in events:
+            event['boards'] = [b for b in boards if b['meta']['event_id'] == event['event_id']]
+        orphans = [b for b in boards if b['meta']['event_id'] not in {e['event_id'] for e in events}]
+        return jsonify({'events': events, 'orphan_boards': orphans})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/boards/<board_id>', methods=['GET'])
+@limiter.limit("120 per minute")
+def get_one_board(board_id):
+    """One board's full document (tiles included) with its settings under 'meta'."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    try:
+        _, collections = _read_collections()
+        board = get_board(collections, board_id)
+        if not board:
+            return jsonify({'error': 'Board not found'}), 404
+        return jsonify(board)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/events', methods=['POST'])
+@limiter.limit("30 per minute")
+def admin_save_event():
+    """Create/update/delete an extra event (admin). The main event is still edited through /event/config."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    data, tenant_id, collections, err = _admin_context()
+    if err:
+        return err
+    try:
+        action = data.get('action', 'save')
+        event = data.get('event') or {}
+        existing_ids = {e['event_id'] for e in list_events(collections)}
+
+        if action == 'delete':
+            event_id = event.get('event_id')
+            if not event_id or event_id == MAIN_ID:
+                return jsonify({'error': 'The main event cannot be deleted'}), 400
+            if event_id not in existing_ids:
+                return jsonify({'error': 'Event not found'}), 404
+            if list_boards(collections, event_id=event_id) and not data.get('force'):
+                return jsonify({'error': 'Event still has boards. Delete them first or pass force.',
+                                'code': 'has_boards'}), 409
+            collections['bingo'].delete_many({'type': 'board', 'event_id': event_id})
+            collections['bingo'].delete_one({'type': 'event', 'event_id': event_id})
+            return jsonify({'success': True})
+
+        name = (event.get('eventName') or '').strip()
+        start, end = event.get('startDate'), event.get('endDate')
+        if not name:
+            return jsonify({'error': 'Event name is required'}), 400
+        s_dt, e_dt = multiboard.parse_iso_utc(start), multiboard.parse_iso_utc(end)
+        if not s_dt or not e_dt:
+            return jsonify({'error': 'Valid start and end dates are required'}), 400
+        if e_dt <= s_dt:
+            return jsonify({'error': 'End date must be after start date'}), 400
+
+        event_id = event.get('event_id')
+        if event_id == MAIN_ID:
+            return jsonify({'error': 'Edit the main event with /event/config'}), 400
+        if not event_id:
+            event_id = _unique_id(existing_ids, _slug(name))
+        elif event_id not in existing_ids:
+            return jsonify({'error': 'Event not found'}), 404
+
+        doc = {'type': 'event', 'event_id': event_id, 'eventName': name,
+               'enabled': bool(event.get('enabled', True)), 'startDate': start, 'endDate': end}
+        collections['bingo'].replace_one({'type': 'event', 'event_id': event_id}, doc, upsert=True)
+        doc.pop('type')
+        return jsonify({'success': True, 'event': doc})
+    except Exception as e:
+        print(f"[X] Error saving event: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/boards', methods=['POST'])
+@limiter.limit("60 per minute")
+def admin_save_board():
+    """
+    Create/update/delete a board (admin). Only settings are written here (name, dates, team setup, weight, ...);
+    tiles are edited through /update like always. New boards start blank, or copy another board's tiles
+    (without anyone's completions) via copyFrom.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    data, tenant_id, collections, err = _admin_context()
+    if err:
+        return err
+    try:
+        action = data.get('action', 'save')
+        incoming = data.get('board') or {}
+        board_id = incoming.get('board_id')
+        boards = list_boards(collections)
+        existing_ids = {b['meta']['board_id'] for b in boards}
+
+        if action == 'delete':
+            if not board_id or board_id == MAIN_ID:
+                return jsonify({'error': 'The main board cannot be deleted'}), 400
+            if board_id not in existing_ids:
+                return jsonify({'error': 'Board not found'}), 404
+            collections['bingo'].delete_one({'type': 'board', 'board_id': board_id})
+            return jsonify({'success': True})
+
+        creating = not board_id or board_id not in existing_ids
+        if board_id == MAIN_ID:
+            creating = False
+        if creating and board_id and board_id != MAIN_ID and board_id in existing_ids:
+            creating = False
+
+        current = next((b for b in boards if b['meta']['board_id'] == (board_id or '')), None)
+        merged_meta = {**(current['meta'] if current else {}), **{k: v for k, v in incoming.items()
+                                                                   if k in multiboard.BOARD_META_KEYS}}
+        name = (merged_meta.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': 'Board name is required'}), 400
+
+        event_id = merged_meta.get('event_id') or MAIN_ID
+        event = get_event(collections, event_id)
+        if not event:
+            return jsonify({'error': f'Event "{event_id}" not found'}), 404
+
+        window = multiboard.board_window(merged_meta, event)
+        problem = multiboard.validate_board_in_event(window, (multiboard.parse_iso_utc(event['startDate']),
+                                                              multiboard.parse_iso_utc(event['endDate'])))
+        if problem:
+            return jsonify({'error': problem}), 400
+
+        try:
+            merged_meta['weight'] = float(merged_meta.get('weight', 1))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Weight must be a number'}), 400
+        if merged_meta['weight'] < 0:
+            return jsonify({'error': 'Weight cannot be negative'}), 400
+        teams = merged_meta.get('teams') or {}
+        if not isinstance(teams, dict) or any(not isinstance(v, list) for v in teams.values()):
+            return jsonify({'error': 'Teams must map a team name to a list of players'}), 400
+        seen = {}
+        for team, members in teams.items():
+            for member in members:
+                if member in seen and seen[member] != team:
+                    return jsonify({'error': f'{member} is on both "{seen[member]}" and "{team}"'}), 400
+                seen[member] = team
+
+        meta_fields = {k: merged_meta[k] for k in multiboard.BOARD_META_KEYS
+                       if k in merged_meta and k not in ('board_id',)}
+        meta_fields['event_id'] = event_id
+
+        if board_id == MAIN_ID:
+            if not current:
+                return jsonify({'error': 'Main board does not exist yet'}), 404
+            collections['bingo'].update_one({'type': 'current_board'}, {'$set': meta_fields})
+            return jsonify({'success': True, 'board': get_board(collections, MAIN_ID)['meta']})
+
+        if creating:
+            board_id = _unique_id(existing_ids, _slug(name))
+            source = None
+            if data.get('copyFrom'):
+                source = load_bingo_data(tenant_id, data['copyFrom'])
+            if source:
+                doc = {k: v for k, v in source.items() if k not in multiboard.BOARD_META_KEYS and k != 'itemProgress'}
+                doc['tiles'] = []
+                for tile in source.get('tiles', []):
+                    fresh = {k: v for k, v in tile.items() if k not in ('completedBy', 'completedAt', 'itemProgress')}
+                    fresh['completedBy'] = []
+                    fresh['completedAt'] = {}
+                    doc['tiles'].append(fresh)
+                doc['completions'] = {}
+            else:
+                size = int(incoming.get('boardSize') or 5)
+                if size < 2 or size > 12:
+                    return jsonify({'error': 'Board size must be between 2 and 12'}), 400
+                doc = _blank_board(size)
+            doc.update(meta_fields)
+            doc['type'] = 'board'
+            doc['board_id'] = board_id
+            collections['bingo'].insert_one(doc)
+        else:
+            collections['bingo'].update_one({'type': 'board', 'board_id': board_id}, {'$set': meta_fields})
+
+        return jsonify({'success': True, 'board': get_board(collections, board_id)['meta']})
+    except Exception as e:
+        print(f"[X] Error saving board: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def _leaderboard_scope_boards(collections, scope):
+    """
+    Resolve a scope string to (label, [(board_doc, meta), ...], is_combined). Scopes:
+      board:<id>           one board
+      event:<id>           every board in that event that counts toward its combined leaderboard
+      boards:<id>,<id>...  an explicit set (ad-hoc combination)
+    """
+    kind, _, value = (scope or f'board:{MAIN_ID}').partition(':')
+    if kind == 'board':
+        board = get_board(collections, value or MAIN_ID)
+        return (board['meta']['name'], [(board, board['meta'])], False) if board else (None, [], False)
+    if kind == 'event':
+        event = get_event(collections, value or MAIN_ID)
+        if not event:
+            return None, [], True
+        boards = [b for b in list_boards(collections, event_id=event['event_id'], include_tiles=True)
+                  if b['meta']['inCombined']]
+        return event['eventName'], [(b, b['meta']) for b in boards], True
+    if kind == 'boards':
+        boards = [get_board(collections, bid) for bid in value.split(',') if bid]
+        boards = [b for b in boards if b]
+        return 'Selected boards', [(b, b['meta']) for b in boards], True
+    return None, [], False
+
+
+def _scope_windows(collections, scope):
+    """
+    Resolve an analytics scope to (label, merged [(start, end), ...] naive-UTC windows), or (None, None) when the
+    scope is "all"/absent. Overlapping windows are merged so a drop made while two boards run is only ever
+    counted once. Scopes:
+      all | board:<id> | event:<id> | boards:<id>,<id>... | range:<start>,<end>
+    """
+    if not scope or scope == 'all':
+        return None, None
+    kind, _, value = scope.partition(':')
+    if kind == 'range':
+        start, _, end = value.partition(',')
+        s_dt, e_dt = multiboard.parse_iso_utc(start), multiboard.parse_iso_utc(end)
+        if not s_dt and not e_dt:
+            raise ValueError('range needs a start and/or end date')
+        return 'Custom range', [(s_dt, e_dt)]
+
+    events = {e['event_id']: e for e in list_events(collections)}
+    if kind == 'event':
+        event = events.get(value or MAIN_ID)
+        if not event:
+            raise ValueError('Unknown event')
+        boards = [b for b in list_boards(collections, event_id=event['event_id']) if b['meta']['inCombined']]
+        windows = [multiboard.board_window(b['meta'], event) for b in boards]
+        if not windows:
+            windows = [(multiboard.parse_iso_utc(event['startDate']), multiboard.parse_iso_utc(event['endDate']))]
+        return event['eventName'], multiboard.merge_windows(windows)
+    if kind in ('board', 'boards'):
+        ids = [v for v in value.split(',') if v] or [MAIN_ID]
+        windows, names = [], []
+        for board_id in ids:
+            board = get_board(collections, board_id)
+            if not board:
+                raise ValueError(f'Unknown board "{board_id}"')
+            event = events.get(board['meta']['event_id'])
+            windows.append(multiboard.board_window(board['meta'], event))
+            names.append(board['meta']['name'])
+        return ', '.join(names), multiboard.merge_windows(windows)
+    raise ValueError(f'Unknown scope "{scope}"')
+
+
+def _scope_timestamp_query(windows, field='timestamp'):
+    """Mongo filter for "inside any of these windows". Empty filter when windows is None (all time)."""
+    if windows is None:
+        return {}
+    clauses = []
+    for start, end in windows:
+        bounds = {}
+        if start:
+            bounds['$gte'] = start
+        if end:
+            bounds['$lte'] = end
+        clauses.append({field: bounds} if bounds else {})
+    if any(not c for c in clauses):
+        return {}
+    return clauses[0] if len(clauses) == 1 else {'$or': clauses}
+
+
+def _request_scope_query(collections):
+    """Timestamp filter for the request's ?scope=, or {} (and no error) when it isn't given."""
+    scope = request.args.get('scope')
+    if not scope:
+        return {}
+    _, windows = _scope_windows(collections, scope)
+    return _scope_timestamp_query(windows)
+
+
+@app.route('/scope/windows', methods=['GET'])
+@limiter.limit("120 per minute")
+def get_scope_windows():
+    """What dates a scope covers - lets the page label analytics and know when a scope has no end yet."""
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    try:
+        _, collections = _read_collections()
+        label, windows = _scope_windows(collections, request.args.get('scope'))
+        return jsonify({
+            'label': label or 'All time',
+            'windows': None if windows is None else [
+                {'start': w[0].isoformat() + 'Z' if w[0] else None, 'end': w[1].isoformat() + 'Z' if w[1] else None}
+                for w in windows],
+        })
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/leaderboard', methods=['GET'])
+@limiter.limit("120 per minute")
+def get_leaderboard():
+    """
+    Ranked standings for a scope (see _leaderboard_scope_boards). A single team-mode board ranks teams; anything
+    combined ranks players, summing each board's own points times the board's weight.
+    """
+    if not USE_MONGODB:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    try:
+        _, collections = _read_collections()
+        label, boards, is_combined = _leaderboard_scope_boards(collections, request.args.get('scope'))
+        if not boards:
+            return jsonify({'error': 'Nothing to rank for that scope'}), 404
+        if is_combined:
+            rows = multiboard.combined_leaderboard(boards)
+        else:
+            board, meta = boards[0]
+            rows = multiboard.board_leaderboard(board, meta)
+        return jsonify({
+            'label': label,
+            'combined': is_combined,
+            'teamMode': (not is_combined) and boards[0][1]['teamMode'],
+            'boards': [{'board_id': m['board_id'], 'name': m['name'], 'weight': m['weight']} for _, m in boards],
+            'rows': rows,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================
@@ -3071,7 +3813,7 @@ def _dedupe_drops_for_recap(docs, window_seconds=60):
     return result
 
 
-def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
+def compute_luck_breakdown(collections, start_date, end_date, all_time=False, kc_gained_override=None):
     """
     Expected-vs-actual notable drops per player per boss. Backs both the
     Event Recap's tiny_violin/silver_spoon badges (compute_event_recap below
@@ -3145,7 +3887,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
             if player_bosses:
                 kc_by_boss[snap_player] = player_bosses
     else:
-        for cached in _gained_cache_docs(collections, start_date):
+        if kc_gained_override is not None:
+            cached_docs = ({'player': pl, 'bosses': bosses} for pl, bosses in kc_gained_override.items())
+        else:
+            cached_docs = _gained_cache_docs(collections, start_date)
+        for cached in cached_docs:
             snap_player = cached.get('player')
             boss_gains = cached.get('bosses', {})
             if not snap_player or not boss_gains:
@@ -3188,13 +3934,20 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     if not all_time:
         window_start = datetime.fromisoformat(start_date.replace('Z', '+00:00')) if start_date else None
         window_start = window_start.replace(tzinfo=None) if window_start else None
+        window_end = _parse_iso_utc(end_date)
+        window_over = bool(window_end) and window_end < datetime.utcnow()  # finished: count to its end, not to now
         for kc_doc in collections['plugin_kc'].find({}):
             player = kc_doc.get('player')
             if not player:
                 continue
             snap_query = {'player': player}
+            bounds = {}
             if window_start:
-                snap_query['timestamp'] = {'$gte': window_start}
+                bounds['$gte'] = window_start
+            if window_over:
+                bounds['$lte'] = window_end
+            if bounds:
+                snap_query['timestamp'] = bounds
             snapshots = list(collections['plugin_kc_history'].find(snap_query, sort=[('timestamp', 1)]))
             if not snapshots:
                 continue
@@ -3213,7 +3966,14 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
                 if not baseline:
                     continue
                 base_kc = next(c.get('kc', 0) for c in baseline['counts'] if isinstance(c, dict) and c.get('name') == entry.get('name'))
-                gained = entry.get('kc', 0) - base_kc
+                end_kc = entry.get('kc', 0)
+                if window_over:
+                    # Latest count at or before the window's end, not today's.
+                    last = next((s for s in reversed(snapshots)
+                                 if any(isinstance(c, dict) and c.get('name') == entry.get('name') for c in s.get('counts') or [])), None)
+                    end_kc = next((c.get('kc', 0) for c in (last or baseline)['counts']
+                                   if isinstance(c, dict) and c.get('name') == entry.get('name')), base_kc)
+                gained = end_kc - base_kc
                 if gained > 0:
                     player_bosses[boss_key] = gained
                     boss_display_names.setdefault(boss_key, entry['name'])
@@ -3341,7 +4101,12 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     # delve scoreboard this replaces that row. In an event window the delve counts are treated as all
     # having happened inside it (see doom_luck.compute_doom_luck) and the actual drops are the window's.
     doom_actual = {p: boss_items.get('doom_of_mokhaiotl', {}) for p, boss_items in player_boss_item_notable.items()}
-    for player, info in compute_doom_luck(collections, doom_actual, use_clog=all_time).items():
+    doom_start = doom_end = None
+    if not all_time:
+        doom_start = _parse_iso_utc(start_date)
+        doom_end = _parse_iso_utc(end_date)
+    for player, info in compute_doom_luck(collections, doom_actual, use_clog=all_time,
+                                          start=doom_start, end=doom_end).items():
         entry = breakdown.setdefault(player, {'luck_score': 0, 'bosses': []})
         for old in [b for b in entry['bosses'] if normalize_boss_name(b['boss']) == 'doom_of_mokhaiotl']:
             entry['bosses'].remove(old)
@@ -3368,11 +4133,11 @@ def compute_luck_breakdown(collections, start_date, end_date, all_time=False):
     raid_info = None
     if all_time:
         raid_info = compute_raid_luck(collections)
-    elif start_date and end_date:
+    elif start_date or end_date:
         raid_info = compute_raid_luck_event(
             collections,
-            datetime.fromisoformat(start_date.replace('Z', '+00:00')).timestamp(),
-            datetime.fromisoformat(end_date.replace('Z', '+00:00')).timestamp(),
+            datetime.fromisoformat(start_date.replace('Z', '+00:00')).timestamp() if start_date else 0,
+            datetime.fromisoformat(end_date.replace('Z', '+00:00')).timestamp() if end_date else 4102444800,  # 2100
             window_drops)
     if raid_info:
         raid_names = {'COX': 'Chambers of Xeric', 'TOB': 'Theatre of Blood', 'TOA': 'Tombs of Amascut'}
@@ -3519,7 +4284,9 @@ def compute_event_recap(collections, start_date, end_date, board_doc=None):
         completers = tile.get('completedBy', [])
         if len(completers) == 1:
             lone_tiles[completers[0]] = lone_tiles.get(completers[0], 0) + 1
-        title = tile.get('displayTitle') or (tile.get('items') or [{}])[0].get('name') or 'a tile'
+        first_item = (tile.get('items') or [None])[0]
+        first_item_name = first_item.get('name') if isinstance(first_item, dict) else first_item
+        title = tile.get('displayTitle') or first_item_name or 'a tile'
         for player, iso in (tile.get('completedAt') or {}).items():
             done_at = _parse_iso_utc(iso)
             if done_at:
@@ -3741,6 +4508,16 @@ def get_event_luck():
             breakdown = compute_luck_breakdown(collections, None, None, all_time=True)
             return jsonify({'players': breakdown})
 
+        if request.args.get('scope') and request.args.get('scope') != 'all':
+            # Luck is computed over one span, so a combined scope (e.g. several months) uses the span from its
+            # earliest start to its latest end.
+            label, start_dt, end_dt, hull = _scope_single_window(collections, request.args['scope'])
+            gained, missing = gained_for_window(collections, start_dt, end_dt, collections['kc'].distinct('player'))
+            breakdown = compute_luck_breakdown(collections, _iso_z(start_dt), _iso_z(end_dt),
+                                               kc_gained_override=gained)
+            return jsonify({'eventName': label, 'startDate': _iso_z(start_dt), 'endDate': _iso_z(end_dt),
+                            'players': breakdown, 'spans_gaps': hull, 'unavailable': missing})
+
         event_config = collections['bingo'].find_one({'_id': 'event_config'})
         if not event_config or not event_config.get('enabled'):
             return jsonify({'error': 'No event is currently configured'}), 404
@@ -3757,6 +4534,8 @@ def get_event_luck():
             'endDate': event_config.get('endDate'),
             'players': breakdown
         })
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3843,7 +4622,7 @@ def get_event_recap(player_name):
 ARCHIVE_SCHEMA_VERSION = 2
 # Heavy parts of an archive document, left out of the list/summary reads and served by their own endpoints.
 ARCHIVE_HEAVY_FIELDS = ('players', 'tiles_snapshot', 'board', 'luck', 'kc', 'deaths', 'personal_bests', 'top_drops',
-                        'leaderboard')
+                        'leaderboard', 'boards', 'combined_leaderboard')
 # URL section name -> field in the archive document
 ARCHIVE_SECTIONS = {
     'luck': 'luck',
@@ -3941,8 +4720,16 @@ def build_archive_snapshot(collections, event_config):
     window = _window_query(start_date, end_date)
     warnings = []
 
-    board = collections['bingo'].find_one({'type': 'current_board'}) or {}
-    board = {k: v for k, v in board.items() if k not in ('_id', 'type')}
+    # The event's boards. The top-level board/leaderboard/players/badges keep describing the event's primary board
+    # (the original board for the main event) exactly as before, so existing archive readers are unaffected; every
+    # board - primary included - is also frozen under `boards`, with a weighted `combined_leaderboard` on top.
+    event_id = event_config.get('event_id') or MAIN_ID
+    event_boards = list_boards(collections, event_id=event_id, include_tiles=True)
+    if event_boards:
+        primary = event_boards[0]
+        board = {k: v for k, v in primary.items() if k != 'meta'}
+    else:
+        board = {}
     tiles = board.get('tiles', [])
     if not any(t.get('completedBy') for t in tiles):
         warnings.append('board_empty')
@@ -3967,6 +4754,8 @@ def build_archive_snapshot(collections, event_config):
         kc_players[player] = gained
     if kc_not_final:
         warnings.append('kc_not_final')
+    for player, extra in plugin_only_kc_gained(collections, _parse_iso_utc(start_date), end_dt).items():
+        kc_players.setdefault(player, {}).update(extra)
     apply_doom_delve_rows(collections, kc_players, start_date)
 
     # Biggest drops of the event; the full log is served live from drop history by date window.
@@ -4009,11 +4798,28 @@ def build_archive_snapshot(collections, event_config):
             personal_bests.append(rec)
     personal_bests.sort(key=lambda r: (r['boss'].lower(), r.get('invocation_level') or 0, r['time_seconds']))
 
+    frozen_boards = []
+    for b in event_boards:
+        meta = b['meta']
+        frozen_boards.append({
+            'board_id': meta['board_id'], 'name': meta['name'], 'label': meta['label'],
+            'start_date': meta['startDate'] or start_date, 'end_date': meta['endDate'] or end_date,
+            'weight': meta['weight'], 'in_combined': meta['inCombined'],
+            'team_mode': meta['teamMode'], 'teams': meta['teams'],
+            'board': {k: v for k, v in b.items() if k != 'meta'},
+            'leaderboard': multiboard.board_leaderboard(b, meta),
+        })
+    combined = multiboard.combined_leaderboard([(b, b['meta']) for b in event_boards if b['meta']['inCombined']])
+
     return {
         'schema_version': ARCHIVE_SCHEMA_VERSION,
+        'event_id': event_id,
         'event_name': event_config.get('eventName', 'Bingo Event'),
         'start_date': start_date,
         'end_date': end_date,
+        'boards_meta': [{'board_id': b['board_id'], 'name': b['name'], 'label': b['label']} for b in frozen_boards],
+        'boards': frozen_boards,
+        'combined_leaderboard': combined,
         'archived_at': datetime.utcnow().isoformat(),
         'summary': _archive_summary(leaderboard),
         'totals': {
@@ -4035,13 +4841,34 @@ def build_archive_snapshot(collections, event_config):
     }
 
 
+def _archive_key(event_config):
+    event_id = event_config.get('event_id') or MAIN_ID
+    key = {'start_date': event_config.get('startDate'), 'end_date': event_config.get('endDate')}
+    # Archives taken before multi-board carry no event_id and belong to the main event.
+    key['event_id'] = {'$in': [MAIN_ID, None]} if event_id == MAIN_ID else event_id
+    return key
+
+
+def _find_archive(collections, event_config):
+    return collections['archive'].find_one(_archive_key(event_config), {'_id': 1})
+
+
+def _event_config_for(collections, event_id):
+    """Config dict for an event: the main event's stored config, or an extra event's document."""
+    event_id = event_id or MAIN_ID
+    if event_id == MAIN_ID:
+        doc = collections['bingo'].find_one({'_id': 'event_config'})
+        return {**doc, 'event_id': MAIN_ID} if doc else None
+    doc = collections['bingo'].find_one({'type': 'event', 'event_id': event_id})
+    return doc
+
+
 def archive_event_snapshot(collections, event_config, replace_existing=False):
     """
     Archive the given event unless that exact window is already archived (or replace_existing).
     Returns (status, archive_id): status is 'created', 'replaced' or 'exists'.
     """
-    existing = collections['archive'].find_one(
-        {'start_date': event_config.get('startDate'), 'end_date': event_config.get('endDate')}, {'_id': 1})
+    existing = _find_archive(collections, event_config)
     if existing and not replace_existing:
         return 'exists', str(existing['_id'])
     doc = build_archive_snapshot(collections, event_config)
@@ -4078,7 +4905,7 @@ def archive_event():
     force = bool(data.get('force'))
 
     try:
-        event_config = collections['bingo'].find_one({'_id': 'event_config'})
+        event_config = _event_config_for(collections, data.get('event_id'))
         if not event_config or not event_config.get('startDate'):
             return jsonify({'error': 'No event is currently configured'}), 404
 
@@ -4119,22 +4946,37 @@ def auto_archive_event():
     collections = get_tenant_collections(tenant['tenant_id'])
 
     try:
-        event_config = collections['bingo'].find_one({'_id': 'event_config'})
-        if not event_config or not event_config.get('enabled') or not event_config.get('startDate'):
+        # Every enabled event (the main one plus any extras) whose end date has passed gets its own archive,
+        # with all of its boards frozen inside. Events that are still running, or already archived, are skipped.
+        candidates = []
+        for event in list_events(collections):
+            config = _event_config_for(collections, event['event_id'])
+            if config and config.get('enabled') and config.get('startDate'):
+                candidates.append(config)
+        if not candidates:
             return jsonify({'archived': False, 'reason': 'no_event'})
-        if not _event_has_ended(event_config):
+        ended = [c for c in candidates if _event_has_ended(c)]
+        if not ended:
             return jsonify({'archived': False, 'reason': 'not_ended'})
+        pending = [c for c in ended if not _find_archive(collections, c)]
+
         if (request.get_json(silent=True) or {}).get('dry_run'):
             # Lets the scheduled job ask "is there anything to do?" before spending a WiseOldMan refresh on it.
-            already = collections['archive'].find_one(
-                {'start_date': event_config.get('startDate'), 'end_date': event_config.get('endDate')}, {'_id': 1})
-            return jsonify({'archived': False, 'needs_archive': not already,
-                            **({'reason': 'already_archived'} if already else {})})
-        status, archive_id = archive_event_snapshot(collections, event_config)
-        if status == 'exists':
-            return jsonify({'archived': False, 'reason': 'already_archived', 'archive_id': archive_id})
-        print(f"[OK] Auto-archived '{event_config.get('eventName', 'Bingo Event')}'")
-        return jsonify({'archived': True, 'archive_id': archive_id})
+            return jsonify({'archived': False, 'needs_archive': bool(pending),
+                            **({} if pending else {'reason': 'already_archived'})})
+        if not pending:
+            existing = _find_archive(collections, ended[0])
+            return jsonify({'archived': False, 'reason': 'already_archived',
+                            'archive_id': str(existing['_id']) if existing else None})
+
+        archive_ids = []
+        for config in pending:
+            status, archive_id = archive_event_snapshot(collections, config)
+            if status != 'exists':
+                archive_ids.append(archive_id)
+                print(f"[OK] Auto-archived '{config.get('eventName', 'Bingo Event')}'")
+        return jsonify({'archived': bool(archive_ids), 'archive_id': archive_ids[0] if archive_ids else None,
+                        'archive_ids': archive_ids})
     except Exception as e:
         print(f"[X] Auto-archive failed: {e}")
         return jsonify({'error': str(e)}), 500
@@ -4369,7 +5211,7 @@ def get_deaths_by_player_npc():
         # Aggregate to get death counts per player per NPC
         pipeline = [
             {
-                '$match': {'npc': {'$ne': None}}  # Only deaths with NPC
+                '$match': {'npc': {'$ne': None}, **_request_scope_query(collections)}  # Only deaths with NPC
             },
             {
                 '$group': {
@@ -4491,6 +5333,9 @@ def get_personal_bests():
         if boss_filter:
             query['boss'] = {'$regex': boss_filter, '$options': 'i'}
 
+        if request.args.get('scope') and request.args.get('scope') != 'all':
+            query.update(_request_scope_query(collections))  # only PBs set inside the chosen board/event/range
+
         all_records = list(collections['personal_bests'].find(query, {'_id': 0}).sort('time_seconds', 1))
 
         # Keep the best time per (player, boss, party_size, invocation_level) group
@@ -4514,6 +5359,8 @@ def get_personal_bests():
 
         return jsonify({'success': True, 'personal_bests': result})
 
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': f'Failed to fetch PBs: {str(e)}'}), 500
 
@@ -4540,7 +5387,10 @@ def manual_override():
     if tile_index is None or not player_name or not action:
         return jsonify({'error': 'Missing required fields'}), 400
 
-    bingo_data = load_bingo_data(tenant_id)
+    override_board = data.get('boardId') or MAIN_ID
+    bingo_data = load_bingo_data(tenant_id, override_board)
+    if bingo_data is None:
+        return jsonify({'error': 'Board not found'}), 404
 
     if tile_index < 0 or tile_index >= len(bingo_data['tiles']):
         return jsonify({'error': 'Invalid tile index'}), 400
@@ -4553,7 +5403,7 @@ def manual_override():
             # No drop event backs a manual override, so stamp it with "now" rather
             # than leaving it unresolved on the Timeline.
             tile.setdefault('completedAt', {})[player_name] = datetime.utcnow().isoformat()
-            save_bingo_data(bingo_data, tenant_id)
+            save_bingo_data(bingo_data, tenant_id, override_board)
             print(f"[OK] Manual override: Added {player_name} to tile {tile_index + 1}")
             return jsonify({
                 'success': True,
@@ -4569,7 +5419,7 @@ def manual_override():
         if player_name in tile['completedBy']:
             tile['completedBy'].remove(player_name)
             tile.get('completedAt', {}).pop(player_name, None)
-            save_bingo_data(bingo_data, tenant_id)
+            save_bingo_data(bingo_data, tenant_id, override_board)
             print(f"[OK] Manual override: Removed {player_name} from tile {tile_index + 1}")
             return jsonify({
                 'success': True,

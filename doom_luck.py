@@ -43,7 +43,33 @@ def _canonical(name):
     return n[:-len(' (uncharged)')] if n.endswith(' (uncharged)') else n
 
 
-def compute_doom_luck(collections, known_actual=None, use_clog=True):
+def _snapshot_at(collections, player, when):
+    """Latest plugin_doom_history snapshot at or before `when`, as (levels, past8), or None."""
+    snap = collections['plugin_doom_history'].find_one(
+        {'player': player, 'timestamp': {'$lte': when}}, sort=[('timestamp', -1)])
+    if snap and len(snap.get('levels') or []) == LEVELS:
+        return list(snap['levels']), snap.get('past8') or 0
+    return None
+
+
+def _window_counts(collections, player, levels, past8, start, end):
+    """(levels, past8) of delves done inside [start, end], or None when the window can't be worked out."""
+    from datetime import datetime
+    if end and end < datetime.utcnow():
+        at_end = _snapshot_at(collections, player, end)
+        if at_end is None:
+            return None
+        levels, past8 = at_end
+    levels = list(levels)
+    if start:
+        base = _snapshot_at(collections, player, start)
+        if base:
+            levels = [max(0, n - o) for n, o in zip(levels, base[0])]
+            past8 = max(0, past8 - base[1])
+    return levels, past8
+
+
+def compute_doom_luck(collections, known_actual=None, use_clog=True, start=None, end=None):
     """
     Per player: expected vs actual Doom uniques, in "kills ahead (+) / behind (-)" like the rest of the
     Luck tab, where a "kill" is any delve completion (level 1 included).
@@ -53,9 +79,12 @@ def compute_doom_luck(collections, known_actual=None, use_clog=True):
     but never lower it; for an event window it is left out, since the log is lifetime and the window's
     drops come from the drop history instead.
 
-    The delve counts are lifetime, so for an event window this treats all of a player's delves as having
-    happened inside it - true while Doom is new to the group. A later event should subtract a snapshot
-    taken at its start (the server keeps one a day in plugin_doom_history).
+    The delve counts are lifetime. With `start`/`end` (naive UTC datetimes) the window's own delves are worked out
+    from the daily snapshots in plugin_doom_history: the count at the window's end (the latest snapshot at or
+    before it, or the live count while it is still running) minus the count at its start (the latest snapshot at
+    or before it). With no snapshot before the start, every delve counts as inside the window (Doom was new to the
+    group); with no snapshot at or before a finished window's end the plugin hadn't synced yet, so the player is
+    left out. Without start/end the lifetime counts are used as before.
     """
     known_actual = known_actual or {}
     clog = {}
@@ -75,6 +104,11 @@ def compute_doom_luck(collections, known_actual=None, use_clog=True):
         past8 = doc.get('past8', 0)
         if not player or len(levels) != LEVELS:
             continue
+        if start or end:
+            window = _window_counts(collections, player, levels, past8, start, end)
+            if window is None:
+                continue
+            levels, past8 = window
         completions = sum(levels) + past8
         if completions <= 0:
             continue

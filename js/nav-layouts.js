@@ -70,6 +70,7 @@ const NAV_ADMIN = {
         ] },
         { title: 'Event', icon: '📅', items: [
             { icon: '⏱️', label: 'Event Timer', fn: 'openEventConfigModal()', id: 'eventTimerBtn' },
+            { icon: '🗂️', label: 'Events & Boards', fn: 'BoardsUI.openAdmin()', id: 'boardsAdminBtn' },
             { icon: '⚙️', label: 'Configure Bonuses', fn: 'openBonusConfig()' },
             { icon: '📦', label: 'Archive Current Event', fn: 'archiveCurrentEvent()' },
             { icon: '📚', label: 'Past Bingos', fn: 'openPastBingosModal()' },

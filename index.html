@@ -94,6 +94,8 @@
                 <div id="navSideMount" style="display: contents;"></div>
 
                 <div class="board-container">
+                    <!-- Board switcher (rendered by js/boards.js; hidden unless there is more than one board) -->
+                    <div id="boardSwitcher" class="board-switcher" style="display: none;"></div>
                     <div class="board-toolbar">
                         <button id="bonusToggleBtn" class="board-chip" onclick="toggleBonusOverlay()" title="Overlay each tile's bonus multiplier on the board"><span class="nav-icon">🎁</span> <span class="nav-label">Show Bonuses</span></button>
                     </div>
@@ -101,7 +103,8 @@
                 </div>
 
                 <div class="leaderboard">
-                    <h2>🏆 Leaderboard 🏆</h2>
+                    <h2 id="leaderboardTitle">🏆 Leaderboard 🏆</h2>
+                    <div id="leaderboardScopeBar" class="leaderboard-scope-bar"></div>
                     <div id="playerStats">
                         <div class="no-players">No drops recorded yet!</div>
                     </div>
@@ -432,6 +435,17 @@ Dragon warhammer"></textarea>
                 <span id="analyticsModeLabel" style="font-size: 12px; color: #8b7355; margin-left: 8px;"></span>
             </div>
 
+            <!-- Board / event / date-range scope (options filled in by js/boards.js; hidden with a single board) -->
+            <div id="analyticsScopeWrap" style="display: none; margin: -6px 0 16px;">
+                <label for="analyticsScopeSelect" style="font-size: 13px; color: #6b4423; font-weight: bold;">Scope:</label>
+                <select id="analyticsScopeSelect" onchange="BoardsUI.setAnalyticsScope(this.value)" style="margin-left: 6px;"></select>
+                <span id="analyticsRangeBox" style="display: none; margin-left: 8px;">
+                    <input type="datetime-local" id="analyticsRangeFrom" onchange="BoardsUI.applyAnalyticsRange()">
+                    →
+                    <input type="datetime-local" id="analyticsRangeTo" onchange="BoardsUI.applyAnalyticsRange()">
+                </span>
+            </div>
+
             <!-- Loading State -->
             <div id="analyticsLoading" style="text-align: center; padding: 60px;">
                 <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
@@ -697,6 +711,8 @@ Dragon warhammer"></textarea>
                 <button onclick="switchKCMode('alltime')" id="kcModeAlltime" class="kc-mode-btn">📈 All Time</button>
                 <span id="kcModeLabel" style="font-size: 12px; color: #8b7355; margin-left: 8px;">Gains since bingo start</span>
             </div>
+            <!-- Board / event / date-range scope for gains and luck (filled in by js/boards.js; empty with a single board) -->
+            <div id="kcScopeHost" style="margin: -6px 0 14px;"></div>
 
             <!-- Tabs -->
             <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid rgba(255,255,255,0.1);">
@@ -927,6 +943,7 @@ Dragon warhammer"></textarea>
             <button onclick="closePBsModal()" class="close-btn">✕</button>
             <h2>🏆 Personal Bests</h2>
             <p style="color: #666; margin-bottom: 20px;">Fastest recorded times per boss, grouped by category</p>
+            <div id="pbScopeHost" style="margin: -8px 0 16px;"></div>
 
             <!-- Loading -->
             <div id="pbsLoading" style="text-align:center; padding:60px;">
@@ -1126,7 +1143,9 @@ Dragon warhammer"></textarea>
     <script src="js/nav-layouts.js?v=1.1"></script>
 
     <script src="js/recap-card.js?v=1.1"></script>
-    <script src="js/app.js?v=3.9"></script>
-    <script src="js/past-bingos.js?v=1.0"></script>
+    <!-- Boards/events state + switcher + admin; before app.js, which calls into it during init -->
+    <script src="js/boards.js?v=1.1"></script>
+    <script src="js/app.js?v=4.1"></script>
+    <script src="js/past-bingos.js?v=1.1"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ const PB = {
     detail: null,    // /event/archive/<id>
     cache: {},       // immutable archived data, so reopening a tab or event costs nothing
     tab: 'overview',
+    boardId: null,   // board shown on the Board tab / standings when an event has several (null = the primary one)
     kcView: 'player',
     luckView: 'player',
     drops: { skip: 0, total: 0, loaded: 0 },
@@ -150,6 +151,7 @@ async function pbShowPicker() {
                 <div class="pb-event-dates">${pbEsc(pbDateRange(ev.start_date, ev.end_date))}</div>
                 <div class="pb-event-winner">${winners ? `👑 ${winners} <span>${pbNumber(s.top_points)} pts</span>` : 'No winner recorded'}</div>
                 <div class="pb-event-meta">
+                    ${(ev.boards_meta || []).length > 1 ? `<span>🗂️ ${ev.boards_meta.length} boards</span>` : ''}
                     <span>👥 ${pbNumber(s.player_count)}</span>
                     <span>🎯 ${pbNumber(s.total_tiles_completed)} tiles</span>
                     <span>💰 ${pbEsc(formatRecapGp(s.total_gp))}</span>
@@ -212,6 +214,7 @@ async function pbShowPlayerHistory(player) {
 // ---- event view -----------------------------------------------------------
 async function pbOpenEvent(id, tab) {
     PB.id = id;
+    PB.boardId = null;
     PB.drops = { skip: 0, total: 0, loaded: 0 };
     if (!document.getElementById('pastBingosModal')) await openPastBingosModal();
     pbBody().innerHTML = pbLoading('Loading bingo...');
@@ -316,7 +319,46 @@ function pbRenderOverview(out) {
             <thead><tr><th></th><th>Player</th><th>Points</th><th>Tiles</th><th>KC gained</th><th>GP looted</th><th>${d.legacy ? '' : 'Luck'}</th><th>Badges</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>` : pbLoading('No scores were recorded for this bingo.')}
+        ${pbBoardsSectionHtml(d)}
         ${topDropsHtml}`;
+}
+
+// An event can hold several boards (e.g. a long one plus monthly ones): show each board's standings and, when
+// more than one counts toward it, the weighted combined standings.
+function pbBoardsSectionHtml(d) {
+    const boards = d.boards || [];
+    if (boards.length < 2) return '';
+    const table = (rows, extra) => `<div class="pb-table-wrap"><table class="pb-table">
+        <thead><tr><th></th><th>${extra ? 'Player' : 'Name'}</th><th>Points</th><th>Tiles</th>${extra ? '<th>By board</th>' : ''}</tr></thead>
+        <tbody>${rows.slice(0, 15).map(r => `<tr>
+            <td>${pbRankHtml(r.rank)}</td><td><strong>${pbEsc(r.name)}</strong></td>
+            <td><strong>${pbNumber(r.points)}</strong></td><td>${pbNumber(r.tiles)}</td>
+            ${extra ? `<td class="pb-muted">${Object.values(r.breakdown || {}).map(x => `${pbEsc(x.name)} ${pbNumber(x.points)}`).join(' · ')}</td>` : ''}
+        </tr>`).join('')}</tbody></table></div>`;
+
+    const combined = (d.combined_leaderboard || []);
+    const combinedBoards = boards.filter(b => b.in_combined);
+    return `
+        ${combined.length && combinedBoards.length > 1 ? `
+            <h3 class="pb-h3">🧮 Combined standings <span class="pb-muted">(${combinedBoards.map(b => pbEsc(b.name) + (b.weight !== 1 ? ` ×${b.weight}` : '')).join(' + ')})</span></h3>
+            ${table(combined, true)}` : ''}
+        <h3 class="pb-h3">🗂️ Standings by board</h3>
+        ${boards.map(b => `
+            <h4 class="pb-h3" style="font-size:15px;">${pbEsc(b.name)}${b.label ? ` <span class="pb-muted">${pbEsc(b.label)}</span>` : ''}
+                <span class="pb-muted">${pbEsc(pbDateRange(b.start_date, b.end_date))}${b.team_mode ? ' · teams' : ''}</span>
+                <button class="btn-secondary" style="margin-left:8px;" onclick="pbViewBoard('${pbEsc(b.board_id)}')">View board</button></h4>
+            ${(b.leaderboard || []).length ? table(b.leaderboard, false) : '<div class="pb-muted">No scores on this board.</div>'}`).join('')}`;
+}
+
+function pbViewBoard(boardId) {
+    PB.boardId = boardId;
+    pbShowTab('board');
+}
+
+function pbSelectedBoard() {
+    const d = PB.detail || {};
+    const found = (d.boards || []).find(b => b.board_id === PB.boardId);
+    return found ? found.board : (d.board || {});
 }
 
 async function pbOpenRecap(player) {
@@ -337,7 +379,7 @@ function pbTileName(tile) {
 }
 
 function pbRenderBoard(out) {
-    const board = PB.detail.board || {};
+    const board = pbSelectedBoard();
     const tiles = board.tiles || [];
     if (tiles.length === 0) {
         out.innerHTML = pbLoading('No board was saved for this bingo.');
@@ -352,8 +394,16 @@ function pbRenderBoard(out) {
         bonuses.diags?.length ? `<strong>Diagonals</strong> ${list(bonuses.diags)}` : '',
     ].filter(Boolean);
 
+    const allBoards = PB.detail.boards || [];
+    const boardPicker = allBoards.length > 1 ? `
+            <label for="pbBoardPick">Board:</label>
+            <select id="pbBoardPick" onchange="PB.boardId = this.value; pbShowTab('board')">
+                ${allBoards.map(b => `<option value="${pbEsc(b.board_id)}" ${(PB.boardId || allBoards[0].board_id) === b.board_id ? 'selected' : ''}>${pbEsc(b.name)}</option>`).join('')}
+            </select>` : '';
+
     out.innerHTML = `
         <div class="pb-board-controls">
+            ${boardPicker}
             <label for="pbBoardPlayer">Highlight player:</label>
             <select id="pbBoardPlayer" onchange="pbDrawBoard(this.value)">
                 <option value="">Everyone</option>
@@ -368,7 +418,7 @@ function pbRenderBoard(out) {
 function pbDrawBoard(player) {
     const grid = document.getElementById('pbBoardGrid');
     if (!grid) return;
-    const board = PB.detail.board || {};
+    const board = pbSelectedBoard();
     const tiles = board.tiles || [];
     const size = board.boardSize || Math.round(Math.sqrt(tiles.length)) || 5;
     grid.style.setProperty('--board-size', size);
